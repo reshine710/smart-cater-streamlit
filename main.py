@@ -1,6 +1,8 @@
 import streamlit as st
 import pandas as pd
-from utils import VendingMachineAPI, init_session_state, API_BASE_URL
+from utils import init_session_state, VendingMachineAPI, API_BASE_URL
+from datetime import datetime
+from logger_config import auth_logger, ui_logger, system_logger
 from pages import (
     dashboard_page,
     machine_status_page, 
@@ -9,17 +11,10 @@ from pages import (
     sales_analytics_page
 )
 
-# 設定頁面配置
-st.set_page_config(
-    page_title="智慧販賣機後台管理系統",
-    page_icon="🏪",
-    layout="wide",
-    initial_sidebar_state="expanded"
-)
-
-def login_page():
-    """登入頁面"""
-    st.title("🏪 智慧販賣機後台管理系統")
+def show_main_app():
+    """顯示主應用程式"""
+    ui_logger.debug(f"Showing main app for user: {st.session_state.get('username', 'Unknown')}")
+    st.title("🏪 智慧販賣機管理系統")
     st.markdown("---")
     
     # 頁籤選擇：登入或註冊
@@ -49,17 +44,15 @@ def login_form():
                     result = st.session_state.api.login(username, password)
                     if result:
                         st.session_state.logged_in = True
-                        st.session_state.token = result["access_token"]
-                        st.session_state.username = username
-                        st.session_state.user_info = result.get("user_info", {})
+                        st.session_state.token = result['access_token']
+                        st.session_state.username = result['user_info'].get('username', '')
+                        st.session_state.user_info = result['user_info']
+                        st.session_state.is_admin = result['user_info'].get('is_admin', False)
                         
-                        # 正確提取管理員狀態
-                        user_info = result.get("user_info", {})
-                        st.session_state.is_admin = user_info.get("is_admin", False)
-                        
-                        # 調試：檢查管理員狀態
-                        print(f"API Debug - Token received, User Info: {user_info.get('id', 'N/A')}, is_admin: {user_info.get('is_admin', False)}")
-                        print(f"Login Debug - Username: {username}, is_admin: {user_info.get('is_admin', False)}")
+                        system_logger.info(f"Session state updated for user: {st.session_state.username}, admin: {st.session_state.is_admin}")
+                        user_info = result['user_info']
+                        auth_logger.info(f"UI Login successful - User ID: {user_info.get('id', 'N/A')}, Username: {user_info.get('username', 'Unknown')}, is_admin: {user_info.get('is_admin', False)}")
+                        ui_logger.debug(f"Login result: {result}")
                         
                         st.session_state.api = VendingMachineAPI(API_BASE_URL, result["access_token"])
                         
@@ -71,13 +64,13 @@ def login_form():
                         
                         st.rerun()
                     else:
-                        st.error("登入失敗，請檢查帳號密碼")
+                        auth_logger.warning(f"Login failed for username: {username}")
+                        st.error("❌ 登入失敗，請檢查帳號密碼")
                 else:
                     st.warning("請輸入使用者名稱和密碼")
         
         st.info("💡 預設測試帳號:")
         st.code("管理員: testadmin / testpassword")
-        st.code("一般用戶: testuser / testpassword")
 
 
 def register_form():
@@ -116,44 +109,44 @@ def register_form():
                 else:
                     # 呼叫註冊 API
                     is_admin = user_type == "管理員"
-                    result = st.session_state.api.register(
-                        username=username,
-                        email=email,
-                        password=password,
-                        full_name=full_name,
-                        is_admin=is_admin
-                    )
-                    
-                    if result:
-                        st.success("註冊成功！請使用新帳號登入")
-                        st.balloons()
-                        # 清空表單（透過重新運行）
-                        st.rerun()
+                    if st.session_state.api.register(username, email, password, full_name, is_admin):
+                        auth_logger.info(f"Registration successful via UI - Username: {username}, is_admin: {is_admin}")
+                        st.success(f"✅ 註冊成功！{'管理員' if is_admin else '使用者'} {username} 已建立")
                     else:
-                        st.error("註冊失敗，使用者名稱或電子郵件可能已存在")
-        
-        st.info("💡 註冊後請切換到登入頁籤使用新帳號登入")
+                        auth_logger.warning(f"Registration failed via UI - Username: {username}")
+                        st.error("❌ 註冊失敗，請稍後再試")
+    
+    st.info("💡 註冊後請切換到登入頁籤使用新帳號登入")
+
 
 def logout():
     """登出功能"""
+    username = st.session_state.get('username', 'Unknown')
+    auth_logger.info(f"User logout: {username}")
+    
     st.session_state.logged_in = False
     st.session_state.token = None
     st.session_state.username = None
     st.session_state.user_info = {}
     st.session_state.is_admin = False
-    st.session_state.api = VendingMachineAPI(API_BASE_URL)
+    
+    system_logger.info("Session state cleared on logout")
     st.rerun()
 
 
-def user_management_page():
-    """使用者管理頁面（僅管理員可用）"""
-    st.title("👥 使用者管理")
+def show_user_management():
+    """使用者管理頁面（僅管理員可見）"""
+    ui_logger.info(f"Admin {st.session_state.get('username', 'Unknown')} accessing user management")
+    st.header("👥 使用者管理")
     st.markdown("---")
     
     # 使用者列表
     st.subheader("📋 使用者列表")
+    # 獲取使用者列表
+    api = st.session_state.api
+    users = api.get_users()
     
-    users = st.session_state.api.get_users()
+    ui_logger.debug(f"Retrieved {len(users)} users for management display")
     if users:
         # 建立使用者資料表
         user_data = []
@@ -194,56 +187,47 @@ def user_management_page():
     
     with col1:
         if st.button("建立測試管理員", use_container_width=True):
-            result = st.session_state.api.register(
-                username="testadmin",
-                email="testadmin@example.com",
-                password="testpassword",
-                full_name="Test Admin",
-                is_admin=True
-            )
-            if result:
-                st.success("✅ 測試管理員建立成功")
+            ui_logger.info("Admin attempting to create test admin user")
+            if st.session_state.api.register("testadmin", "testadmin@example.com", "testpassword", "Test Admin", True):
+                auth_logger.info("Test admin user created successfully via UI")
+                st.success("✅ 測試管理員建立成功！")
                 st.rerun()
             else:
+                auth_logger.warning("Failed to create test admin user via UI")
                 st.error("❌ 建立失敗，可能已存在")
     
     with col2:
-        if st.button("建立測試使用者", use_container_width=True):
-            result = st.session_state.api.register(
-                username="testuser",
-                email="testuser@example.com",
-                password="testpassword",
-                full_name="Test User",
-                is_admin=False
-            )
-            if result:
-                st.success("✅ 測試使用者建立成功")
+        if st.button("👤 建立測試使用者", key="create_user"):
+            ui_logger.info("Admin attempting to create test regular user")
+            if st.session_state.api.register("testuser2", "testuser2@example.com", "testpassword", "Test User 2", False):
+                auth_logger.info("Test regular user created successfully via UI")
+                st.success("✅ 測試使用者建立成功！")
                 st.rerun()
             else:
-                st.error("❌ 建立失敗，可能已存在")
-    
-    st.info("💡 測試帳號密碼都是: testpassword")
-
+                auth_logger.warning("Failed to create test regular user via UI")
+                st.error("❌ 建立失敗")
 
 
 def main():
-    """主程式"""
+    # 初始化 session state
     init_session_state()
+    ui_logger.debug("Session state initialized in main")
     
     # 檢查登入狀態
     if not st.session_state.logged_in:
-        login_page()
+        show_main_app()
         return
     
-    # 側邊欄
+    # 側邊欄 - 使用者資訊和導航
     with st.sidebar:
-        st.title("🏪 智慧販賣機")
+        st.markdown("---")
         
         # 使用者資訊
         user_info = st.session_state.get('user_info', {})
+        username = user_info.get('username', st.session_state.get('username', 'Unknown'))
         is_admin = st.session_state.get('is_admin', False)
         
-        st.write(f"歡迎, {st.session_state.username}")
+        ui_logger.debug(f"Sidebar - User: {username}, Admin: {is_admin}")
         
         # 顯示使用者角色
         if is_admin:
@@ -262,73 +246,64 @@ def main():
         if st.button("🚪 登出"):
             logout()
         
-        st.markdown("---")
+        # 頁面導航
+        st.markdown("### 📋 功能選單")
         
-        # 導航選單 - 根據使用者權限顯示不同選項
+        # 基本功能（所有使用者）
+        pages = {
+            "📊 機台狀態": "machine_status",
+            "📈 銷售數據": "sales_data",
+            "🛒 商品管理": "inventory",
+            "⚙️ 系統設定": "settings"
+        }
+        
+        ui_logger.debug(f"Available pages for user {username}: {list(pages.keys())}")
+        
+        # 管理員專用功能
         if is_admin:
-            # 管理員可以看到所有頁面
-            page_options = [
-                "📊 營運儀表板",
-                "🖥️ 機台狀態監控",
-                "🍽️ 菜單管理",
-                "⚙️ 配方設定",
-                "📈 銷售分析",
-                "👥 使用者管理"
-            ]
-        else:
-            # 一般使用者只能看到部分頁面
-            page_options = [
-                "📊 營運儀表板",
-                "🖥️ 機台狀態監控",
-                "📈 銷售分析"
-            ]
+            pages["👥 使用者管理"] = "user_management"
+            ui_logger.debug(f"Admin pages added for user {username}")
         
-        page = st.selectbox("選擇頁面", page_options)
+        # 選擇頁面
+        selected_page = st.selectbox("選擇功能", list(pages.keys()))
+        page_key = pages[selected_page]
         
-        st.markdown("---")
-        st.markdown("### 🔧 系統資訊")
+        ui_logger.info(f"User {username} selected page: {selected_page} ({page_key})")
         
-        # 檢查系統狀態
-        try:
-            import requests
-            response = requests.get(f"{API_BASE_URL.replace('/api/v1', '')}/health", timeout=5)
-            if response.status_code == 200:
-                st.success("🟢 API 服務正常")
-            else:
-                st.warning("🟡 API 服務異常")
-        except:
-            st.error("🔴 API 服務離線")
+        # API 連接狀態
+        api_connected = check_api_connection()
+        api_status = "🟢 正常" if api_connected else "🔴 離線"
+        st.write(f"**API 連接狀態:** {api_status}")
         
-        st.info(f"API: {API_BASE_URL}")
-        st.info(f"版本: v1.0.0")
+        system_logger.info(f"API connection status: {'Connected' if api_connected else 'Offline'}")
         
-        # 顯示離線模式提示
-        if "offline" in st.session_state.get('token', ''):
-            st.warning("⚠️ 離線模式運行")
-            st.caption("部分功能可能受限")
-    
-    # 主要內容區域
-    if page == "📊 營運儀表板":
-        dashboard_page()
-    elif page == "🖥️ 機台狀態監控":
-        machine_status_page()
-    elif page == "🍽️ 菜單管理":
-        if is_admin:
+        # 顯示頁面內容
+        if page_key == "machine_status":
+            machine_status_page()
+        elif page_key == "sales_data":
+            sales_analytics_page()
+        elif page_key == "inventory":
             menu_management_page()
-        else:
-            st.error("❌ 權限不足：此功能僅限管理員使用")
-    elif page == "⚙️ 配方設定":
-        if is_admin:
+        elif page_key == "settings":
             recipe_settings_page()
-        else:
-            st.error("❌ 權限不足：此功能僅限管理員使用")
-    elif page == "📈 銷售分析":
-        sales_analytics_page()
-    elif page == "👥 使用者管理":
-        if is_admin:
-            user_management_page()
-        else:
-            st.error("❌ 權限不足：此功能僅限管理員使用")
+        elif page_key == "user_management":
+            show_user_management()
+
+
+def check_api_connection() -> bool:
+    """檢查 API 連接狀態"""
+    try:
+        import requests
+        response = requests.get("http://127.0.0.1:8000/api/v1/", timeout=5)
+        is_connected = response.status_code == 200
+        system_logger.debug(f"API connection check: {'Success' if is_connected else 'Failed'} (status: {response.status_code})")
+        return is_connected
+    except Exception as e:
+        system_logger.warning(f"API connection check failed: {str(e)}")
+        return False
+
 
 if __name__ == "__main__":
+    system_logger.info("Application starting...")
     main()
+    system_logger.info("Application session ended")

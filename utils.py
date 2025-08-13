@@ -5,6 +5,7 @@ import requests
 import json
 from datetime import datetime, timedelta
 from typing import Dict, List, Optional
+from logger_config import api_logger, auth_logger, system_logger
 
 # API 配置
 API_BASE_URL = "http://127.0.0.1:8000/api/v1"
@@ -22,9 +23,11 @@ class VendingMachineAPI:
         self.base_url = base_url
         self.token = token
         self.headers = {"Authorization": f"Bearer {token}"} if token else {}
+        api_logger.info(f"VendingMachineAPI initialized with base_url: {base_url}, has_token: {bool(token)}")
     
     def login(self, username: str, password: str) -> Dict:
         """使用者登入"""
+        auth_logger.info(f"Login attempt for username: {username}")
         try:
             # 準備登入資料
             login_data = {
@@ -33,12 +36,14 @@ class VendingMachineAPI:
             }
             
             # 發送登入請求
+            auth_logger.debug(f"Sending login request to {self.base_url}/users/token")
             response = requests.post(
                 f"{self.base_url}/users/token",
                 data=login_data,
                 headers={"Content-Type": "application/x-www-form-urlencoded"},
                 timeout=10
             )
+            auth_logger.debug(f"Login API response status: {response.status_code}")
             
             if response.status_code == 200:
                 token_data = response.json()
@@ -46,8 +51,9 @@ class VendingMachineAPI:
                 # 獲取使用者資訊，傳遞 username 以便離線模式使用
                 user_info = self.get_current_user(token_data["access_token"], username)
                 
-                # 調試：檢查 API 返回的資料
-                print(f"API Debug - Token received, User Info: {user_info.get('username', 'Unknown')}, is_admin: {user_info.get('is_admin', False)}")
+                # 記錄登入成功資訊
+                auth_logger.info(f"Login successful - User: {user_info.get('username', 'Unknown')}, is_admin: {user_info.get('is_admin', False)}, user_id: {user_info.get('id', 'N/A')}")
+                auth_logger.debug(f"Token received, full user info: {user_info}")
                 
                 return {
                     "access_token": token_data["access_token"],
@@ -56,23 +62,28 @@ class VendingMachineAPI:
                 }
             elif response.status_code == 500:
                 # 伺服器內部錯誤，可能是資料庫問題
+                auth_logger.warning(f"Server error (500) during login for {username}, falling back to offline mode")
                 import streamlit as st
                 st.error("⚠️ 伺服器資料庫未初始化，使用離線模式")
                 # 回退到離線模式
                 return self._offline_login(username, password)
             else:
+                auth_logger.warning(f"Login failed for {username} - Status code: {response.status_code}")
                 return None
                 
         except requests.exceptions.RequestException as e:
             # 網路連接錯誤，使用離線模式
+            auth_logger.error(f"Network error during login for {username}: {str(e)}")
             import streamlit as st
             st.warning(f"🌐 無法連接到 API 伺服器，使用離線模式: {str(e)}")
             return self._offline_login(username, password)
     
     def _offline_login(self, username: str, password: str) -> Dict:
         """離線模式登入"""
+        auth_logger.info(f"Attempting offline login for username: {username}")
         # 預設測試帳號
         if username in ["testadmin", "admin"] and password in ["testpassword", "admin123"]:
+            auth_logger.info(f"Offline admin login successful for {username}")
             return {
                 "access_token": "offline_admin_token",
                 "token_type": "bearer",
@@ -87,6 +98,7 @@ class VendingMachineAPI:
                 }
             }
         elif username == "testuser" and password == "testpassword":
+            auth_logger.info(f"Offline user login successful for {username}")
             return {
                 "access_token": "offline_user_token",
                 "token_type": "bearer",
@@ -100,10 +112,12 @@ class VendingMachineAPI:
                     "created_at": datetime.now().isoformat()
                 }
             }
+        auth_logger.warning(f"Offline login failed for {username} - invalid credentials")
         return None
     
     def get_machines(self) -> List[Dict]:
         """獲取機台列表 - 假資料"""
+        api_logger.debug("Fetching machine list (mock data)")
         return [
             {
                 "id": 1,
@@ -194,6 +208,7 @@ class VendingMachineAPI:
     
     def register(self, username: str, email: str, password: str, full_name: str, is_admin: bool = False) -> bool:
         """使用者註冊"""
+        auth_logger.info(f"Registration attempt for username: {username}, email: {email}, is_admin: {is_admin}")
         try:
             # 準備註冊資料
             user_data = {
@@ -206,31 +221,38 @@ class VendingMachineAPI:
             }
             
             # 發送註冊請求
+            auth_logger.debug(f"Sending registration request to {self.base_url}/users/")
             response = requests.post(
                 f"{self.base_url}/users/",
                 json=user_data,
                 headers={"Content-Type": "application/json"},
                 timeout=10
             )
+            auth_logger.debug(f"Registration API response status: {response.status_code}")
             
             if response.status_code == 200:
+                auth_logger.info(f"Registration successful for username: {username}")
                 return True
             elif response.status_code == 500:
                 # 伺服器內部錯誤
+                auth_logger.error(f"Server error (500) during registration for {username}")
                 import streamlit as st
                 st.error("⚠️ 伺服器資料庫未初始化，無法註冊新使用者")
                 return False
             else:
+                auth_logger.warning(f"Registration failed for {username} - Status code: {response.status_code}")
                 return False
             
         except requests.exceptions.RequestException as e:
             # 網路連接錯誤
+            auth_logger.error(f"Network error during registration for {username}: {str(e)}")
             import streamlit as st
             st.warning(f"🌐 無法連接到 API 伺服器，註冊功能暫時不可用: {str(e)}")
             return False
     
     def get_current_user(self, token: str, username: str = None) -> Dict:
         """獲取當前使用者資訊"""
+        api_logger.debug(f"Getting current user info for username: {username}")
         try:
             headers = {"Authorization": f"Bearer {token}"}
             response = requests.get(
@@ -249,13 +271,16 @@ class VendingMachineAPI:
                     return self._get_offline_user_info(token)
             elif response.status_code == 500:
                 # 伺服器內部錯誤，使用離線資料
+                api_logger.warning(f"Server error (500) getting user info, falling back to offline mode")
                 return self._get_offline_user_info(token, username)
             else:
                 # 其他錯誤，使用離線資料
+                api_logger.warning(f"API error getting user info (status: {response.status_code}), falling back to offline mode")
                 return self._get_offline_user_info(token, username)
                 
-        except requests.exceptions.RequestException:
+        except requests.exceptions.RequestException as e:
             # 網路連接錯誤，使用離線資料
+            api_logger.error(f"Network error getting user info: {str(e)}")
             return self._get_offline_user_info(token, username)
     
     def _get_offline_user_info(self, token: str, username: str = None) -> Dict:
@@ -265,7 +290,7 @@ class VendingMachineAPI:
         if not username:
             username = st.session_state.get('username', '')
         
-        print(f"Offline Debug - Passed username: {username}, Token: {token[:20]}...")
+        auth_logger.debug(f"Offline mode - username: {username}, token: {token[:20] if token else 'None'}...")
         
         # 根據用戶名判斷是否為管理員
         # 支援你資料庫中的管理員帳號：testadmin 和 admin
@@ -279,7 +304,8 @@ class VendingMachineAPI:
                 "is_admin": True,
                 "created_at": datetime.now().isoformat()
             }
-            print(f"Offline Debug - Returning ADMIN data: {user_data}")
+            auth_logger.info(f"Offline mode - returning admin data for {user_data['username']}")
+            auth_logger.debug(f"Admin user data: {user_data}")
             return user_data
         else:
             user_data = {
@@ -291,11 +317,13 @@ class VendingMachineAPI:
                 "is_admin": False,
                 "created_at": datetime.now().isoformat()
             }
-            print(f"Offline Debug - Returning USER data: {user_data}")
+            auth_logger.info(f"Offline mode - returning user data for {user_data['username']}")
+            auth_logger.debug(f"User data: {user_data}")
             return user_data
     
     def get_users(self) -> List[Dict]:
         """獲取所有使用者列表（僅管理員可用）"""
+        api_logger.debug("Fetching users list")
         try:
             response = requests.get(
                 f"{self.base_url}/users/",
@@ -304,21 +332,27 @@ class VendingMachineAPI:
             )
             
             if response.status_code == 200:
-                return response.json()
+                users_data = response.json()
+                api_logger.info(f"Successfully retrieved {len(users_data)} users from API")
+                return users_data
             elif response.status_code == 500:
                 # 伺服器內部錯誤，返回離線資料
+                api_logger.warning("Server error (500) getting users list, falling back to offline data")
                 import streamlit as st
                 st.warning("⚠️ 伺服器資料庫未初始化，顯示模擬資料")
                 return self._get_offline_users()
             else:
+                api_logger.warning(f"Failed to get users list - Status code: {response.status_code}")
                 return []
                 
-        except requests.exceptions.RequestException:
+        except requests.exceptions.RequestException as e:
             # 網路連接錯誤，返回模擬資料
+            api_logger.error(f"Network error getting users list: {str(e)}")
             return self._get_offline_users()
     
     def _get_offline_users(self) -> List[Dict]:
         """獲取離線模式使用者列表"""
+        api_logger.debug("Returning offline users data")
         return [
             {
                 "id": 1,
@@ -351,6 +385,7 @@ class VendingMachineAPI:
 
 def init_session_state():
     """初始化 session state"""
+    system_logger.debug("Initializing session state")
     if 'logged_in' not in st.session_state:
         st.session_state.logged_in = False
     if 'token' not in st.session_state:
@@ -363,3 +398,4 @@ def init_session_state():
         st.session_state.is_admin = False
     if 'api' not in st.session_state:
         st.session_state.api = VendingMachineAPI(API_BASE_URL)
+    system_logger.info("Session state initialized successfully")

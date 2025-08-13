@@ -1,8 +1,11 @@
 import streamlit as st
-import asyncio
-import json
-import random
+import pandas as pd
+import numpy as np
 from datetime import datetime, timedelta
+import time
+import random
+import json
+from logger_config import mqtt_logger, ui_logger, system_logger
 from typing import Optional, List, Dict
 
 # Import MQTT client (assuming it exists in the project)
@@ -14,24 +17,17 @@ except ImportError:
     initialize_mqtt_client = None
 
 def machine_status_page():
-    """機台狀態頁面"""
+    """機台狀態監控頁面"""
+    ui_logger.info(f"User {st.session_state.get('username', 'Unknown')} accessing machine status page")
     st.title("🖥️ 機台狀態監控")
+    st.markdown("---")
     
     # Mode toggle switch
     col1, col2 = st.columns([3, 1])
     with col2:
-        simulation_mode = st.toggle(
-            "模擬模式", 
-            value=st.session_state.get('simulation_mode', False),
-            help="開啟模擬模式使用假資料，關閉使用真實機台資料"
-        )
-        st.session_state.simulation_mode = simulation_mode
+        real_mode = st.toggle("🔴 真實機台模式", value=True, help="開啟後使用真實 API 和 MQTT 數據，關閉後使用模擬數據")
         
-        # Display current mode
-        if simulation_mode:
-            st.info("🎭 模擬模式")
-        else:
-            st.success("🏭 實機模式")
+    ui_logger.debug(f"Machine status page mode: {'Real' if real_mode else 'Simulation'}")
     
     # Initialize MQTT client if available
     if 'mqtt_client' not in st.session_state and MQTTClient:
@@ -62,19 +58,14 @@ def machine_status_page():
                 st.sidebar.error(f"MQTT operation failed: {e}")
     
     # Get machine data based on mode
-    if simulation_mode:
-        machines = get_mock_machines()
-        # Generate mock MQTT messages for simulation
-        generate_mock_mqtt_messages()
-        
-        # Add refresh button for simulation mode
-        if st.button("🔄 刷新模擬資料"):
-            # Clear cached mock data to generate new random data
-            if 'mock_machines_data' in st.session_state:
-                del st.session_state.mock_machines_data
-            st.rerun()
-    else:
+    if real_mode:
+        # 真實模式：從 API 獲取數據
         machines = st.session_state.api.get_machines()
+        system_logger.debug(f"Retrieved {len(machines)} machines from API")
+    else:
+        # 模擬模式：生成模擬數據
+        machines = generate_mock_machine_data()
+        system_logger.debug(f"Generated {len(machines)} mock machines")
     
     # 狀態總覽
     col1, col2, col3 = st.columns(3)
@@ -118,21 +109,37 @@ def machine_status_page():
             
             with col3:
                 # MQTT-enabled commands
-                if st.button(f"🔄 重啟機台", key=f"restart_{machine['id']}"):
-                    if send_mqtt_command(machine['machine_code'], "restart"):
-                        st.success(f"✅ 已透過MQTT發送重啟命令至 {machine['name']}")
+                if st.button(f"🔄 重啟機台 {machine['id']}", key=f"restart_{machine['id']}"):
+                    if real_mode and MQTTClient and 'mqtt_client' in st.session_state and st.session_state.mqtt_client:
+                        # 真實模式：發送 MQTT 命令
+                        try:
+                            st.session_state.mqtt_client.publish_command(machine['machine_code'], "restart")
+                            mqtt_logger.info(f"Restart command sent to machine {machine['id']}")
+                            st.success(f"✅ 重啟命令已發送到機台 {machine['id']}")
+                        except Exception as e:
+                            mqtt_logger.error(f"Failed to send restart command to machine {machine['id']}: {str(e)}")
+                            st.error(f"❌ 發送命令失敗: {str(e)}")
                     else:
-                        # Fallback to API if MQTT not available
-                        st.success(f"已發送重啟命令至 {machine['name']}")
+                        # 模擬模式或 MQTT 不可用
+                        mqtt_logger.info(f"Simulated restart command for machine {machine['id']}")
+                        st.success(f"✅ 模擬重啟機台 {machine['id']}")
                 
-                if st.button(f"🔧 維護模式", key=f"maintenance_{machine['id']}"):
-                    if send_mqtt_command(machine['machine_code'], "set_maintenance_mode", {"enabled": True}):
-                        st.info(f"🔧 已透過MQTT設定 {machine['name']} 為維護模式")
+                if st.button(f"🔧 維護模式 {machine['id']}", key=f"maintenance_{machine['id']}"):
+                    if real_mode and MQTTClient and 'mqtt_client' in st.session_state and st.session_state.mqtt_client:
+                        # 真實模式：發送 MQTT 命令
+                        try:
+                            st.session_state.mqtt_client.publish_command(machine['machine_code'], "maintenance_mode")
+                            mqtt_logger.info(f"Maintenance mode command sent to machine {machine['id']}")
+                            st.success(f"✅ 維護模式命令已發送到機台 {machine['id']}")
+                        except Exception as e:
+                            mqtt_logger.error(f"Failed to send maintenance command to machine {machine['id']}: {str(e)}")
+                            st.error(f"❌ 發送命令失敗: {str(e)}")
                     else:
-                        # Fallback to API if MQTT not available
-                        st.info(f"{machine['name']} 已設為維護模式")
+                        # 模擬模式或 MQTT 不可用
+                        mqtt_logger.info(f"Simulated maintenance mode for machine {machine['id']}")
+                        st.success(f"✅ 模擬設定機台 {machine['id']} 為維護模式")
                 
-                if st.button(f"📊 更新狀態", key=f"status_{machine['id']}"):
+                if st.button(f"📊 更新狀態 {machine['id']}", key=f"status_{machine['id']}"):
                     if send_mqtt_command(machine['machine_code'], "get_status"):
                         st.info(f"📊 已透過MQTT請求 {machine['name']} 狀態更新")
                     else:
@@ -273,12 +280,10 @@ def setup_mqtt_callbacks():
         st.error(f"設置 MQTT 回調失敗: {e}")
 
 
-def get_mock_machines() -> List[Dict]:
-    """生成模擬機台資料
-    
-    Returns:
-        List[Dict]: 模擬機台資料列表
-    """
+def generate_mock_machine_data():
+    """生成模擬機台數據"""
+    system_logger.debug("Generating mock machine data")
+    mock_machines = []   
     # 固定的模擬機台資料，確保每次刷新都一致（除非特意更新）
     if 'mock_machines_data' not in st.session_state:
         mock_machines = [
@@ -347,8 +352,10 @@ def get_mock_machines() -> List[Dict]:
     return st.session_state.mock_machines_data
 
 
-def generate_mock_mqtt_messages() -> None:
-    """生成模擬 MQTT 訊息用於測試"""
+def generate_mock_mqtt_messages():
+    """生成模擬 MQTT 消息"""
+    mqtt_logger.debug("Generating mock MQTT messages")
+    messages = []
     if not st.session_state.get('simulation_mode', False):
         return
     
