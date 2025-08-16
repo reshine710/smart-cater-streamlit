@@ -277,26 +277,31 @@ def main():
         
         system_logger.info(f"API connection status: {'Connected' if api_connected else 'Offline'}")
         
-        # 顯示頁面內容
-        if page_key == "machine_status":
-            machine_status_page()
-        elif page_key == "sales_data":
-            sales_analytics_page()
-        elif page_key == "inventory":
-            menu_management_page()
-        elif page_key == "settings":
-            recipe_settings_page()
-        elif page_key == "user_management":
-            show_user_management()
+    # 顯示頁面內容
+    if page_key == "machine_status":
+        machine_status_page()
+    elif page_key == "sales_data":
+        sales_analytics_page()
+    elif page_key == "inventory":
+        menu_management_page()
+    elif page_key == "settings":
+        recipe_settings_page()
+    elif page_key == "user_management":
+        show_user_management()
 
 
 def check_api_connection() -> bool:
     """檢查 API 連接狀態"""
     try:
         import requests
-        response = requests.get("http://127.0.0.1:8000/api/v1/", timeout=5)
+        # 使用健康檢查端點
+        response = requests.get("http://127.0.0.1:8000/health", timeout=5)
         is_connected = response.status_code == 200
-        system_logger.debug(f"API connection check: {'Success' if is_connected else 'Failed'} (status: {response.status_code})")
+        if is_connected:
+            health_data = response.json()
+            system_logger.info(f"API connection successful - Status: {health_data.get('status', 'unknown')}, Version: {health_data.get('version', 'unknown')}")
+        else:
+            system_logger.warning(f"API connection check failed - Status: {response.status_code}")
         return is_connected
     except Exception as e:
         system_logger.warning(f"API connection check failed: {str(e)}")

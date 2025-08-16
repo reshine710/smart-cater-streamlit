@@ -22,8 +22,20 @@ class VendingMachineAPI:
     def __init__(self, base_url: str, token: str = None):
         self.base_url = base_url
         self.token = token
-        self.headers = {"Authorization": f"Bearer {token}"} if token else {}
+        self.headers = {
+            "Content-Type": "application/json"
+        }
+        if token:
+            self.headers["Authorization"] = f"Bearer {token}"
+        
         api_logger.info(f"VendingMachineAPI initialized with base_url: {base_url}, has_token: {bool(token)}")
+    
+    def _get_auth_headers(self) -> Dict[str, str]:
+        """獲取認證標頭"""
+        headers = {"Content-Type": "application/json"}
+        if self.token:
+            headers["Authorization"] = f"Bearer {self.token}"
+        return headers
     
     def login(self, username: str, password: str) -> Dict:
         """使用者登入"""
@@ -149,47 +161,276 @@ class VendingMachineAPI:
         ]
     
     def get_menu_items(self) -> List[Dict]:
-        """獲取菜單項目 - 假資料"""
+        """獲取菜單項目列表"""
+        api_logger.info("Fetching menu items from API")
+        try:
+            response = requests.get(
+                f"{self.base_url}/menu-items",
+                headers=self._get_auth_headers(),
+                timeout=10
+            )
+            if response.status_code == 200:
+                data = response.json()
+                items = data.get('items', [])
+                api_logger.info(f"Successfully fetched {len(items)} menu items")
+                # 確保每個項目都有必要的字段
+                for item in items:
+                    if 'heating_params' not in item:
+                        item['heating_params'] = None
+                    if 'heating_time' not in item:
+                        # 從 heating_params 中提取或設置默認值
+                        item['heating_time'] = self._extract_heating_time(item.get('heating_params'))
+                return items
+            else:
+                api_logger.error(f"Failed to fetch menu items: {response.status_code} - {response.text}")
+                return self._get_offline_menu_items()
+        except Exception as e:
+            api_logger.error(f"Error fetching menu items: {str(e)}")
+            return self._get_offline_menu_items()
+    
+    def _extract_heating_time(self, heating_params) -> int:
+        """從 heating_params 中提取加熱時間"""
+        if not heating_params:
+            return 0
+        if isinstance(heating_params, dict):
+            return heating_params.get('time_seconds', 0)
+        return 0
+    
+    def _get_offline_menu_items(self) -> List[Dict]:
+        """獲取離線菜單項目數據"""
+        api_logger.info("Using offline menu items data")
         return [
             {
                 "id": 1,
-                "name": "黑咖啡",
-                "price": 50.0,
-                "category": "飲品",
-                "cooking_method": "蒸氣",
+                "name": "經典牛肉漢堡",
+                "description": "新鮮牛肉配生菜番茄",
+                "price": 120.0,
+                "image_url": "https://example.com/burger.jpg",
+                "heating_method": "microwave",
+                "heating_params": {"time_seconds": 90, "power_percent": 80},
+                "heating_time": 90,
                 "is_active": True,
-                "image_url": "https://example.com/coffee.jpg"
+                "created_at": "2025-08-13T14:00:00",
+                "updated_at": "2025-08-13T14:00:00",
+                "tags": [{"id": 1, "name": "熱門"}, {"id": 2, "name": "肉類"}]
             },
             {
                 "id": 2,
-                "name": "拿鐵咖啡",
-                "price": 75.0,
-                "category": "飲品",
-                "cooking_method": "蒸氣",
+                "name": "蒸蛋羹",
+                "description": "嫩滑蒸蛋配香蔥",
+                "price": 80.0,
+                "image_url": "https://example.com/egg.jpg",
+                "heating_method": "steam",
+                "heating_params": {"time_seconds": 120, "temperature": 100, "pressure_bar": 1.5},
+                "heating_time": 120,
                 "is_active": True,
-                "image_url": "https://example.com/latte.jpg"
+                "created_at": "2025-08-13T14:00:00",
+                "updated_at": "2025-08-13T14:00:00",
+                "tags": [{"id": 3, "name": "健康"}, {"id": 4, "name": "蛋類"}]
             },
             {
                 "id": 3,
-                "name": "雞肉便當",
-                "price": 120.0,
-                "category": "主食",
-                "cooking_method": "微波",
+                "name": "涼拌沙拉",
+                "description": "新鮮蔬菜沙拉",
+                "price": 60.0,
+                "image_url": "https://example.com/salad.jpg",
+                "heating_method": "none",
+                "heating_params": None,
+                "heating_time": 0,
                 "is_active": True,
-                "image_url": "https://example.com/chicken.jpg"
-            },
-            {
-                "id": 4,
-                "name": "牛肉麵",
-                "price": 150.0,
-                "category": "主食",
-                "cooking_method": "蒸氣",
-                "is_active": False,
-                "image_url": "https://example.com/beef.jpg"
+                "created_at": "2025-08-13T14:00:00",
+                "updated_at": "2025-08-13T14:00:00",
+                "tags": [{"id": 3, "name": "健康"}, {"id": 5, "name": "素食"}]
             }
         ]
     
-    def get_sales_data(self, start_date: str, end_date: str) -> List[Dict]:
+    def create_menu_item(self, item_data: Dict) -> Dict:
+        """建立新菜單項目"""
+        api_logger.info(f"Creating menu item: {item_data.get('name', 'Unknown')}")
+        try:
+            response = requests.post(
+                f"{self.base_url}/menu-items",
+                json=item_data,
+                headers=self._get_auth_headers(),
+                timeout=10
+            )
+            api_logger.debug(f"Create menu item API response status: {response.status_code}")
+            
+            if response.status_code == 200:
+                api_logger.info(f"Menu item created successfully: {item_data.get('name')}")
+                return response.json()
+            elif response.status_code == 500:
+                api_logger.error(f"Server error (500) creating menu item: {item_data.get('name')}")
+                import streamlit as st
+                st.error("⚠️ 伺服器資料庫未初始化，無法創建菜單項目")
+                return None
+            else:
+                api_logger.warning(f"Failed to create menu item - Status code: {response.status_code}")
+                return None
+                
+        except requests.exceptions.RequestException as e:
+            api_logger.error(f"Network error creating menu item: {str(e)}")
+            import streamlit as st
+            st.warning(f"🌐 無法連接到 API 伺服器，創建功能暫時不可用: {str(e)}")
+            return None
+    
+    def update_menu_item(self, item_id: int, item_data: Dict) -> Dict:
+        """更新菜單項目"""
+        api_logger.info(f"Updating menu item {item_id}")
+        try:
+            response = requests.put(
+                f"{self.base_url}/menu-items/{item_id}",
+                json=item_data,
+                headers=self._get_auth_headers(),
+                timeout=10
+            )
+            api_logger.debug(f"Update menu item API response status: {response.status_code}")
+            
+            if response.status_code == 200:
+                api_logger.info(f"Menu item updated successfully: ID {item_id}")
+                return response.json()
+            elif response.status_code == 500:
+                api_logger.error(f"Server error (500) updating menu item ID: {item_id}")
+                import streamlit as st
+                st.error("⚠️ 伺服器資料庫未初始化，無法更新菜單項目")
+                return None
+            else:
+                api_logger.warning(f"Failed to update menu item - Status code: {response.status_code}")
+                return None
+                
+        except requests.exceptions.RequestException as e:
+            api_logger.error(f"Network error updating menu item: {str(e)}")
+            import streamlit as st
+            st.warning(f"🌐 無法連接到 API 伺服器，更新功能暫時不可用: {str(e)}")
+            return None
+    
+    def activate_menu_item(self, item_id: int) -> Dict:
+        """啟用菜單項目"""
+        api_logger.info(f"Activating menu item {item_id}")
+        try:
+            response = requests.post(
+                f"{self.base_url}/menu-items/{item_id}/activate",
+                headers=self._get_auth_headers(),
+                timeout=10
+            )
+            api_logger.debug(f"Activate menu item API response status: {response.status_code}")
+            
+            if response.status_code == 200:
+                api_logger.info(f"Menu item activated successfully: ID {item_id}")
+                return response.json()
+            elif response.status_code == 500:
+                api_logger.error(f"Server error (500) activating menu item ID: {item_id}")
+                import streamlit as st
+                st.error("⚠️ 伺服器資料庫未初始化，無法啟用菜單項目")
+                return None
+            else:
+                api_logger.warning(f"Failed to activate menu item - Status code: {response.status_code}")
+                return None
+                
+        except requests.exceptions.RequestException as e:
+            api_logger.error(f"Network error activating menu item: {str(e)}")
+            import streamlit as st
+            st.warning(f"🌐 無法連接到 API 伺服器，啟用功能暫時不可用: {str(e)}")
+            return None
+    
+    def deactivate_menu_item(self, item_id: int) -> Dict:
+        """停用菜單項目"""
+        api_logger.info(f"Deactivating menu item {item_id}")
+        try:
+            response = requests.post(
+                f"{self.base_url}/menu-items/{item_id}/deactivate",
+                headers=self._get_auth_headers(),
+                timeout=10
+            )
+            api_logger.debug(f"Deactivate menu item API response status: {response.status_code}")
+            
+            if response.status_code == 200:
+                api_logger.info(f"Menu item deactivated successfully: ID {item_id}")
+                return response.json()
+            elif response.status_code == 500:
+                api_logger.error(f"Server error (500) deactivating menu item ID: {item_id}")
+                import streamlit as st
+                st.error("⚠️ 伺服器資料庫未初始化，無法停用菜單項目")
+                return None
+            else:
+                api_logger.warning(f"Failed to deactivate menu item - Status code: {response.status_code}")
+                return None
+                
+        except requests.exceptions.RequestException as e:
+            api_logger.error(f"Network error deactivating menu item: {str(e)}")
+            import streamlit as st
+            st.warning(f"🌐 無法連接到 API 伺服器，停用功能暫時不可用: {str(e)}")
+            return None
+    
+    def update_menu_item_tags(self, item_id: int, tags: List[str]) -> Dict:
+        """更新菜單項目標籤"""
+        api_logger.info(f"Updating tags for menu item {item_id}: {tags}")
+        try:
+            response = requests.post(
+                f"{self.base_url}/menu-items/{item_id}/tags",
+                json={"tags": tags},
+                headers=self._get_auth_headers(),
+                timeout=10
+            )
+            api_logger.debug(f"Update menu item tags API response status: {response.status_code}")
+            
+            if response.status_code == 200:
+                api_logger.info(f"Menu item tags updated successfully: ID {item_id}")
+                return response.json()
+            elif response.status_code == 500:
+                api_logger.error(f"Server error (500) updating menu item tags ID: {item_id}")
+                import streamlit as st
+                st.error("⚠️ 伺服器資料庫未初始化，無法更新標籤")
+                return None
+            else:
+                api_logger.warning(f"Failed to update menu item tags - Status code: {response.status_code}")
+                return None
+                
+        except requests.exceptions.RequestException as e:
+            api_logger.error(f"Network error updating menu item tags: {str(e)}")
+            import streamlit as st
+            st.warning(f"🌐 無法連接到 API 伺服器，標籤更新功能暫時不可用: {str(e)}")
+            return None
+    
+    def get_menu_item_detail(self, item_id: int) -> Dict:
+        """獲取菜單項目詳細資訊"""
+        api_logger.info(f"Fetching menu item detail for ID: {item_id}")
+        try:
+            response = requests.get(
+                f"{self.base_url}/menu-items/{item_id}",
+                headers=self._get_auth_headers(),
+                timeout=10
+            )
+            
+            if response.status_code == 200:
+                item_data = response.json()
+                api_logger.info(f"Menu item detail fetched successfully: ID {item_id}")
+                return item_data
+            elif response.status_code == 404:
+                api_logger.warning(f"Menu item not found: ID {item_id}")
+                return None
+            elif response.status_code == 500:
+                api_logger.warning(f"Server error (500) getting menu item detail, falling back to offline data")
+                # 從離線數據中查找
+                offline_items = self._get_offline_menu_items()
+                for item in offline_items:
+                    if item['id'] == item_id:
+                        return item
+                return None
+            else:
+                api_logger.warning(f"Failed to get menu item detail - Status code: {response.status_code}")
+                return None
+                
+        except requests.exceptions.RequestException as e:
+            api_logger.error(f"Network error getting menu item detail: {str(e)}")
+            # 從離線數據中查找
+            offline_items = self._get_offline_menu_items()
+            for item in offline_items:
+                if item['id'] == item_id:
+                    return item
+            return None
+    
+    def get_sales_data(self) -> List[Dict]:
         """獲取銷售資料 - 假資料"""
         # 生成假的銷售資料
         sales_data = []
@@ -251,37 +492,10 @@ class VendingMachineAPI:
             return False
     
     def get_current_user(self, token: str, username: str = None) -> Dict:
-        """獲取當前使用者資訊"""
-        api_logger.debug(f"Getting current user info for username: {username}")
-        try:
-            headers = {"Authorization": f"Bearer {token}"}
-            response = requests.get(
-                f"{self.base_url}/users/me",
-                headers=headers,
-                timeout=10
-            )
-            
-            if response.status_code == 200:
-                user_data = response.json()
-                # 確保返回的資料不是空的
-                if user_data and isinstance(user_data, dict):
-                    return user_data
-                else:
-                    # API 返回空資料，使用離線模式
-                    return self._get_offline_user_info(token)
-            elif response.status_code == 500:
-                # 伺服器內部錯誤，使用離線資料
-                api_logger.warning(f"Server error (500) getting user info, falling back to offline mode")
-                return self._get_offline_user_info(token, username)
-            else:
-                # 其他錯誤，使用離線資料
-                api_logger.warning(f"API error getting user info (status: {response.status_code}), falling back to offline mode")
-                return self._get_offline_user_info(token, username)
-                
-        except requests.exceptions.RequestException as e:
-            # 網路連接錯誤，使用離線資料
-            api_logger.error(f"Network error getting user info: {str(e)}")
-            return self._get_offline_user_info(token, username)
+        """獲取當前使用者資訊 - 由於後台沒有 /users/me 端點，直接使用離線模式"""
+        api_logger.info(f"Getting current user info for username: {username} (using offline mode)")
+        # 後台 API 沒有 /users/me 端點，直接使用離線用戶資訊
+        return self._get_offline_user_info(token, username)
     
     def _get_offline_user_info(self, token: str, username: str = None) -> Dict:
         """獲取離線模式使用者資訊"""
@@ -327,7 +541,7 @@ class VendingMachineAPI:
         try:
             response = requests.get(
                 f"{self.base_url}/users/",
-                headers=self.headers,
+                headers=self._get_auth_headers(),
                 timeout=10
             )
             
