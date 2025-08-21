@@ -33,29 +33,76 @@ def machine_status_page():
     if 'mqtt_client' not in st.session_state and MQTTClient:
         try:
             st.session_state.mqtt_client = MQTTClient()
-            # Note: In a real Streamlit app, you'd want to handle async connection differently
-            # This is a simplified approach for demonstration
+            mqtt_logger.info("MQTT client initialized in Streamlit session")
         except Exception as e:
             st.error(f"Failed to initialize MQTT client: {e}")
+            mqtt_logger.error(f"Failed to initialize MQTT client: {e}")
             st.session_state.mqtt_client = None
     
-    # MQTT connection status
+    # MQTT connection status and controls
     if MQTTClient and 'mqtt_client' in st.session_state and st.session_state.mqtt_client:
-        mqtt_status = "🟢 Connected" if getattr(st.session_state.mqtt_client, '_connected', False) else "🔴 Disconnected"
-        st.sidebar.write(f"**MQTT Status**: {mqtt_status}")
+        mqtt_client = st.session_state.mqtt_client
         
-        if st.sidebar.button("Connect MQTT" if not getattr(st.session_state.mqtt_client, '_connected', False) else "Disconnect MQTT"):
-            try:
-                if not getattr(st.session_state.mqtt_client, '_connected', False):
-                    # In a real app, you'd handle this async properly
-                    st.sidebar.info("Connecting to MQTT...")
-                    # asyncio.run(st.session_state.mqtt_client.connect())
-                else:
-                    # asyncio.run(st.session_state.mqtt_client.disconnect())
-                    st.sidebar.info("Disconnecting from MQTT...")
-                st.rerun()
-            except Exception as e:
-                st.sidebar.error(f"MQTT operation failed: {e}")
+        # Get detailed connection status
+        status = mqtt_client.get_connection_status()
+        mqtt_connected = status.get('connected', False)
+        
+        # Display connection status
+        status_icon = "🟢" if mqtt_connected else "🔴"
+        status_text = "Connected" if mqtt_connected else "Disconnected"
+        st.sidebar.write(f"**MQTT Status**: {status_icon} {status_text}")
+        st.sidebar.write(f"**Broker**: {status.get('broker', 'Unknown')}:{status.get('port', 'Unknown')}")
+        
+        # Connection control buttons
+        col1, col2 = st.sidebar.columns(2)
+        
+        with col1:
+            if st.button("🔌 Connect" if not mqtt_connected else "🔌 Connected", 
+                        disabled=mqtt_connected, 
+                        key="mqtt_connect"):
+                try:
+                    import asyncio
+                    asyncio.run(mqtt_client.connect())
+                    st.success("MQTT connected successfully!")
+                    mqtt_logger.info("MQTT connection established from Streamlit")
+                    st.rerun()
+                except Exception as e:
+                    st.error(f"Connection failed: {e}")
+                    mqtt_logger.error(f"MQTT connection failed: {e}")
+        
+        with col2:
+            if st.button("🔌 Disconnect" if mqtt_connected else "🔌 Disconnected", 
+                        disabled=not mqtt_connected,
+                        key="mqtt_disconnect"):
+                try:
+                    import asyncio
+                    asyncio.run(mqtt_client.disconnect())
+                    st.info("MQTT disconnected")
+                    mqtt_logger.info("MQTT disconnected from Streamlit")
+                    st.rerun()
+                except Exception as e:
+                    st.error(f"Disconnection failed: {e}")
+                    mqtt_logger.error(f"MQTT disconnection failed: {e}")
+        
+        # Subscribe to machine topics if connected
+        if mqtt_connected and real_mode:
+            # Subscribe to all machine topics for real-time updates
+            machine_topics = [
+                "machine/+/heartbeat",
+                "machine/+/alert", 
+                "machine/+/inventory/update",
+                "machine/+/order/status"
+            ]
+            
+            for topic in machine_topics:
+                if topic not in mqtt_client.get_subscribed_topics():
+                    try:
+                        mqtt_client.subscribe(topic, lambda t, p: mqtt_logger.debug(f"Received: {t}"))
+                        mqtt_logger.info(f"Subscribed to {topic}")
+                    except Exception as e:
+                        mqtt_logger.error(f"Failed to subscribe to {topic}: {e}")
+    else:
+        st.sidebar.write("**MQTT Status**: ❌ Not Available")
     
     # Get machine data based on mode
     if real_mode:
@@ -109,41 +156,72 @@ def machine_status_page():
             
             with col3:
                 # MQTT-enabled commands
-                if st.button(f"🔄 重啟機台 {machine['id']}", key=f"restart_{machine['id']}"):
-                    if real_mode and MQTTClient and 'mqtt_client' in st.session_state and st.session_state.mqtt_client:
+                mqtt_client = st.session_state.get('mqtt_client')
+                mqtt_available = (real_mode and mqtt_client and 
+                                mqtt_client.get_connection_status().get('connected', False))
+                
+                if st.button(f"🔄 重啟機台 {machine['id']}", 
+                           key=f"restart_{machine['id']}",
+                           disabled=real_mode and not mqtt_available):
+                    if mqtt_available:
                         # 真實模式：發送 MQTT 命令
                         try:
-                            st.session_state.mqtt_client.publish_command(machine['machine_code'], "restart")
-                            mqtt_logger.info(f"Restart command sent to machine {machine['id']}")
-                            st.success(f"✅ 重啟命令已發送到機台 {machine['id']}")
+                            success = mqtt_client.publish_command(machine['machine_code'], "restart")
+                            if success:
+                                mqtt_logger.info(f"Restart command sent to machine {machine['machine_code']}")
+                                st.success(f"✅ 重啟命令已發送到機台 {machine['name']}")
+                            else:
+                                st.error(f"❌ 發送重啟命令失敗")
                         except Exception as e:
-                            mqtt_logger.error(f"Failed to send restart command to machine {machine['id']}: {str(e)}")
+                            mqtt_logger.error(f"Failed to send restart command to machine {machine['machine_code']}: {str(e)}")
                             st.error(f"❌ 發送命令失敗: {str(e)}")
                     else:
                         # 模擬模式或 MQTT 不可用
-                        mqtt_logger.info(f"Simulated restart command for machine {machine['id']}")
-                        st.success(f"✅ 模擬重啟機台 {machine['id']}")
+                        mqtt_logger.info(f"Simulated restart command for machine {machine['machine_code']}")
+                        st.success(f"✅ 模擬重啟機台 {machine['name']}")
                 
-                if st.button(f"🔧 維護模式 {machine['id']}", key=f"maintenance_{machine['id']}"):
-                    if real_mode and MQTTClient and 'mqtt_client' in st.session_state and st.session_state.mqtt_client:
+                if st.button(f"🔧 維護模式 {machine['id']}", 
+                           key=f"maintenance_{machine['id']}",
+                           disabled=real_mode and not mqtt_available):
+                    if mqtt_available:
                         # 真實模式：發送 MQTT 命令
                         try:
-                            st.session_state.mqtt_client.publish_command(machine['machine_code'], "maintenance_mode")
-                            mqtt_logger.info(f"Maintenance mode command sent to machine {machine['id']}")
-                            st.success(f"✅ 維護模式命令已發送到機台 {machine['id']}")
+                            success = mqtt_client.publish_command(machine['machine_code'], "maintenance_mode")
+                            if success:
+                                mqtt_logger.info(f"Maintenance mode command sent to machine {machine['machine_code']}")
+                                st.success(f"✅ 維護模式命令已發送到機台 {machine['name']}")
+                            else:
+                                st.error(f"❌ 發送維護模式命令失敗")
                         except Exception as e:
-                            mqtt_logger.error(f"Failed to send maintenance command to machine {machine['id']}: {str(e)}")
+                            mqtt_logger.error(f"Failed to send maintenance command to machine {machine['machine_code']}: {str(e)}")
                             st.error(f"❌ 發送命令失敗: {str(e)}")
                     else:
                         # 模擬模式或 MQTT 不可用
-                        mqtt_logger.info(f"Simulated maintenance mode for machine {machine['id']}")
-                        st.success(f"✅ 模擬設定機台 {machine['id']} 為維護模式")
+                        mqtt_logger.info(f"Simulated maintenance mode for machine {machine['machine_code']}")
+                        st.success(f"✅ 模擬設定機台 {machine['name']} 為維護模式")
                 
-                if st.button(f"📊 更新狀態 {machine['id']}", key=f"status_{machine['id']}"):
-                    if send_mqtt_command(machine['machine_code'], "get_status"):
-                        st.info(f"📊 已透過MQTT請求 {machine['name']} 狀態更新")
+                if st.button(f"📊 更新狀態 {machine['id']}", 
+                           key=f"status_{machine['id']}",
+                           disabled=real_mode and not mqtt_available):
+                    if mqtt_available:
+                        try:
+                            success = mqtt_client.publish_command(machine['machine_code'], "get_status")
+                            if success:
+                                mqtt_logger.info(f"Status update command sent to machine {machine['machine_code']}")
+                                st.info(f"📊 已透過MQTT請求 {machine['name']} 狀態更新")
+                            else:
+                                st.error(f"❌ 發送狀態更新命令失敗")
+                        except Exception as e:
+                            mqtt_logger.error(f"Failed to send status command to machine {machine['machine_code']}: {str(e)}")
+                            st.error(f"❌ 發送命令失敗: {str(e)}")
                     else:
-                        st.info(f"已請求 {machine['name']} 狀態更新")
+                        # 模擬模式
+                        mqtt_logger.info(f"Simulated status update for machine {machine['machine_code']}")
+                        st.info(f"📊 模擬請求 {machine['name']} 狀態更新")
+                
+                # 顯示MQTT連接狀態提示
+                if real_mode and not mqtt_available:
+                    st.caption("⚠️ 需要MQTT連接才能發送實際命令")
     
     # Real-time updates section
     st.markdown("---")
@@ -153,34 +231,85 @@ def machine_status_page():
     
     with col1:
         st.write("**MQTT 主題訂閱狀態**")
-        if MQTTClient and 'mqtt_client' in st.session_state and st.session_state.mqtt_client:
-            topics = [
+        mqtt_client = st.session_state.get('mqtt_client')
+        if mqtt_client and mqtt_client.get_connection_status().get('connected', False):
+            subscribed_topics = mqtt_client.get_subscribed_topics()
+            if subscribed_topics:
+                for topic in subscribed_topics:
+                    st.write(f"✅ {topic}")
+            else:
+                st.write("📡 已連接，但未訂閱任何主題")
+            
+            # 顯示建議的機台主題
+            st.write("**建議訂閱主題**")
+            suggested_topics = [
                 "machine/+/heartbeat",
                 "machine/+/alert", 
                 "machine/+/inventory/update",
                 "machine/+/order/status"
             ]
-            for topic in topics:
-                st.write(f"• {topic}")
+            for topic in suggested_topics:
+                if topic not in subscribed_topics:
+                    st.write(f"⚪ {topic}")
         else:
-            st.write("MQTT 客戶端未連接")
+            st.write("🔴 MQTT 客戶端未連接")
     
     with col2:
-        st.write("**最近 MQTT 訊息**")
+        st.write("**即時 MQTT 訊息**")
         if 'mqtt_messages' not in st.session_state:
             st.session_state.mqtt_messages = []
         
-        # Display recent messages (last 5)
-        recent_messages = st.session_state.mqtt_messages[-5:] if st.session_state.mqtt_messages else []
-        if recent_messages:
-            for msg in reversed(recent_messages):
-                st.text(f"{msg['timestamp']}: {msg['topic']} - {msg['summary']}")
-        else:
-            st.write("暫無訊息")
+        # 顯示訊息統計
+        total_messages = len(st.session_state.mqtt_messages)
+        st.caption(f"總計收到 {total_messages} 條訊息")
         
-        if st.button("清除訊息記錄"):
-            st.session_state.mqtt_messages = []
-            st.rerun()
+        # 顯示最近訊息 (最多10條)
+        recent_messages = st.session_state.mqtt_messages[-10:] if st.session_state.mqtt_messages else []
+        
+        if recent_messages:
+            # 創建一個容器來顯示訊息，最新的在上面
+            message_container = st.container()
+            with message_container:
+                for msg in reversed(recent_messages):
+                    # 根據主題類型設置不同的圖標
+                    topic_icons = {
+                        'heartbeat': '💓',
+                        'alert': '🚨',
+                        'inventory': '📦',
+                        'order': '🛒',
+                        'status': '📊'
+                    }
+                    
+                    # 找到合適的圖標
+                    icon = '📡'
+                    for key, emoji in topic_icons.items():
+                        if key in msg['topic']:
+                            icon = emoji
+                            break
+                    
+                    # 顯示訊息
+                    with st.expander(f"{icon} {msg['timestamp']} - {msg['summary']}", expanded=False):
+                        st.write(f"**主題**: `{msg['topic']}`")
+                        st.write(f"**時間**: {msg['timestamp']}")
+                        if isinstance(msg['payload'], dict):
+                            st.json(msg['payload'])
+                        else:
+                            st.code(str(msg['payload']))
+        else:
+            st.write("📭 暫無訊息")
+            if mqtt_client and mqtt_client.get_connection_status().get('connected', False):
+                st.caption("已連接MQTT，等待訊息...")
+        
+        # 控制按鈕
+        col_clear, col_refresh = st.columns(2)
+        with col_clear:
+            if st.button("🗑️ 清除記錄", key="clear_mqtt_messages"):
+                st.session_state.mqtt_messages = []
+                st.rerun()
+        
+        with col_refresh:
+            if st.button("🔄 刷新", key="refresh_mqtt_display"):
+                st.rerun()
 
 
 def send_mqtt_command(machine_code: str, command: str, parameters: Optional[dict] = None) -> bool:
