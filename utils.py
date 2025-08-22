@@ -128,8 +128,55 @@ class VendingMachineAPI:
         return None
     
     def get_machines(self) -> List[Dict]:
-        """獲取機台列表 - 假資料"""
-        api_logger.debug("Fetching machine list (mock data)")
+        """獲取機台列表"""
+        api_logger.debug("Fetching machine list from API")
+        try:
+            response = requests.get(
+                f"{self.base_url}/machines",
+                headers=self._get_auth_headers(),
+                timeout=10
+            )
+            
+            if response.status_code == 200:
+                response_data = response.json()
+                api_logger.debug(f"Raw API response: {response_data}")
+                
+                # 檢查是否為分頁格式 {'items': [...], 'total': N}
+                if isinstance(response_data, dict) and 'items' in response_data:
+                    machines_data = response_data['items']
+                    api_logger.info(f"Successfully retrieved {len(machines_data)} machines from paginated API response")
+                else:
+                    # 假設直接返回機台列表
+                    machines_data = response_data
+                    api_logger.info(f"Successfully retrieved {len(machines_data)} machines from API")
+                
+                api_logger.debug(f"Machines data: {machines_data}")
+                return machines_data
+            elif response.status_code == 401:
+                api_logger.warning("Unauthorized access to machines API")
+                import streamlit as st
+                st.error("❌ 未授權存取，請重新登入")
+                return []
+            elif response.status_code == 500:
+                # 伺服器內部錯誤，返回離線資料
+                api_logger.warning("Server error (500) getting machines list, falling back to offline data")
+                import streamlit as st
+                st.warning("⚠️ 伺服器資料庫未初始化，顯示模擬資料")
+                return self._get_offline_machines()
+            else:
+                api_logger.warning(f"Failed to get machines list - Status code: {response.status_code}")
+                return []
+                
+        except requests.exceptions.RequestException as e:
+            # 網路連接錯誤，返回模擬資料
+            api_logger.error(f"Network error getting machines list: {str(e)}")
+            import streamlit as st
+            st.warning(f"🌐 無法連接到 API 伺服器，顯示模擬資料: {str(e)}")
+            return self._get_offline_machines()
+    
+    def _get_offline_machines(self) -> List[Dict]:
+        """獲取離線模式機台列表"""
+        api_logger.debug("Returning offline machines data")
         return [
             {
                 "id": 1,
@@ -138,7 +185,12 @@ class VendingMachineAPI:
                 "location": "台北市信義區",
                 "status": "online",
                 "temperature": 24.5,
-                "last_heartbeat": "2025-08-03T22:50:00Z"
+                "last_heartbeat": "2025-08-21T20:20:00Z",
+                "ip_address": "192.168.1.100",
+                "firmware_version": "1.0.0",
+                "hardware_version": "A1",
+                "max_capacity": 30,
+                "humidity": 60.0
             },
             {
                 "id": 2,
@@ -147,7 +199,12 @@ class VendingMachineAPI:
                 "location": "台北市萬華區",
                 "status": "maintenance",
                 "temperature": 26.1,
-                "last_heartbeat": "2025-08-03T22:48:00Z"
+                "last_heartbeat": "2025-08-21T20:18:00Z",
+                "ip_address": "192.168.1.101",
+                "firmware_version": "1.0.1",
+                "hardware_version": "A1",
+                "max_capacity": 30,
+                "humidity": 65.0
             },
             {
                 "id": 3,
@@ -156,10 +213,160 @@ class VendingMachineAPI:
                 "location": "新北市板橋區",
                 "status": "offline",
                 "temperature": None,
-                "last_heartbeat": "2025-08-03T20:15:00Z"
+                "last_heartbeat": "2025-08-21T18:15:00Z",
+                "ip_address": "192.168.1.102",
+                "firmware_version": "0.9.8",
+                "hardware_version": "A1",
+                "max_capacity": 30,
+                "humidity": None
             }
         ]
     
+    def get_machine_detail(self, machine_id: int) -> Dict:
+        """獲取機台詳細資訊"""
+        api_logger.debug(f"Fetching machine detail for ID: {machine_id}")
+        try:
+            response = requests.get(
+                f"{self.base_url}/machines/{machine_id}",
+                headers=self._get_auth_headers(),
+                timeout=10
+            )
+            
+            if response.status_code == 200:
+                machine_data = response.json()
+                api_logger.info(f"Successfully retrieved machine detail for ID: {machine_id}")
+                return machine_data
+            elif response.status_code == 404:
+                api_logger.warning(f"Machine not found for ID: {machine_id}")
+                return {}
+            elif response.status_code == 401:
+                api_logger.warning("Unauthorized access to machine detail API")
+                import streamlit as st
+                st.error("❌ 未授權存取，請重新登入")
+                return {}
+            else:
+                api_logger.warning(f"Failed to get machine detail - Status code: {response.status_code}")
+                return {}
+                
+        except requests.exceptions.RequestException as e:
+            api_logger.error(f"Network error getting machine detail: {str(e)}")
+            return {}
+    
+    def update_machine_status(self, machine_id: int, status: str) -> bool:
+        """更新機台狀態"""
+        api_logger.debug(f"Updating machine {machine_id} status to: {status}")
+        try:
+            response = requests.post(
+                f"{self.base_url}/machines/{machine_id}/status",
+                headers=self._get_auth_headers(),
+                json={"status": status},
+                timeout=10
+            )
+            
+            if response.status_code == 200:
+                api_logger.info(f"Successfully updated machine {machine_id} status to {status}")
+                return True
+            elif response.status_code == 404:
+                api_logger.warning(f"Machine not found for ID: {machine_id}")
+                return False
+            elif response.status_code == 401:
+                api_logger.warning("Unauthorized access to machine status update API")
+                import streamlit as st
+                st.error("❌ 未授權存取，請重新登入")
+                return False
+            else:
+                api_logger.warning(f"Failed to update machine status - Status code: {response.status_code}")
+                return False
+                
+        except requests.exceptions.RequestException as e:
+            api_logger.error(f"Network error updating machine status: {str(e)}")
+            return False
+    
+    def record_machine_heartbeat(self, machine_id: int) -> bool:
+        """記錄機台心跳"""
+        api_logger.debug(f"Recording heartbeat for machine ID: {machine_id}")
+        try:
+            response = requests.post(
+                f"{self.base_url}/machines/{machine_id}/heartbeat",
+                headers=self._get_auth_headers(),
+                timeout=10
+            )
+            
+            if response.status_code == 200:
+                api_logger.info(f"Successfully recorded heartbeat for machine {machine_id}")
+                return True
+            elif response.status_code == 404:
+                api_logger.warning(f"Machine not found for ID: {machine_id}")
+                return False
+            else:
+                api_logger.warning(f"Failed to record heartbeat - Status code: {response.status_code}")
+                return False
+                
+        except requests.exceptions.RequestException as e:
+            api_logger.error(f"Network error recording heartbeat: {str(e)}")
+            return False
+    
+    def create_machine(self, machine_data: Dict) -> Dict:
+        """建立新機台"""
+        api_logger.debug(f"Creating new machine: {machine_data.get('machine_code', 'Unknown')}")
+        try:
+            response = requests.post(
+                f"{self.base_url}/machines",
+                headers=self._get_auth_headers(),
+                json=machine_data,
+                timeout=10
+            )
+            
+            if response.status_code == 201:
+                created_machine = response.json()
+                api_logger.info(f"Successfully created machine: {created_machine.get('machine_code', 'Unknown')}")
+                return created_machine
+            elif response.status_code == 400:
+                api_logger.warning(f"Bad request creating machine: {response.text}")
+                return {}
+            elif response.status_code == 401:
+                api_logger.warning("Unauthorized access to machine creation API")
+                import streamlit as st
+                st.error("❌ 未授權存取，請重新登入")
+                return {}
+            else:
+                api_logger.warning(f"Failed to create machine - Status code: {response.status_code}")
+                return {}
+                
+        except requests.exceptions.RequestException as e:
+            api_logger.error(f"Network error creating machine: {str(e)}")
+            return {}
+    
+    def update_machine(self, machine_id: int, machine_data: Dict) -> bool:
+        """更新機台資訊"""
+        api_logger.debug(f"Updating machine ID: {machine_id}")
+        try:
+            response = requests.put(
+                f"{self.base_url}/machines/{machine_id}",
+                headers=self._get_auth_headers(),
+                json=machine_data,
+                timeout=10
+            )
+            
+            if response.status_code == 200:
+                api_logger.info(f"Successfully updated machine {machine_id}")
+                return True
+            elif response.status_code == 404:
+                api_logger.warning(f"Machine not found for ID: {machine_id}")
+                return False
+            elif response.status_code == 401:
+                api_logger.warning("Unauthorized access to machine update API")
+                import streamlit as st
+                st.error("❌ 未授權存取，請重新登入")
+                return False
+            else:
+                api_logger.warning(f"Failed to update machine - Status code: {response.status_code}")
+                return False
+                
+        except requests.exceptions.RequestException as e:
+            api_logger.error(f"Network error updating machine: {str(e)}")
+            return False
+
     def get_menu_items(self) -> List[Dict]:
         """獲取菜單項目列表"""
         api_logger.info("Fetching menu items from API")

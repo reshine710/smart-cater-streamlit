@@ -108,7 +108,33 @@ def machine_status_page():
     if real_mode:
         # 真實模式：從 API 獲取數據
         machines = st.session_state.api.get_machines()
-        system_logger.debug(f"Retrieved {len(machines)} machines from API")
+        system_logger.debug(f"Retrieved machines from API: {type(machines)}")
+        system_logger.debug(f"Machines data: {machines}")
+        
+        # 檢查數據格式並修正
+        if machines is not None and isinstance(machines, list) and len(machines) > 0:
+            # 檢查第一個元素的類型
+            try:
+                first_item = machines[0]
+                system_logger.debug(f"First machine item type: {type(first_item)}, content: {first_item}")
+                
+                # 如果不是字典，嘗試修正
+                if not isinstance(first_item, dict):
+                    system_logger.warning(f"API returned unexpected data format: {type(first_item)}")
+                    # 回退到模擬數據
+                    machines = generate_mock_machine_data()
+                    st.warning("⚠️ API 數據格式異常，顯示模擬數據")
+            except (IndexError, TypeError) as e:
+                system_logger.error(f"Error accessing machines data: {e}")
+                machines = generate_mock_machine_data()
+                st.warning("⚠️ API 數據存取錯誤，顯示模擬數據")
+        else:
+            # 如果沒有數據或數據格式不正確，使用模擬數據
+            system_logger.warning(f"Invalid machines data: {type(machines)}, content: {machines}")
+            machines = generate_mock_machine_data()
+            st.info("ℹ️ 無有效機台數據，顯示模擬數據")
+            
+        system_logger.debug(f"Final machines count: {len(machines)}")
     else:
         # 模擬模式：生成模擬數據
         machines = generate_mock_machine_data()
@@ -119,8 +145,14 @@ def machine_status_page():
     
     status_counts = {}
     for machine in machines:
-        status = machine['status']
-        status_counts[status] = status_counts.get(status, 0) + 1
+        # 安全地獲取狀態
+        if isinstance(machine, dict) and 'status' in machine:
+            status = machine['status']
+            status_counts[status] = status_counts.get(status, 0) + 1
+        else:
+            system_logger.warning(f"Invalid machine data format: {type(machine)}, content: {machine}")
+            # 跳過無效數據
+            continue
     
     with col1:
         st.metric("🟢 線上", status_counts.get('online', 0))
@@ -135,7 +167,16 @@ def machine_status_page():
     st.subheader("機台詳細狀態")
     
     for machine in machines:
-        with st.expander(f"📍 {machine['name']} ({machine['machine_code']})"):
+        # 安全地獲取機台資訊
+        if not isinstance(machine, dict):
+            system_logger.warning(f"Skipping invalid machine data: {type(machine)}")
+            continue
+            
+        machine_name = machine.get('name', 'Unknown Machine')
+        machine_code = machine.get('machine_code', 'Unknown')
+        machine_id = machine.get('id', 'Unknown')
+        
+        with st.expander(f"📍 {machine_name} ({machine_code})"):
             col1, col2, col3 = st.columns(3)
             
             with col1:
@@ -144,15 +185,17 @@ def machine_status_page():
                     'maintenance': '🟡',
                     'offline': '🔴'
                 }
-                st.write(f"**狀態**: {status_color.get(machine['status'], '⚪')} {machine['status']}")
-                st.write(f"**位置**: {machine['location']}")
+                machine_status = machine.get('status', 'unknown')
+                st.write(f"**狀態**: {status_color.get(machine_status, '⚪')} {machine_status}")
+                st.write(f"**位置**: {machine.get('location', 'Unknown Location')}")
             
             with col2:
-                if machine['temperature']:
-                    st.write(f"**溫度**: {machine['temperature']}°C")
+                temperature = machine.get('temperature')
+                if temperature:
+                    st.write(f"**溫度**: {temperature}°C")
                 else:
                     st.write("**溫度**: N/A")
-                st.write(f"**最後心跳**: {machine['last_heartbeat']}")
+                st.write(f"**最後心跳**: {machine.get('last_heartbeat', 'Unknown')}")
             
             with col3:
                 # MQTT-enabled commands
@@ -160,64 +203,64 @@ def machine_status_page():
                 mqtt_available = (real_mode and mqtt_client and 
                                 mqtt_client.get_connection_status().get('connected', False))
                 
-                if st.button(f"🔄 重啟機台 {machine['id']}", 
-                           key=f"restart_{machine['id']}",
+                if st.button(f"🔄 重啟機台 {machine_id}", 
+                           key=f"restart_{machine_id}",
                            disabled=real_mode and not mqtt_available):
                     if mqtt_available:
                         # 真實模式：發送 MQTT 命令
                         try:
-                            success = mqtt_client.publish_command(machine['machine_code'], "restart")
+                            success = mqtt_client.publish_command(machine_code, "restart")
                             if success:
-                                mqtt_logger.info(f"Restart command sent to machine {machine['machine_code']}")
-                                st.success(f"✅ 重啟命令已發送到機台 {machine['name']}")
+                                mqtt_logger.info(f"Restart command sent to machine {machine_code}")
+                                st.success(f"✅ 重啟命令已發送到機台 {machine_name}")
                             else:
                                 st.error(f"❌ 發送重啟命令失敗")
                         except Exception as e:
-                            mqtt_logger.error(f"Failed to send restart command to machine {machine['machine_code']}: {str(e)}")
+                            mqtt_logger.error(f"Failed to send restart command to machine {machine_code}: {str(e)}")
                             st.error(f"❌ 發送命令失敗: {str(e)}")
                     else:
                         # 模擬模式或 MQTT 不可用
-                        mqtt_logger.info(f"Simulated restart command for machine {machine['machine_code']}")
-                        st.success(f"✅ 模擬重啟機台 {machine['name']}")
+                        mqtt_logger.info(f"Simulated restart command for machine {machine_code}")
+                        st.success(f"✅ 模擬重啟機台 {machine_name}")
                 
-                if st.button(f"🔧 維護模式 {machine['id']}", 
-                           key=f"maintenance_{machine['id']}",
+                if st.button(f"🔧 維護模式 {machine_id}", 
+                           key=f"maintenance_{machine_id}",
                            disabled=real_mode and not mqtt_available):
                     if mqtt_available:
                         # 真實模式：發送 MQTT 命令
                         try:
-                            success = mqtt_client.publish_command(machine['machine_code'], "maintenance_mode")
+                            success = mqtt_client.publish_command(machine_code, "maintenance_mode")
                             if success:
-                                mqtt_logger.info(f"Maintenance mode command sent to machine {machine['machine_code']}")
-                                st.success(f"✅ 維護模式命令已發送到機台 {machine['name']}")
+                                mqtt_logger.info(f"Maintenance mode command sent to machine {machine_code}")
+                                st.success(f"✅ 維護模式命令已發送到機台 {machine_name}")
                             else:
                                 st.error(f"❌ 發送維護模式命令失敗")
                         except Exception as e:
-                            mqtt_logger.error(f"Failed to send maintenance command to machine {machine['machine_code']}: {str(e)}")
+                            mqtt_logger.error(f"Failed to send maintenance command to machine {machine_code}: {str(e)}")
                             st.error(f"❌ 發送命令失敗: {str(e)}")
                     else:
                         # 模擬模式或 MQTT 不可用
-                        mqtt_logger.info(f"Simulated maintenance mode for machine {machine['machine_code']}")
-                        st.success(f"✅ 模擬設定機台 {machine['name']} 為維護模式")
+                        mqtt_logger.info(f"Simulated maintenance mode for machine {machine_code}")
+                        st.success(f"✅ 模擬設定機台 {machine_name} 為維護模式")
                 
-                if st.button(f"📊 更新狀態 {machine['id']}", 
-                           key=f"status_{machine['id']}",
+                if st.button(f"📊 更新狀態 {machine_id}", 
+                           key=f"status_{machine_id}",
                            disabled=real_mode and not mqtt_available):
                     if mqtt_available:
                         try:
-                            success = mqtt_client.publish_command(machine['machine_code'], "get_status")
+                            success = mqtt_client.publish_command(machine_code, "get_status")
                             if success:
-                                mqtt_logger.info(f"Status update command sent to machine {machine['machine_code']}")
-                                st.info(f"📊 已透過MQTT請求 {machine['name']} 狀態更新")
+                                mqtt_logger.info(f"Status update command sent to machine {machine_code}")
+                                st.info(f"📊 已透過MQTT請求 {machine_name} 狀態更新")
                             else:
                                 st.error(f"❌ 發送狀態更新命令失敗")
                         except Exception as e:
-                            mqtt_logger.error(f"Failed to send status command to machine {machine['machine_code']}: {str(e)}")
+                            mqtt_logger.error(f"Failed to send status command to machine {machine_code}: {str(e)}")
                             st.error(f"❌ 發送命令失敗: {str(e)}")
                     else:
                         # 模擬模式
-                        mqtt_logger.info(f"Simulated status update for machine {machine['machine_code']}")
-                        st.info(f"📊 模擬請求 {machine['name']} 狀態更新")
+                        mqtt_logger.info(f"Simulated status update for machine {machine_code}")
+                        st.info(f"📊 模擬請求 {machine_name} 狀態更新")
                 
                 # 顯示MQTT連接狀態提示
                 if real_mode and not mqtt_available:
