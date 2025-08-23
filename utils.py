@@ -654,6 +654,131 @@ class VendingMachineAPI:
             })
         return sales_data
     
+    def get_orders(self, skip: int = 0, limit: int = 100) -> List[Dict]:
+        """獲取訂單列表"""
+        api_logger.debug(f"Fetching orders list from API (skip={skip}, limit={limit})")
+        try:
+            response = requests.get(
+                f"{self.base_url}/orders",
+                params={"skip": skip, "limit": limit},
+                headers=self._get_auth_headers(),
+                timeout=10
+            )
+            
+            if response.status_code == 200:
+                response_data = response.json()
+                api_logger.debug(f"Raw orders API response: {response_data}")
+                
+                # 檢查是否為分頁格式 {'items': [...], 'total': N}
+                if isinstance(response_data, dict) and 'items' in response_data:
+                    orders = response_data['items']
+                    api_logger.info(f"Successfully retrieved {len(orders)} orders from paginated API response")
+                    return orders
+                elif isinstance(response_data, list):
+                    # 直接返回訂單列表
+                    api_logger.info(f"Successfully retrieved {len(response_data)} orders from API")
+                    return response_data
+                else:
+                    api_logger.warning(f"Unexpected API response format: {type(response_data)}")
+                    return []
+            elif response.status_code == 500:
+                # 伺服器內部錯誤，返回離線資料
+                api_logger.warning("Server error (500) getting orders list, falling back to offline data")
+                import streamlit as st
+                st.warning("⚠️ 伺服器資料庫未初始化，顯示模擬資料")
+                return self._get_offline_orders()
+            else:
+                api_logger.warning(f"Failed to get orders list - Status code: {response.status_code}")
+                return []
+                
+        except requests.exceptions.RequestException as e:
+            # 網路連接錯誤，返回模擬資料
+            api_logger.error(f"Network error getting orders list: {str(e)}")
+            import streamlit as st
+            st.warning(f"🌐 無法連接到 API 伺服器，顯示模擬資料: {str(e)}")
+            return self._get_offline_orders()
+
+    def _get_offline_orders(self) -> List[Dict]:
+        """獲取離線模式訂單列表"""
+        api_logger.debug("Returning offline orders data")
+        return [
+            {
+                "id": 1,
+                "order_number": "ORD-20250822000001-abc123",
+                "machine_id": 1,
+                "total_amount": 120.0,
+                "status": "completed",
+                "payment_status": "paid",
+                "payment_method": "cash",
+                "weather": "晴天",
+                "temperature": 25.0,
+                "created_at": "2025-08-22T10:30:00Z",
+                "updated_at": "2025-08-22T10:35:00Z",
+                "items": [
+                    {
+                        "id": 1,
+                        "menu_item_id": 1,
+                        "quantity": 1,
+                        "unit_price": 120.0,
+                        "subtotal": 120.0,
+                        "order_id": 1,
+                        "created_at": "2025-08-22T10:30:00Z",
+                        "updated_at": "2025-08-22T10:30:00Z"
+                    }
+                ]
+            },
+            {
+                "id": 2,
+                "order_number": "ORD-20250822000002-def456",
+                "machine_id": 1,
+                "total_amount": 200.0,
+                "status": "completed",
+                "payment_status": "paid",
+                "payment_method": "card",
+                "weather": "陰天",
+                "temperature": 22.0,
+                "created_at": "2025-08-22T11:15:00Z",
+                "updated_at": "2025-08-22T11:20:00Z",
+                "items": [
+                    {
+                        "id": 2,
+                        "menu_item_id": 2,
+                        "quantity": 2,
+                        "unit_price": 100.0,
+                        "subtotal": 200.0,
+                        "order_id": 2,
+                        "created_at": "2025-08-22T11:15:00Z",
+                        "updated_at": "2025-08-22T11:15:00Z"
+                    }
+                ]
+            },
+            {
+                "id": 3,
+                "order_number": "ORD-20250822000003-ghi789",
+                "machine_id": 2,
+                "total_amount": 75.0,
+                "status": "created",
+                "payment_status": "pending",
+                "payment_method": "cash",
+                "weather": "雨天",
+                "temperature": 18.0,
+                "created_at": "2025-08-22T12:00:00Z",
+                "updated_at": "2025-08-22T12:00:00Z",
+                "items": [
+                    {
+                        "id": 3,
+                        "menu_item_id": 3,
+                        "quantity": 1,
+                        "unit_price": 75.0,
+                        "subtotal": 75.0,
+                        "order_id": 3,
+                        "created_at": "2025-08-22T12:00:00Z",
+                        "updated_at": "2025-08-22T12:00:00Z"
+                    }
+                ]
+            }
+        ]
+
     def register(self, username: str, email: str, password: str, full_name: str, is_admin: bool = False) -> bool:
         """使用者註冊"""
         auth_logger.info(f"Registration attempt for username: {username}, email: {email}, is_admin: {is_admin}")
