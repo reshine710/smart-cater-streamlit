@@ -1053,6 +1053,176 @@ class VendingMachineAPI:
             st.error(f"🌐 網路錯誤，無法刪除菜單項目: {str(e)}")
             return False
 
+    # AI 推薦系統相關方法
+    def get_ai_health(self) -> dict:
+        """檢查AI API健康狀態"""
+        api_logger.debug("Checking AI API health")
+        try:
+            response = requests.get(
+                f"{self.base_url}/ai/health",
+                timeout=10
+            )
+            
+            if response.status_code == 200:
+                return response.json()
+            else:
+                api_logger.warning(f"AI health check failed - Status code: {response.status_code}")
+                return {"status": "error", "message": f"Health check failed: {response.status_code}"}
+                
+        except requests.exceptions.RequestException as e:
+            api_logger.error(f"Network error during AI health check: {str(e)}")
+            return {"status": "error", "message": f"Network error: {str(e)}"}
+        except Exception as e:
+            api_logger.error(f"Unexpected error during AI health check: {str(e)}")
+            return {"status": "error", "message": f"Unexpected error: {str(e)}"}
+
+    def get_ai_recommendations(self, status_filter: str = None, machine_id: str = None, 
+                             skip: int = 0, limit: int = 100) -> list:
+        """獲取AI推薦列表"""
+        api_logger.debug(f"Fetching AI recommendations with filters: status={status_filter}, machine_id={machine_id}")
+        try:
+            # 構建查詢參數
+            params = {"skip": skip, "limit": limit}
+            if status_filter:
+                params["status_filter"] = status_filter
+            if machine_id:
+                params["machine_id"] = machine_id
+            
+            response = requests.get(
+                f"{self.base_url}/ai/recommendations",
+                headers=self._get_ai_auth_headers(),
+                params=params,
+                timeout=10
+            )
+            
+            if response.status_code == 200:
+                data = response.json()
+                api_logger.info(f"Successfully fetched {len(data.get('data', []))} AI recommendations")
+                return data.get('data', [])
+            elif response.status_code == 401:
+                api_logger.warning("Unauthorized access to AI recommendations")
+                import streamlit as st
+                st.error("❌ 權限不足：無法存取AI推薦資料")
+                return []
+            else:
+                api_logger.warning(f"Failed to fetch AI recommendations - Status code: {response.status_code}")
+                import streamlit as st
+                st.error(f"❌ 獲取AI推薦失敗 - 狀態碼: {response.status_code}")
+                return []
+                
+        except requests.exceptions.RequestException as e:
+            api_logger.error(f"Network error when fetching AI recommendations: {str(e)}")
+            import streamlit as st
+            st.error(f"❌ 網路錯誤：{str(e)}")
+            return []
+        except Exception as e:
+            api_logger.error(f"Unexpected error when fetching AI recommendations: {str(e)}")
+            import streamlit as st
+            st.error(f"❌ 獲取AI推薦時發生未預期的錯誤：{str(e)}")
+            return []
+
+    def create_ai_recommendation(self, recommendation_data: dict) -> bool:
+        """創建AI推薦"""
+        api_logger.debug(f"Creating AI recommendation: {recommendation_data.get('recommendation_id')}")
+        try:
+            response = requests.post(
+                f"{self.base_url}/ai/recommendations",
+                headers=self._get_ai_auth_headers(),
+                json=recommendation_data,
+                timeout=10
+            )
+            
+            if response.status_code == 200:
+                result = response.json()
+                api_logger.info(f"Successfully created AI recommendation: {result.get('backend_ref_id')}")
+                import streamlit as st
+                st.success(f"✅ AI推薦已成功創建 - 參考ID: {result.get('backend_ref_id')}")
+                return True
+            elif response.status_code == 400:
+                error_detail = response.json().get('detail', 'Unknown error')
+                api_logger.warning(f"Invalid recommendation data: {error_detail}")
+                import streamlit as st
+                st.error(f"❌ 推薦資料無效：{error_detail}")
+                return False
+            elif response.status_code == 401:
+                api_logger.warning("Unauthorized to create AI recommendation")
+                import streamlit as st
+                st.error("❌ 權限不足：無法創建AI推薦")
+                return False
+            else:
+                api_logger.warning(f"Failed to create AI recommendation - Status code: {response.status_code}")
+                import streamlit as st
+                st.error(f"❌ 創建AI推薦失敗 - 狀態碼: {response.status_code}")
+                return False
+                
+        except requests.exceptions.RequestException as e:
+            api_logger.error(f"Network error when creating AI recommendation: {str(e)}")
+            import streamlit as st
+            st.error(f"❌ 網路錯誤：{str(e)}")
+            return False
+        except Exception as e:
+            api_logger.error(f"Unexpected error when creating AI recommendation: {str(e)}")
+            import streamlit as st
+            st.error(f"❌ 創建AI推薦時發生未預期的錯誤：{str(e)}")
+            return False
+
+    def update_recommendation_status(self, recommendation_id: int, status: str, 
+                                   review_notes: str = None) -> bool:
+        """更新推薦狀態（審核通過/拒絕）"""
+        api_logger.debug(f"Updating recommendation {recommendation_id} status to {status}")
+        try:
+            update_data = {"status": status}
+            if review_notes:
+                update_data["review_notes"] = review_notes
+            
+            response = requests.patch(
+                f"{self.base_url}/ai/recommendations/{recommendation_id}/status",
+                headers=self._get_ai_auth_headers(),
+                json=update_data,
+                timeout=10
+            )
+            
+            if response.status_code == 200:
+                api_logger.info(f"Successfully updated recommendation {recommendation_id} status to {status}")
+                import streamlit as st
+                st.success(f"✅ 推薦狀態已更新為：{status}")
+                return True
+            elif response.status_code == 404:
+                api_logger.warning(f"Recommendation {recommendation_id} not found")
+                import streamlit as st
+                st.error("❌ 找不到指定的推薦")
+                return False
+            elif response.status_code == 401:
+                api_logger.warning(f"Unauthorized to update recommendation {recommendation_id}")
+                import streamlit as st
+                st.error("❌ 權限不足：無法更新推薦狀態")
+                return False
+            else:
+                api_logger.warning(f"Failed to update recommendation status - Status code: {response.status_code}")
+                import streamlit as st
+                st.error(f"❌ 更新推薦狀態失敗 - 狀態碼: {response.status_code}")
+                return False
+                
+        except requests.exceptions.RequestException as e:
+            api_logger.error(f"Network error when updating recommendation status: {str(e)}")
+            import streamlit as st
+            st.error(f"❌ 網路錯誤：{str(e)}")
+            return False
+        except Exception as e:
+            api_logger.error(f"Unexpected error when updating recommendation status: {str(e)}")
+            import streamlit as st
+            st.error(f"❌ 更新推薦狀態時發生未預期的錯誤：{str(e)}")
+            return False
+
+    def _get_ai_auth_headers(self) -> dict:
+        """獲取AI API認證標頭"""
+        # 使用固定的AI API Key，實際應用中應該從環境變數或配置檔案讀取
+        ai_api_key = "ai-team-key-001"
+        return {
+            "Authorization": f"Bearer {ai_api_key}",
+            "Content-Type": "application/json"
+        }
+
 def init_session_state():
     """初始化 session state"""
     system_logger.debug("Initializing session state")

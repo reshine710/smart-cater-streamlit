@@ -8,7 +8,8 @@ from pages import (
     machine_status_page, 
     menu_management_page,
     recipe_settings_page,
-    sales_analytics_page
+    sales_analytics_page,
+    ai_recommendations_page
 )
 
 def show_main_app():
@@ -251,9 +252,11 @@ def main():
         
         # 基本功能（所有使用者）
         pages = {
+            "🏠 首頁": "dashboard",
             "📊 機台狀態": "machine_status",
             "📈 銷售數據": "sales_data",
             "🛒 商品管理": "inventory",
+            "🤖 AI智能推薦": "ai_recommendations",
             "⚙️ 系統設定": "settings"
         }
         
@@ -288,6 +291,10 @@ def main():
         recipe_settings_page()
     elif page_key == "user_management":
         show_user_management()
+    elif page_key == "ai_recommendations":
+        ai_recommendations_page()
+    elif page_key == "dashboard":
+        dashboard_page()
 
 
 def check_api_connection() -> bool:

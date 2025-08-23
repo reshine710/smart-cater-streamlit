@@ -10,10 +10,7 @@ def dashboard_page():
     
     # 獲取資料
     machines = st.session_state.api.get_machines()
-    sales_data = st.session_state.api.get_sales_data(
-        (datetime.now() - timedelta(days=7)).strftime("%Y-%m-%d"),
-        datetime.now().strftime("%Y-%m-%d")
-    )
+    sales_data = st.session_state.api.get_sales_data()
     
     # 統計卡片
     col1, col2, col3, col4 = st.columns(4)
