@@ -320,21 +320,43 @@ class VendingMachineAPI:
             if response.status_code == 201:
                 created_machine = response.json()
                 api_logger.info(f"Successfully created machine: {created_machine.get('machine_code', 'Unknown')}")
+                import streamlit as st
+                st.success(f"✅ 機台 {created_machine.get('name', '未知')} 創建成功！")
                 return created_machine
             elif response.status_code == 400:
-                api_logger.warning(f"Bad request creating machine: {response.text}")
+                api_logger.warning(f"Bad request creating machine - validation error")
+                import streamlit as st
+                try:
+                    error_detail = response.json().get('detail', '資料驗證失敗')
+                    st.error(f"❌ 創建機台失敗：{error_detail}")
+                except:
+                    st.error("❌ 創建機台失敗：資料格式不正確")
                 return {}
-            elif response.status_code == 401:
+            elif response.status_code in [401, 403]:
                 api_logger.warning("Unauthorized access to machine creation API")
                 import streamlit as st
-                st.error("❌ 未授權存取，請重新登入")
+                st.error("❌ 權限不足，僅管理員可創建機台")
+                return {}
+            elif response.status_code == 409:
+                api_logger.warning("Machine code conflict - already exists")
+                import streamlit as st
+                st.error("❌ 機台代碼已存在，請使用不同的代碼")
+                return {}
+            elif response.status_code == 500:
+                api_logger.warning("Server error creating machine")
+                import streamlit as st
+                st.error("❌ 伺服器內部錯誤，無法創建機台")
                 return {}
             else:
                 api_logger.warning(f"Failed to create machine - Status code: {response.status_code}")
+                import streamlit as st
+                st.error(f"❌ 創建機台失敗 - 狀態碼: {response.status_code}")
                 return {}
                 
         except requests.exceptions.RequestException as e:
             api_logger.error(f"Network error creating machine: {str(e)}")
+            import streamlit as st
+            st.error(f"🌐 網路錯誤，無法創建機台: {str(e)}")
             return {}
     
     def update_machine(self, machine_id: int, machine_data: Dict) -> bool:
@@ -367,6 +389,54 @@ class VendingMachineAPI:
             api_logger.error(f"Network error updating machine: {str(e)}")
             return False
 
+    def delete_machine(self, machine_id: int) -> bool:
+        """刪除機台"""
+        api_logger.debug(f"Deleting machine ID: {machine_id}")
+        try:
+            response = requests.delete(
+                f"{self.base_url}/machines/{machine_id}",
+                headers=self._get_auth_headers(),
+                timeout=10
+            )
+            
+            if response.status_code == 200:
+                api_logger.info(f"Successfully deleted machine {machine_id}")
+                return True
+            elif response.status_code == 404:
+                api_logger.warning(f"Machine not found for ID: {machine_id}")
+                import streamlit as st
+                st.error("❌ 機台不存在")
+                return False
+            elif response.status_code in [401, 403]:
+                api_logger.warning("Unauthorized access to machine deletion API")
+                import streamlit as st
+                st.error("❌ 權限不足，僅管理員可刪除機台")
+                return False
+            elif response.status_code == 500:
+                # 處理伺服器內部錯誤，通常是資料庫約束問題
+                api_logger.warning(f"Server error deleting machine {machine_id} - likely foreign key constraint")
+                import streamlit as st
+                try:
+                    error_detail = response.json().get('detail', '')
+                    if 'foreign key' in error_detail.lower() or 'constraint' in error_detail.lower() or 'orders' in error_detail.lower():
+                        st.error("❌ 無法刪除機台：此機台仍有相關訂單記錄。請先處理或刪除相關訂單後再試。")
+                    else:
+                        st.error(f"❌ 伺服器內部錯誤，無法刪除機台")
+                except:
+                    st.error("❌ 無法刪除機台：此機台可能仍有相關的訂單或庫存記錄。請先清理相關數據後再試。")
+                return False
+            else:
+                api_logger.warning(f"Failed to delete machine - Status code: {response.status_code}")
+                import streamlit as st
+                st.error(f"❌ 刪除機台失敗 - 狀態碼: {response.status_code}")
+                return False
+                
+        except requests.exceptions.RequestException as e:
+            api_logger.error(f"Network error deleting machine: {str(e)}")
+            import streamlit as st
+            st.error(f"🌐 網路錯誤，無法刪除機台: {str(e)}")
+            return False
+    
     def get_menu_items(self) -> List[Dict]:
         """獲取菜單項目列表"""
         api_logger.info("Fetching menu items from API")

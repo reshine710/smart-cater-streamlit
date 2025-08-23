@@ -163,6 +163,99 @@ def machine_status_page():
     
     st.markdown("---")
     
+    # 管理員功能：新增機台
+    is_admin = st.session_state.get('is_admin', False)
+    if is_admin:
+        st.subheader("➕ 新增機台")
+        
+        with st.expander("📝 創建新機台", expanded=False):
+            with st.form("create_machine_form"):
+                col1, col2 = st.columns(2)
+                
+                with col1:
+                    machine_code = st.text_input(
+                        "機台代碼 *", 
+                        placeholder="例如: VM001",
+                        help="機台的唯一識別代碼"
+                    )
+                    machine_name = st.text_input(
+                        "機台名稱 *", 
+                        placeholder="例如: 台北101店",
+                        help="機台的顯示名稱"
+                    )
+                    location = st.text_input(
+                        "機台位置 *", 
+                        placeholder="例如: 台北市信義區信義路五段7號",
+                        help="機台的實際安裝位置"
+                    )
+                    ip_address = st.text_input(
+                        "IP 地址", 
+                        placeholder="例如: 192.168.1.100",
+                        help="機台的網路IP地址（可選）"
+                    )
+                
+                with col2:
+                    status = st.selectbox(
+                        "初始狀態", 
+                        options=["online", "offline", "maintenance"],
+                        format_func=lambda x: {"online": "🟢 線上", "offline": "🔴 離線", "maintenance": "🟡 維護中"}[x]
+                    )
+                    firmware_version = st.text_input(
+                        "韌體版本", 
+                        placeholder="例如: 1.0.0",
+                        help="機台韌體版本（可選）"
+                    )
+                    hardware_version = st.text_input(
+                        "硬體版本", 
+                        placeholder="例如: A1",
+                        help="機台硬體版本（可選）"
+                    )
+                    max_capacity = st.number_input(
+                        "最大容量", 
+                        min_value=1, 
+                        max_value=100, 
+                        value=30,
+                        help="機台最大商品容量"
+                    )
+                
+                submitted = st.form_submit_button("🚀 創建機台", type="primary")
+                
+                if submitted:
+                    # 驗證必填欄位
+                    if not machine_code or not machine_name or not location:
+                        st.error("❌ 請填寫所有必填欄位（標記 * 的欄位）")
+                    else:
+                        # 準備機台資料
+                        machine_data = {
+                            "machine_code": machine_code.strip(),
+                            "name": machine_name.strip(),
+                            "location": location.strip(),
+                            "status": status,
+                            "max_capacity": max_capacity
+                        }
+                        
+                        # 添加可選欄位
+                        if ip_address.strip():
+                            machine_data["ip_address"] = ip_address.strip()
+                        if firmware_version.strip():
+                            machine_data["firmware_version"] = firmware_version.strip()
+                        if hardware_version.strip():
+                            machine_data["hardware_version"] = hardware_version.strip()
+                        
+                        # 呼叫 API 創建機台
+                        try:
+                            created_machine = st.session_state.api.create_machine(machine_data)
+                            if created_machine:
+                                ui_logger.info(f"Admin {st.session_state.get('username')} created machine {machine_code}")
+                                # 刷新頁面以顯示新機台
+                                time.sleep(1)
+                                st.rerun()
+                        except Exception as e:
+                            st.error(f"❌ 創建機台時發生錯誤: {str(e)}")
+                            ui_logger.error(f"Error creating machine: {str(e)}")
+        
+        st.markdown("---")
+    
     # 機台詳細狀態
     st.subheader("機台詳細狀態")
     
@@ -261,6 +354,61 @@ def machine_status_page():
                         # 模擬模式
                         mqtt_logger.info(f"Simulated status update for machine {machine_code}")
                         st.info(f"📊 模擬請求 {machine_name} 狀態更新")
+                
+                # 刪除機台功能 (僅管理員可用)
+                is_admin = st.session_state.get('is_admin', False)
+                if is_admin:
+                    st.markdown("---")
+                    st.write("**⚠️ 危險操作區域**")
+                    
+                    # 使用確認對話框
+                    if st.button(f"🗑️ 刪除機台 {machine_id}", 
+                               key=f"delete_{machine_id}",
+                               type="secondary",
+                               help="此操作無法復原，請謹慎使用"):
+                        # 顯示確認對話框
+                        if f"confirm_delete_{machine_id}" not in st.session_state:
+                            st.session_state[f"confirm_delete_{machine_id}"] = False
+                        
+                        if not st.session_state[f"confirm_delete_{machine_id}"]:
+                            st.session_state[f"confirm_delete_{machine_id}"] = True
+                            st.rerun()
+                    
+                    # 確認刪除對話框
+                    if st.session_state.get(f"confirm_delete_{machine_id}", False):
+                        st.error(f"⚠️ 確定要刪除機台 **{machine_name}** ({machine_code}) 嗎？")
+                        st.write("此操作將永久刪除機台及其相關數據，無法復原！")
+                        
+                        col_confirm, col_cancel = st.columns(2)
+                        
+                        with col_confirm:
+                            if st.button(f"✅ 確認刪除", 
+                                       key=f"confirm_delete_yes_{machine_id}",
+                                       type="primary"):
+                                try:
+                                    success = st.session_state.api.delete_machine(machine_id)
+                                    if success:
+                                        st.success(f"✅ 機台 {machine_name} 已成功刪除")
+                                        ui_logger.info(f"Admin {st.session_state.get('username')} deleted machine {machine_id} ({machine_code})")
+                                        # 清除確認狀態
+                                        st.session_state[f"confirm_delete_{machine_id}"] = False
+                                        # 刷新頁面以更新機台列表
+                                        time.sleep(1)
+                                        st.rerun()
+                                    else:
+                                        st.error(f"❌ 刪除機台 {machine_name} 失敗")
+                                except Exception as e:
+                                    st.error(f"❌ 刪除機台時發生錯誤: {str(e)}")
+                                    ui_logger.error(f"Error deleting machine {machine_id}: {str(e)}")
+                        
+                        with col_cancel:
+                            if st.button(f"❌ 取消", 
+                                       key=f"confirm_delete_no_{machine_id}"):
+                                st.session_state[f"confirm_delete_{machine_id}"] = False
+                                st.rerun()
+                else:
+                    # 非管理員用戶顯示提示
+                    st.caption("🔒 刪除機台功能僅限管理員使用")
                 
                 # 顯示MQTT連接狀態提示
                 if real_mode and not mqtt_available:
