@@ -999,6 +999,60 @@ class VendingMachineAPI:
             }
         ]
 
+    def delete_menu_item(self, item_id: int) -> bool:
+        """刪除菜單項目"""
+        api_logger.debug(f"Deleting menu item ID: {item_id}")
+        try:
+            response = requests.delete(
+                f"{self.base_url}/menu-items/{item_id}",
+                headers=self._get_auth_headers(),
+                timeout=10
+            )
+            
+            if response.status_code == 200:
+                api_logger.info(f"Successfully deleted menu item {item_id}")
+                import streamlit as st
+                st.success("✅ 菜單項目已成功刪除")
+                return True
+            elif response.status_code == 404:
+                api_logger.warning(f"Menu item not found for ID: {item_id}")
+                import streamlit as st
+                st.error("❌ 菜單項目不存在")
+                return False
+            elif response.status_code in [401, 403]:
+                api_logger.warning("Unauthorized access to menu item deletion API")
+                import streamlit as st
+                st.error("❌ 權限不足，僅管理員可刪除菜單項目")
+                return False
+            elif response.status_code == 409:
+                api_logger.warning("Cannot delete menu item - has related orders")
+                import streamlit as st
+                st.error("❌ 無法刪除菜單項目：此項目仍有相關訂單記錄。請先處理相關訂單後再試。")
+                return False
+            elif response.status_code == 500:
+                api_logger.warning("Server error deleting menu item")
+                import streamlit as st
+                try:
+                    error_detail = response.json().get('detail', '')
+                    if 'foreign key' in error_detail.lower() or 'constraint' in error_detail.lower() or 'orders' in error_detail.lower():
+                        st.error("❌ 無法刪除菜單項目：此項目仍有相關訂單記錄。請先處理相關訂單後再試。")
+                    else:
+                        st.error("❌ 伺服器內部錯誤，無法刪除菜單項目")
+                except:
+                    st.error("❌ 無法刪除菜單項目：此項目可能仍有相關的訂單記錄。請先清理相關數據後再試。")
+                return False
+            else:
+                api_logger.warning(f"Failed to delete menu item - Status code: {response.status_code}")
+                import streamlit as st
+                st.error(f"❌ 刪除菜單項目失敗 - 狀態碼: {response.status_code}")
+                return False
+                
+        except requests.exceptions.RequestException as e:
+            api_logger.error(f"Network error deleting menu item: {str(e)}")
+            import streamlit as st
+            st.error(f"🌐 網路錯誤，無法刪除菜單項目: {str(e)}")
+            return False
+
 def init_session_state():
     """初始化 session state"""
     system_logger.debug("Initializing session state")

@@ -192,6 +192,54 @@ def show_menu_item_details(item: Dict, index: int):
             # 標籤管理
             if st.button("🏷️ 管理標籤", key=f"tags_{item_id}_{index}"):
                 show_tags_management(item)
+            
+            # 刪除菜單項目功能 (危險操作)
+            st.markdown("---")
+            st.write("**⚠️ 危險操作**")
+            
+            # 使用確認對話框
+            if st.button(f"🗑️ 刪除項目", 
+                       key=f"delete_{item_id}_{index}",
+                       type="secondary",
+                       help="此操作無法復原，請謹慎使用"):
+                # 顯示確認對話框
+                if f"confirm_delete_menu_{item_id}" not in st.session_state:
+                    st.session_state[f"confirm_delete_menu_{item_id}"] = False
+                
+                if not st.session_state[f"confirm_delete_menu_{item_id}"]:
+                    st.session_state[f"confirm_delete_menu_{item_id}"] = True
+                    st.rerun()
+            
+            # 確認刪除對話框
+            if st.session_state.get(f"confirm_delete_menu_{item_id}", False):
+                st.error(f"⚠️ 確定要刪除菜單項目 **{item.get('name', 'Unknown')}** 嗎？")
+                st.write("此操作將永久刪除菜單項目及其相關數據，無法復原！")
+                
+                col_confirm, col_cancel = st.columns(2)
+                
+                with col_confirm:
+                    if st.button(f"✅ 確認刪除", 
+                               key=f"confirm_delete_menu_yes_{item_id}_{index}",
+                               type="primary"):
+                        try:
+                            success = st.session_state.api.delete_menu_item(item_id)
+                            if success:
+                                ui_logger.info(f"Admin {st.session_state.get('username')} deleted menu item {item_id} ({item.get('name')})")
+                                # 清除確認狀態
+                                st.session_state[f"confirm_delete_menu_{item_id}"] = False
+                                # 刷新頁面以更新菜單列表
+                                st.rerun()
+                            else:
+                                st.error(f"❌ 刪除菜單項目失敗")
+                        except Exception as e:
+                            st.error(f"❌ 刪除菜單項目時發生錯誤: {str(e)}")
+                            ui_logger.error(f"Error deleting menu item {item_id}: {str(e)}")
+                
+                with col_cancel:
+                    if st.button(f"❌ 取消", 
+                               key=f"confirm_delete_menu_no_{item_id}_{index}"):
+                        st.session_state[f"confirm_delete_menu_{item_id}"] = False
+                        st.rerun()
 
 
 def show_edit_menu_item_form(item: Dict):
