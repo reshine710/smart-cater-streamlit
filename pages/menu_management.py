@@ -244,9 +244,9 @@ def show_menu_item_details(item: Dict, index: int):
 
 def show_edit_menu_item_form(item: Dict):
     """顯示編輯菜單項目表單"""
-    with st.form(f"edit_item_{item['id']}"):
-        st.write(f"### ✏️ 編輯 {item.get('name', 'Unknown')}")
-        
+    
+    @st.dialog(f"✏️ 編輯 {item.get('name', 'Unknown')}")
+    def edit_dialog():
         col1, col2 = st.columns(2)
         with col1:
             updated_name = st.text_input("商品名稱", value=item.get('name', ''))
@@ -262,46 +262,64 @@ def show_edit_menu_item_form(item: Dict):
             updated_heating_time = st.number_input("加熱時間 (秒)", value=item.get('heating_time', 0), min_value=0, max_value=300)
             updated_image_url = st.text_input("圖片網址", value=item.get('image_url', ''))
         
-        if st.form_submit_button("💾 儲存更改"):
-            update_data = {
-                "name": updated_name,
-                "description": updated_description,
-                "price": float(updated_price),
-                "heating_method": updated_heating_method,
-                "heating_time": updated_heating_time,
-                "image_url": updated_image_url
-            }
-            
-            ui_logger.info(f"Admin {st.session_state.get('username')} updating menu item: {item['id']}")
-            
-            if st.session_state.api.update_menu_item(item['id'], update_data):
-                st.success(f"✅ {updated_name} 更新成功！")
+        col_save, col_cancel = st.columns(2)
+        with col_save:
+            if st.button("💾 儲存更改", use_container_width=True):
+                update_data = {
+                    "name": updated_name,
+                    "description": updated_description,
+                    "price": float(updated_price),
+                    "heating_method": updated_heating_method,
+                    "heating_time": updated_heating_time,
+                    "image_url": updated_image_url
+                }
+                
+                ui_logger.info(f"Admin {st.session_state.get('username')} updating menu item: {item['id']}")
+                
+                if st.session_state.api.update_menu_item(item['id'], update_data):
+                    st.success(f"✅ {updated_name} 更新成功！")
+                    st.rerun()
+                else:
+                    st.error("❌ 更新失敗，請稍後再試")
+        
+        with col_cancel:
+            if st.button("❌ 取消", use_container_width=True):
                 st.rerun()
-            else:
-                st.error("❌ 更新失敗，請稍後再試")
+    
+    # 觸發對話框
+    edit_dialog()
 
 
 def show_tags_management(item: Dict):
     """顯示標籤管理介面"""
-    with st.form(f"tags_{item['id']}"):
-        st.write(f"### 🏷️ 管理標籤 - {item.get('name', 'Unknown')}")
-        
+    
+    @st.dialog(f"🏷️ 管理標籤 - {item.get('name', 'Unknown')}")
+    def tags_dialog():
         current_tags = item.get('tags', [])
         current_tags_str = ', '.join(current_tags) if current_tags else ''
         
         updated_tags_str = st.text_input("標籤 (用逗號分隔)", value=current_tags_str, 
                                        placeholder="熱門, 健康, 咖啡")
         
-        if st.form_submit_button("🏷️ 更新標籤"):
-            new_tags = [tag.strip() for tag in updated_tags_str.split(',') if tag.strip()]
-            
-            ui_logger.info(f"Admin {st.session_state.get('username')} updating tags for menu item: {item['id']}")
-            
-            if st.session_state.api.update_menu_item_tags(item['id'], new_tags):
-                st.success(f"✅ {item.get('name')} 的標籤更新成功！")
+        col_save, col_cancel = st.columns(2)
+        with col_save:
+            if st.button("🏷️ 更新標籤", use_container_width=True):
+                new_tags = [tag.strip() for tag in updated_tags_str.split(',') if tag.strip()]
+                
+                ui_logger.info(f"Admin {st.session_state.get('username')} updating tags for menu item: {item['id']}")
+                
+                if st.session_state.api.update_menu_item_tags(item['id'], new_tags):
+                    st.success(f"✅ {item.get('name')} 的標籤更新成功！")
+                    st.rerun()
+                else:
+                    st.error("❌ 標籤更新失敗，請稍後再試")
+        
+        with col_cancel:
+            if st.button("❌ 取消", use_container_width=True):
                 st.rerun()
-            else:
-                st.error("❌ 標籤更新失敗，請稍後再試")
+    
+    # 觸發對話框
+    tags_dialog()
 
 
 def show_menu_analytics(menu_items: List[Dict]):

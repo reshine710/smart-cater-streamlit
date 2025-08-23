@@ -707,9 +707,62 @@ class VendingMachineAPI:
                     return item
             return None
     
-    def get_sales_data(self) -> List[Dict]:
-        """獲取銷售資料 - 假資料"""
-        # 生成假的銷售資料
+    def get_sales_data(self, start_date: str = None, end_date: str = None) -> List[Dict]:
+        """獲取銷售資料"""
+        api_logger.debug(f"Fetching sales data from API (start_date={start_date}, end_date={end_date})")
+        try:
+            # 構建查詢參數
+            params = {}
+            if start_date:
+                params["start_date"] = start_date
+            if end_date:
+                params["end_date"] = end_date
+            
+            response = requests.get(
+                f"{self.base_url}/sales",
+                headers=self._get_auth_headers(),
+                params=params,
+                timeout=10
+            )
+            
+            if response.status_code == 200:
+                response_data = response.json()
+                api_logger.debug(f"Raw sales API response: {response_data}")
+                
+                # 檢查是否為分頁格式 {'items': [...], 'total': N}
+                if isinstance(response_data, dict) and 'items' in response_data:
+                    sales_data = response_data['items']
+                elif isinstance(response_data, list):
+                    sales_data = response_data
+                else:
+                    sales_data = []
+                
+                api_logger.info(f"Successfully retrieved {len(sales_data)} sales records from API")
+                return sales_data
+            elif response.status_code == 500:
+                # 伺服器內部錯誤，返回離線資料
+                api_logger.warning("Server error (500) getting sales data, falling back to offline data")
+                import streamlit as st
+                st.warning("⚠️ 伺服器資料庫未初始化，顯示模擬資料")
+                return self._get_offline_sales_data()
+            else:
+                api_logger.warning(f"Failed to get sales data - Status code: {response.status_code}")
+                return []
+                
+        except requests.exceptions.RequestException as e:
+            # 網路連接錯誤，返回模擬資料
+            api_logger.error(f"Network error getting sales data: {str(e)}")
+            import streamlit as st
+            st.warning(f"🌐 無法連接到 API 伺服器，顯示模擬資料: {str(e)}")
+            return self._get_offline_sales_data()
+        except Exception as e:
+            api_logger.error(f"Unexpected error getting sales data: {str(e)}")
+            return self._get_offline_sales_data()
+
+    def _get_offline_sales_data(self) -> List[Dict]:
+        """獲取離線模式銷售資料"""
+        api_logger.debug("Returning offline sales data")
+        # 生成模擬銷售資料
         sales_data = []
         for i in range(50):
             sales_data.append({
