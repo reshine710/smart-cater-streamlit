@@ -96,16 +96,25 @@ def show_recommendations_list():
                 status_filter=filter_status, 
                 machine_id=filter_machine
             )
+            
+            # 增強調試日誌 - 記錄API返回的原始數據結構
+            api_logger.debug(f"Raw recommendations data structure: {[{k: v for k, v in rec.items() if k in ['id', 'backend_ref_id', 'recommendation_id']} for rec in recommendations]}")
+            
         else:
             recommendations = get_mock_recommendations()
     except Exception as e:
         st.error(f"❌ 獲取推薦數據失敗: {str(e)}")
+        api_logger.error(f"Failed to get recommendations: {str(e)}")
         recommendations = get_mock_recommendations()
     
     st.write(f"顯示 {len(recommendations)} 個推薦")
     
     # 顯示推薦列表
     for i, rec in enumerate(recommendations):
+        # 調試日誌 - 記錄每個推薦的ID字段
+        id_debug_info = {k: rec.get(k) for k in ['id', 'backend_ref_id', 'recommendation_id'] if k in rec}
+        api_logger.debug(f"Recommendation {i} ID fields: {id_debug_info}")
+        
         with st.expander(f"{get_status_icon(rec['status'])} {rec['recommendation_id']} - {rec['recommendation_type']}", expanded=False):
             show_recommendation_details(rec, i)
 
@@ -128,18 +137,41 @@ def show_recommendation_details(rec: Dict, index: int):
             st.write(f"**審核備註**: {rec['review_notes']}")
     
     with col3:
-        rec_id = rec.get('id', index)
+        # 修正ID映射問題 - 使用正確的後端ID順序
+        rec_id = None
+        id_extraction_log = []
+        
+        # 修正：backend_ref_id 是正確的後端API ID，應該優先使用
+        for id_field in ['backend_ref_id', 'id', 'recommendation_id']:
+            if id_field in rec and rec[id_field] is not None:
+                rec_id = rec[id_field]
+                id_extraction_log.append(f"Found {id_field}: {rec_id}")
+                break
+            else:
+                id_extraction_log.append(f"Missing/None {id_field}")
+        
+        # 如果仍然沒有找到有效的ID，記錄錯誤並跳過操作按鈕
+        if rec_id is None:
+            st.error("❌ 無效的推薦ID，無法執行操作")
+            ui_logger.error(f"No valid ID found for recommendation: {rec}")
+            return
         
         # 審核按鈕（僅待審核狀態顯示）
         if rec['status'] == 'PENDING':
             if st.button("✅ 通過", key=f"approve_{rec_id}_{index}"):
                 if update_recommendation_status(rec_id, "APPROVED"):
                     st.success("✅ 推薦已通過")
+                    # Clear any cached data and force refresh
+                    if 'recommendations_cache' in st.session_state:
+                        del st.session_state['recommendations_cache']
                     st.rerun()
             
             if st.button("❌ 拒絕", key=f"reject_{rec_id}_{index}"):
                 if update_recommendation_status(rec_id, "REJECTED"):
                     st.success("❌ 推薦已拒絕")
+                    # Clear any cached data and force refresh
+                    if 'recommendations_cache' in st.session_state:
+                        del st.session_state['recommendations_cache']
                     st.rerun()
     
     # 顯示推薦內容

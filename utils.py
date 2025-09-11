@@ -1224,12 +1224,15 @@ class VendingMachineAPI:
         """更新推薦狀態（審核通過/拒絕）"""
         api_logger.debug(f"Updating recommendation {recommendation_id} status to {status}")
         try:
-            update_data = {"status": status}
+            update_data = {
+                "status": status,
+                "reviewed_by": "admin"  # Add required field
+            }
             if review_notes:
                 update_data["review_notes"] = review_notes
             
             response = requests.patch(
-                f"{self.base_url}/ai/recommendations/{recommendation_id}/status",
+                f"{self.base_url}/ai/recommendations/{recommendation_id}",  
                 headers=self._get_ai_auth_headers(),
                 json=update_data,
                 timeout=10
