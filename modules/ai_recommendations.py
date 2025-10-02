@@ -9,6 +9,7 @@ def ai_recommendations_page():
     """AI推薦管理頁面"""
     ui_logger.info(f"User {st.session_state.get('username', 'Unknown')} accessing AI recommendations page")
     st.title("🤖 AI智能推薦管理")
+    st.set_page_config(layout="wide",initial_sidebar_state="expanded")
     st.markdown("---")
     
     # 檢查管理員權限

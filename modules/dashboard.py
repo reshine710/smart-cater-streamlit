@@ -7,6 +7,7 @@ from datetime import datetime, timedelta
 def dashboard_page():
     """儀表板頁面"""
     st.title("📊 營運儀表板")
+    st.set_page_config(layout="wide",initial_sidebar_state="expanded")
     
     # 獲取資料
     machines = st.session_state.api.get_machines()

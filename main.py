@@ -17,6 +17,10 @@ def show_main_app():
     """顯示主應用程式"""
     ui_logger.debug(f"Showing main app for user: {st.session_state.get('username', 'Unknown')}")
     st.title("🏪 智慧販賣機管理系統")
+    st.set_page_config(
+        page_title="智慧販賣機管理系統",
+        page_icon="🏪",
+    )
     st.markdown("---")
     
     # 頁籤選擇：登入或註冊
