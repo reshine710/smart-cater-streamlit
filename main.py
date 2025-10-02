@@ -9,7 +9,8 @@ from pages import (
     menu_management_page,
     recipe_settings_page,
     sales_analytics_page,
-    ai_recommendations_page
+    ai_recommendations_page,
+    location_management_page
 )
 
 def show_main_app():
@@ -143,11 +144,26 @@ def show_user_management():
     
     # 使用者列表
     st.subheader("📋 使用者列表")
-    # 獲取使用者列表
-    api = st.session_state.api
-    users = api.get_users()
     
-    ui_logger.debug(f"Retrieved {len(users)} users for management display")
+    # 分頁控制
+    col1, col2, col3 = st.columns([1, 1, 2])
+    with col1:
+        page_size = st.selectbox("每頁顯示", [10, 20, 50], index=1)
+    with col2:
+        page_number = st.number_input("頁數", min_value=1, value=1)
+    
+    skip = (page_number - 1) * page_size
+    
+    # 獲取使用者列表和總數
+    api = st.session_state.api
+    users = api.get_users(skip=skip, limit=page_size)
+    total_users = api.get_users_count()
+    
+    ui_logger.debug(f"Retrieved {len(users)} users for management display (page {page_number})")
+    
+    with col3:
+        st.metric("總使用者數", total_users)
+    
     if users:
         # 建立使用者資料表
         user_data = []
@@ -166,16 +182,19 @@ def show_user_management():
         st.dataframe(df, use_container_width=True)
         
         # 統計資訊
-        col1, col2, col3 = st.columns(3)
+        col1, col2, col3, col4 = st.columns(4)
         with col1:
-            total_users = len(users)
-            st.metric("總使用者數", total_users)
+            current_page_users = len(users)
+            st.metric("當前頁使用者", current_page_users)
         with col2:
             admin_count = sum(1 for user in users if user.get("is_admin", False))
             st.metric("管理員數量", admin_count)
         with col3:
             active_count = sum(1 for user in users if user.get("is_active", False))
             st.metric("啟用使用者", active_count)
+        with col4:
+            total_pages = (total_users + page_size - 1) // page_size
+            st.metric("總頁數", total_pages)
     else:
         st.info("目前沒有使用者資料")
     
@@ -265,6 +284,7 @@ def main():
         # 管理員專用功能
         if is_admin:
             pages["👥 使用者管理"] = "user_management"
+            pages["📍 地點管理"] = "location_management"
             ui_logger.debug(f"Admin pages added for user {username}")
         
         # 選擇頁面
@@ -293,6 +313,8 @@ def main():
         show_user_management()
     elif page_key == "ai_recommendations":
         ai_recommendations_page()
+    elif page_key == "location_management":
+        location_management_page()
     elif page_key == "dashboard":
         dashboard_page()
 
@@ -303,6 +325,7 @@ def check_api_connection() -> bool:
         import requests
         # 使用健康檢查端點
         response = requests.get("http://127.0.0.1:8000/health", timeout=5)
+        # response = requests.get("https://scb-api-954587932054.asia-east1.run.app/api/v1health", timeout=5)
         is_connected = response.status_code == 200
         if is_connected:
             health_data = response.json()

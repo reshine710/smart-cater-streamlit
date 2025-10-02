@@ -183,11 +183,25 @@ def machine_status_page():
                         placeholder="例如: 台北101店",
                         help="機台的顯示名稱"
                     )
-                    location = st.text_input(
-                        "機台位置 *", 
-                        placeholder="例如: 台北市信義區信義路五段7號",
-                        help="機台的實際安裝位置"
-                    )
+                    
+                    # 獲取可用地點
+                    locations = st.session_state.api.get_locations()
+                    location_options = [loc.get('name', 'Unknown') for loc in locations]
+                    
+                    if location_options:
+                        location = st.selectbox(
+                            "機台位置 *",
+                            options=location_options,
+                            help="選擇機台的安裝地點"
+                        )
+                    else:
+                        location = st.text_input(
+                            "機台位置 *", 
+                            placeholder="例如: 台北市信義區信義路五段7號",
+                            help="機台的實際安裝位置"
+                        )
+                        st.info("💡 提示：可以在地點管理中預先建立地點選項")
+                    
                     ip_address = st.text_input(
                         "IP 地址", 
                         placeholder="例如: 192.168.1.100",

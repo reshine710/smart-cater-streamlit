@@ -9,6 +9,7 @@ from logger_config import api_logger, auth_logger, system_logger
 
 # API 配置
 API_BASE_URL = "http://127.0.0.1:8000/api/v1"
+# API_BASE_URL = "https://scb-api-954587932054.asia-east1.run.app/api/v1"
 
 # 系統狀態變數
 class SystemStatus:
@@ -489,7 +490,13 @@ class VendingMachineAPI:
                 "is_active": True,
                 "created_at": "2025-08-13T14:00:00",
                 "updated_at": "2025-08-13T14:00:00",
-                "tags": [{"id": 1, "name": "熱門"}, {"id": 2, "name": "肉類"}]
+                "nutrition_info": {
+                    "calories": 450,
+                    "protein": 25,
+                    "carbs": 35,
+                    "fat": 22
+                },
+                "tags": ["熱門", "肉類"]
             },
             {
                 "id": 2,
@@ -503,7 +510,13 @@ class VendingMachineAPI:
                 "is_active": True,
                 "created_at": "2025-08-13T14:00:00",
                 "updated_at": "2025-08-13T14:00:00",
-                "tags": [{"id": 3, "name": "健康"}, {"id": 4, "name": "蛋類"}]
+                "nutrition_info": {
+                    "calories": 180,
+                    "protein": 12,
+                    "carbs": 8,
+                    "fat": 10
+                },
+                "tags": ["健康", "蛋類"]
             },
             {
                 "id": 3,
@@ -517,7 +530,13 @@ class VendingMachineAPI:
                 "is_active": True,
                 "created_at": "2025-08-13T14:00:00",
                 "updated_at": "2025-08-13T14:00:00",
-                "tags": [{"id": 3, "name": "健康"}, {"id": 5, "name": "素食"}]
+                "nutrition_info": {
+                    "calories": 120,
+                    "protein": 5,
+                    "carbs": 15,
+                    "fat": 3
+                },
+                "tags": ["健康", "素食"]
             }
         ]
     
@@ -990,13 +1009,15 @@ class VendingMachineAPI:
             auth_logger.debug(f"User data: {user_data}")
             return user_data
     
-    def get_users(self) -> List[Dict]:
+    def get_users(self, skip: int = 0, limit: int = 100) -> List[Dict]:
         """獲取所有使用者列表（僅管理員可用）"""
-        api_logger.debug("Fetching users list")
+        api_logger.debug(f"Fetching users list (skip={skip}, limit={limit})")
         try:
+            params = {"skip": skip, "limit": limit}
             response = requests.get(
                 f"{self.base_url}/users/",
                 headers=self._get_auth_headers(),
+                params=params,
                 timeout=10
             )
             
@@ -1018,6 +1039,32 @@ class VendingMachineAPI:
             # 網路連接錯誤，返回模擬資料
             api_logger.error(f"Network error getting users list: {str(e)}")
             return self._get_offline_users()
+    
+    def get_users_count(self) -> int:
+        """獲取使用者總數（僅管理員可用）"""
+        api_logger.debug("Fetching users count")
+        try:
+            response = requests.get(
+                f"{self.base_url}/users/count",
+                headers=self._get_auth_headers(),
+                timeout=10
+            )
+            
+            if response.status_code == 200:
+                count_data = response.json()
+                count = count_data.get('count', 0)
+                api_logger.info(f"Successfully retrieved users count: {count}")
+                return count
+            elif response.status_code == 500:
+                api_logger.warning("Server error (500) getting users count, falling back to offline data")
+                return len(self._get_offline_users())
+            else:
+                api_logger.warning(f"Failed to get users count - Status code: {response.status_code}")
+                return 0
+                
+        except requests.exceptions.RequestException as e:
+            api_logger.error(f"Network error getting users count: {str(e)}")
+            return len(self._get_offline_users())
     
     def _get_offline_users(self) -> List[Dict]:
         """獲取離線模式使用者列表"""
@@ -1270,6 +1317,106 @@ class VendingMachineAPI:
             st.error(f"❌ 更新推薦狀態時發生未預期的錯誤：{str(e)}")
             return False
 
+    # 地點管理 API 方法
+    def get_locations(self) -> List[Dict]:
+        """獲取地點列表"""
+        api_logger.debug("Fetching locations list")
+        try:
+            response = requests.get(
+                f"{self.base_url}/locations/",
+                headers=self._get_auth_headers(),
+                timeout=10
+            )
+            
+            if response.status_code == 200:
+                locations_data = response.json()
+                api_logger.info(f"Successfully retrieved {len(locations_data)} locations from API")
+                return locations_data
+            elif response.status_code == 500:
+                api_logger.warning("Server error (500) getting locations list, falling back to offline data")
+                import streamlit as st
+                st.warning("⚠️ 伺服器資料庫未初始化，顯示模擬資料")
+                return self._get_offline_locations()
+            else:
+                api_logger.warning(f"Failed to get locations list - Status code: {response.status_code}")
+                return []
+                
+        except requests.exceptions.RequestException as e:
+            api_logger.error(f"Network error getting locations list: {str(e)}")
+            import streamlit as st
+            st.warning(f"🌐 無法連接到 API 伺服器，顯示模擬資料: {str(e)}")
+            return self._get_offline_locations()
+    
+    def create_location(self, location_data: Dict) -> Dict:
+        """建立新地點"""
+        api_logger.debug(f"Creating new location: {location_data.get('name', 'Unknown')}")
+        try:
+            response = requests.post(
+                f"{self.base_url}/locations/",
+                headers=self._get_auth_headers(),
+                json=location_data,
+                timeout=10
+            )
+            
+            if response.status_code in [200, 201]:
+                created_location = response.json()
+                api_logger.info(f"Successfully created location: {created_location.get('name', 'Unknown')}")
+                import streamlit as st
+                st.success(f"✅ 地點 {created_location.get('name', '未知')} 創建成功！")
+                return created_location
+            elif response.status_code == 400:
+                api_logger.warning(f"Bad request creating location - validation error")
+                import streamlit as st
+                try:
+                    error_detail = response.json().get('detail', '資料驗證失敗')
+                    st.error(f"❌ 創建地點失敗：{error_detail}")
+                except:
+                    st.error("❌ 創建地點失敗：資料格式不正確")
+                return {}
+            elif response.status_code in [401, 403]:
+                api_logger.warning("Unauthorized access to location creation API")
+                import streamlit as st
+                st.error("❌ 權限不足，僅管理員可創建地點")
+                return {}
+            else:
+                api_logger.warning(f"Failed to create location - Status code: {response.status_code}")
+                import streamlit as st
+                st.error(f"❌ 創建地點失敗 - 狀態碼: {response.status_code}")
+                return {}
+                
+        except requests.exceptions.RequestException as e:
+            api_logger.error(f"Network error creating location: {str(e)}")
+            import streamlit as st
+            st.error(f"🌐 網路錯誤，無法創建地點: {str(e)}")
+            return {}
+    
+    def _get_offline_locations(self) -> List[Dict]:
+        """獲取離線模式地點列表"""
+        api_logger.debug("Returning offline locations data")
+        return [
+            {
+                "id": 1,
+                "name": "台北101店",
+                "is_indoor": True,
+                "description": "室內商業區",
+                "address": "台北市信義區信義路五段七號"
+            },
+            {
+                "id": 2,
+                "name": "西門町店",
+                "is_indoor": False,
+                "description": "戶外商圈",
+                "address": "台北市萬華區成都路"
+            },
+            {
+                "id": 3,
+                "name": "板橋車站店",
+                "is_indoor": True,
+                "description": "車站內部",
+                "address": "新北市板橋區縣政路"
+            }
+        ]
+    
     def _get_ai_auth_headers(self) -> dict:
         """獲取AI API認證標頭"""
         # 使用固定的AI API Key，實際應用中應該從環境變數或配置檔案讀取
