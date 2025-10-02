@@ -1273,8 +1273,8 @@ class VendingMachineAPI:
         api_logger.debug(f"Updating recommendation {recommendation_id} status to {status}")
         try:
             update_data = {
-                "status": status,
-                "reviewed_by": "admin"  # Add required field
+                "new_status": status,  # API 期望的欄位名稱是 new_status
+                "reviewer": "admin"  # API 期望的欄位名稱是 reviewer
             }
             if review_notes:
                 update_data["review_notes"] = review_notes
@@ -1301,10 +1301,43 @@ class VendingMachineAPI:
                 import streamlit as st
                 st.error("❌ 權限不足：無法更新推薦狀態")
                 return False
+            elif response.status_code == 422:
+                # 處理驗證錯誤
+                try:
+                    error_detail = response.json()
+                    api_logger.warning(f"Validation error updating recommendation {recommendation_id}: {error_detail}")
+                    import streamlit as st
+                    st.error(f"❌ 資料驗證錯誤：{error_detail.get('detail', '未知錯誤')}")
+                except:
+                    api_logger.warning(f"422 error updating recommendation {recommendation_id}: {response.text}")
+                    import streamlit as st
+                    st.error("❌ 資料驗證錯誤，請檢查輸入資料")
+                return False
+            elif response.status_code == 500:
+                # 處理伺服器內部錯誤
+                try:
+                    error_detail = response.json()
+                    error_msg = error_detail.get('detail', '伺服器內部錯誤')
+                    api_logger.warning(f"Server error updating recommendation {recommendation_id}: {error_msg}")
+                    import streamlit as st
+                    if "missing 1 required positional argument: 'reviewer'" in error_msg:
+                        st.error("❌ 後端 API 配置錯誤：缺少審核者參數。請聯繫系統管理員。")
+                    else:
+                        st.error(f"❌ 伺服器錯誤：{error_msg}")
+                except:
+                    api_logger.warning(f"500 error updating recommendation {recommendation_id}: {response.text}")
+                    import streamlit as st
+                    st.error("❌ 伺服器內部錯誤，請稍後再試或聯繫系統管理員")
+                return False
             else:
                 api_logger.warning(f"Failed to update recommendation status - Status code: {response.status_code}")
-                import streamlit as st
-                st.error(f"❌ 更新推薦狀態失敗 - 狀態碼: {response.status_code}")
+                try:
+                    error_detail = response.json()
+                    import streamlit as st
+                    st.error(f"❌ 更新推薦狀態失敗 - 狀態碼: {response.status_code}, 錯誤: {error_detail}")
+                except:
+                    import streamlit as st
+                    st.error(f"❌ 更新推薦狀態失敗 - 狀態碼: {response.status_code}")
                 return False
                 
         except requests.exceptions.RequestException as e:
