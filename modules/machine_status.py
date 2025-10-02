@@ -194,30 +194,37 @@ def machine_status_page():
                         # 確保 locations 是列表且包含字典
                         if isinstance(locations, list) and locations:
                             location_options = []
+                            location_mapping = {}  # 建立名稱到ID的映射
                             for loc in locations:
                                 if isinstance(loc, dict):
-                                    location_options.append(loc.get('name', 'Unknown'))
+                                    location_name = loc.get('name', 'Unknown')
+                                    location_options.append(location_name)
+                                    location_mapping[location_name] = loc.get('id')
                                 else:
                                     system_logger.warning(f"Invalid location data format: {type(loc)}")
                         else:
                             location_options = []
+                            location_mapping = {}
                             system_logger.warning(f"Invalid locations data: {type(locations)}")
                     except Exception as e:
                         system_logger.error(f"Error getting locations: {str(e)}")
                         location_options = []
+                        location_mapping = {}
                     
                     if location_options:
-                        location = st.selectbox(
+                        selected_location = st.selectbox(
                             "機台位置 *",
                             options=location_options,
                             help="選擇機台的安裝地點"
                         )
+                        location_id = location_mapping.get(selected_location)
                     else:
-                        location = st.text_input(
+                        selected_location = st.text_input(
                             "機台位置 *", 
                             placeholder="例如: 台北市信義區信義路五段7號",
                             help="機台的實際安裝位置"
                         )
+                        location_id = None
                         st.info("💡 提示：可以在地點管理中預先建立地點選項")
                     
                     ip_address = st.text_input(
@@ -229,8 +236,8 @@ def machine_status_page():
                 with col2:
                     status = st.selectbox(
                         "初始狀態", 
-                        options=["online", "offline", "maintenance"],
-                        format_func=lambda x: {"online": "🟢 線上", "offline": "🔴 離線", "maintenance": "🟡 維護中"}[x]
+                        options=["online", "offline", "maintenance", "fault"],
+                        format_func=lambda x: {"online": "🟢 線上", "offline": "🔴 離線", "maintenance": "🟡 維護中", "fault": "🔴 故障"}[x]
                     )
                     firmware_version = st.text_input(
                         "韌體版本", 
@@ -254,16 +261,18 @@ def machine_status_page():
                 
                 if submitted:
                     # 驗證必填欄位
-                    if not machine_code or not machine_name or not location:
+                    if not machine_code or not machine_name or not selected_location:
                         st.error("❌ 請填寫所有必填欄位（標記 * 的欄位）")
                     else:
-                        # 準備機台資料
+                        # 準備機台資料（按照 API 規格）
                         machine_data = {
                             "machine_code": machine_code.strip(),
                             "name": machine_name.strip(),
-                            "location": location.strip(),
+                            "location": selected_location.strip(),  # 直接使用地點名稱
                             "status": status,
-                            "max_capacity": max_capacity
+                            "max_capacity": max_capacity,
+                            "temperature": None,  # 預設值，後續可由機台更新
+                            "humidity": None      # 預設值，後續可由機台更新
                         }
                         
                         # 添加可選欄位
@@ -275,6 +284,7 @@ def machine_status_page():
                             machine_data["hardware_version"] = hardware_version.strip()
                         
                         # 呼叫 API 創建機台
+                        ui_logger.debug(f"Sending machine data: {machine_data}")
                         try:
                             created_machine = st.session_state.api.create_machine(machine_data)
                             if created_machine:
@@ -312,7 +322,16 @@ def machine_status_page():
                 }
                 machine_status = machine.get('status', 'unknown')
                 st.write(f"**狀態**: {status_color.get(machine_status, '⚪')} {machine_status}")
-                st.write(f"**位置**: {machine.get('location', 'Unknown Location')}")
+                # 處理位置顯示格式
+                location_info = machine.get('location', 'Unknown Location')
+                if isinstance(location_info, dict):
+                    location_name = location_info.get('name', 'Unknown')
+                    location_env = '🏢 室內' if location_info.get('is_indoor', False) else '🌳 室外'
+                    st.write(f"**位置**: {location_name}")
+                    st.write(f"**環境**: {location_env}")
+                else:
+                    st.write(f"**位置**: {location_info}")
+                    st.write(f"**環境**: 未知")
             
             with col2:
                 temperature = machine.get('temperature')
@@ -387,51 +406,12 @@ def machine_status_page():
                     st.markdown("---")
                     st.write("**⚠️ 危險操作區域**")
                     
-                    # 使用確認對話框
-                    if st.button(f"🗑️ 刪除機台 {machine_id}", 
+                    # 使用 st.dialog 確認對話框
+                    if st.button(f"🗑️ 刪除機台", 
                                key=f"delete_{machine_id}",
                                type="secondary",
                                help="此操作無法復原，請謹慎使用"):
-                        # 顯示確認對話框
-                        if f"confirm_delete_{machine_id}" not in st.session_state:
-                            st.session_state[f"confirm_delete_{machine_id}"] = False
-                        
-                        if not st.session_state[f"confirm_delete_{machine_id}"]:
-                            st.session_state[f"confirm_delete_{machine_id}"] = True
-                            st.rerun()
-                    
-                    # 確認刪除對話框
-                    if st.session_state.get(f"confirm_delete_{machine_id}", False):
-                        st.error(f"⚠️ 確定要刪除機台 **{machine_name}** ({machine_code}) 嗎？")
-                        st.write("此操作將永久刪除機台及其相關數據，無法復原！")
-                        
-                        col_confirm, col_cancel = st.columns(2)
-                        
-                        with col_confirm:
-                            if st.button(f"✅ 確認刪除", 
-                                       key=f"confirm_delete_yes_{machine_id}",
-                                       type="primary"):
-                                try:
-                                    success = st.session_state.api.delete_machine(machine_id)
-                                    if success:
-                                        st.success(f"✅ 機台 {machine_name} 已成功刪除")
-                                        ui_logger.info(f"Admin {st.session_state.get('username')} deleted machine {machine_id} ({machine_code})")
-                                        # 清除確認狀態
-                                        st.session_state[f"confirm_delete_{machine_id}"] = False
-                                        # 刷新頁面以更新機台列表
-                                        time.sleep(1)
-                                        st.rerun()
-                                    else:
-                                        st.error(f"❌ 刪除機台 {machine_name} 失敗")
-                                except Exception as e:
-                                    st.error(f"❌ 刪除機台時發生錯誤: {str(e)}")
-                                    ui_logger.error(f"Error deleting machine {machine_id}: {str(e)}")
-                        
-                        with col_cancel:
-                            if st.button(f"❌ 取消", 
-                                       key=f"confirm_delete_no_{machine_id}"):
-                                st.session_state[f"confirm_delete_{machine_id}"] = False
-                                st.rerun()
+                        show_delete_machine_confirmation_dialog(machine)
                 else:
                     # 非管理員用戶顯示提示
                     st.caption("🔒 刪除機台功能僅限管理員使用")
@@ -624,5 +604,63 @@ def setup_mqtt_callbacks():
         mqtt_client.subscribe("machine/+/alert", on_alert)
     except Exception as e:
         st.error(f"設置 MQTT 回調失敗: {e}")
+
+
+def show_delete_machine_confirmation_dialog(machine: dict):
+    """顯示刪除機台確認對話框"""
+    
+    machine_id = machine.get('id', 'Unknown')
+    machine_name = machine.get('name', 'Unknown')
+    machine_code = machine.get('machine_code', 'Unknown')
+    
+    @st.dialog(f"🗑️ 刪除確認 - {machine_name} ({machine_code})")
+    def delete_dialog():
+        st.error("⚠️ **危險操作警告**")
+        st.write(f"您即將刪除機台：**{machine_name}** ({machine_code})")
+        
+        # 顯示機台詳細資訊
+        col1, col2 = st.columns(2)
+        with col1:
+            st.write(f"**機台ID**: {machine_id}")
+            st.write(f"**狀態**: {machine.get('status', 'Unknown')}")
+        with col2:
+            location_info = machine.get('location', 'Unknown Location')
+            if isinstance(location_info, dict):
+                location_name = location_info.get('name', 'Unknown')
+                st.write(f"**位置**: {location_name}")
+            else:
+                st.write(f"**位置**: {location_info}")
+            st.write(f"**IP地址**: {machine.get('ip_address', 'N/A')}")
+        
+        st.markdown("---")
+        st.warning("**此操作將永久刪除機台及其相關數據，無法復原！**")
+        st.write("請確認您真的要執行此操作。")
+        
+        col_confirm, col_cancel = st.columns(2)
+        
+        with col_confirm:
+            if st.button("✅ 確認刪除", 
+                        type="primary", 
+                        use_container_width=True):
+                try:
+                    success = st.session_state.api.delete_machine(machine_id)
+                    if success:
+                        st.success(f"✅ 機台 {machine_name} 已成功刪除")
+                        ui_logger.info(f"Admin {st.session_state.get('username')} deleted machine {machine_id} ({machine_code})")
+                        # 刷新頁面以更新機台列表
+                        time.sleep(1)
+                        st.rerun()
+                    else:
+                        st.error(f"❌ 刪除機台 {machine_name} 失敗")
+                except Exception as e:
+                    st.error(f"❌ 刪除機台時發生錯誤: {str(e)}")
+                    ui_logger.error(f"Error deleting machine {machine_id}: {str(e)}")
+        
+        with col_cancel:
+            if st.button("❌ 取消", 
+                        use_container_width=True):
+                st.rerun()
+    
+    delete_dialog()
 
 

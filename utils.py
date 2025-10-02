@@ -297,6 +297,28 @@ class VendingMachineAPI:
                 import streamlit as st
                 st.error("❌ 機台代碼已存在，請使用不同的代碼")
                 return {}
+            elif response.status_code == 422:
+                api_logger.warning("Validation error creating machine")
+                import streamlit as st
+                try:
+                    error_detail = response.json()
+                    if isinstance(error_detail, dict) and 'detail' in error_detail:
+                        # FastAPI 驗證錯誤格式
+                        if isinstance(error_detail['detail'], list):
+                            error_messages = []
+                            for error in error_detail['detail']:
+                                field = ' -> '.join(str(x) for x in error.get('loc', []))
+                                msg = error.get('msg', '驗證失敗')
+                                error_messages.append(f"{field}: {msg}")
+                            st.error(f"❌ 資料驗證失敗：\n" + "\n".join(error_messages))
+                        else:
+                            st.error(f"❌ 資料驗證失敗：{error_detail['detail']}")
+                    else:
+                        st.error(f"❌ 資料驗證失敗：{error_detail}")
+                    api_logger.debug(f"Validation error details: {error_detail}")
+                except:
+                    st.error("❌ 資料驗證失敗，請檢查輸入格式")
+                return {}
             elif response.status_code == 500:
                 api_logger.warning("Server error creating machine")
                 import streamlit as st
@@ -305,7 +327,11 @@ class VendingMachineAPI:
             else:
                 api_logger.warning(f"Failed to create machine - Status code: {response.status_code}")
                 import streamlit as st
-                st.error(f"❌ 創建機台失敗 - 狀態碼: {response.status_code}")
+                try:
+                    error_detail = response.json().get('detail', f'狀態碼: {response.status_code}')
+                    st.error(f"❌ 創建機台失敗：{error_detail}")
+                except:
+                    st.error(f"❌ 創建機台失敗 - 狀態碼: {response.status_code}")
                 return {}
                 
         except requests.exceptions.RequestException as e:
