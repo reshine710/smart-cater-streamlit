@@ -323,9 +323,9 @@ def check_api_connection() -> bool:
     """檢查 API 連接狀態"""
     try:
         import requests
-        # 使用健康檢查端點
-        response = requests.get("http://127.0.0.1:8000/health", timeout=5)
-        # response = requests.get("https://scb-api-954587932054.asia-east1.run.app/api/v1health", timeout=5)
+        # 使用健康檢查端點，從配置文件獲取 base URL
+        base_url = API_BASE_URL.replace("/api/v1", "")  # 移除 /api/v1 後綴
+        response = requests.get(f"{base_url}/health", timeout=5)
         is_connected = response.status_code == 200
         if is_connected:
             health_data = response.json()

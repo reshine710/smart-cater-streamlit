@@ -8,14 +8,15 @@ import sys
 import os
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
-from utils import VendingMachineAPI
+from utils import VendingMachineAPI, API_BASE_URL
+from config import settings
 import json
 
 def test_users_api():
     """測試使用者 API 更新"""
     print("===== 測試使用者 API 更新 =====")
     
-    api = VendingMachineAPI("http://127.0.0.1:8000/api/v1")
+    api = VendingMachineAPI(API_BASE_URL)
     
     try:
         # 測試獲取使用者總數
@@ -42,7 +43,7 @@ def test_locations_api():
     """測試地點 API"""
     print("===== 測試地點 API =====")
     
-    api = VendingMachineAPI("http://127.0.0.1:8000/api/v1")
+    api = VendingMachineAPI(API_BASE_URL)
     
     try:
         # 測試獲取地點列表
@@ -81,7 +82,7 @@ def test_menu_items_nutrition():
     """測試菜單項目營養資訊"""
     print("===== 測試菜單項目營養資訊 =====")
     
-    api = VendingMachineAPI("http://127.0.0.1:8000/api/v1")
+    api = VendingMachineAPI(API_BASE_URL)
     
     try:
         # 測試獲取菜單項目
@@ -137,7 +138,7 @@ def test_offline_data_format():
     """測試離線數據格式"""
     print("===== 測試離線數據格式 =====")
     
-    api = VendingMachineAPI("http://127.0.0.1:8000/api/v1")
+    api = VendingMachineAPI(API_BASE_URL)
     
     try:
         # 測試離線菜單數據

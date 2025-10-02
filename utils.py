@@ -6,10 +6,11 @@ import json
 from datetime import datetime, timedelta
 from typing import Dict, List, Optional
 from logger_config import api_logger, auth_logger, system_logger
+from config import settings
 
-# API 配置
-API_BASE_URL = "http://127.0.0.1:8000/api/v1"
-# API_BASE_URL = "https://scb-api-954587932054.asia-east1.run.app/api/v1"
+# API 配置 - 從配置文件讀取
+API_BASE_URL = settings.get("API_URL", "http://127.0.0.1:8000/api/v1")
+# 備用 URL: "https://scb-api-954587932054.asia-east1.run.app/api/v1"
 
 # 系統狀態變數
 class SystemStatus:
