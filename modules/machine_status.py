@@ -30,7 +30,6 @@ def machine_status_page():
     """機台狀態監控頁面"""
     ui_logger.info(f"User {st.session_state.get('username', 'Unknown')} accessing machine status page")
     st.title("🖥️ 機台狀態監控")
-    st.set_page_config(layout="wide",initial_sidebar_state="expanded")
     st.markdown("---")
     
     ui_logger.debug("Machine status page accessed")

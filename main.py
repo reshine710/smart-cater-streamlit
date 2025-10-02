@@ -16,11 +16,8 @@ from modules import (
 def show_main_app():
     """顯示主應用程式"""
     ui_logger.debug(f"Showing main app for user: {st.session_state.get('username', 'Unknown')}")
+    st.set_page_config(layout="centered",initial_sidebar_state="expanded")
     st.title("🏪 智慧販賣機管理系統")
-    st.set_page_config(
-        page_title="智慧販賣機管理系統",
-        page_icon="🏪",
-    )
     st.markdown("---")
     
     # 頁籤選擇：登入或註冊
@@ -233,6 +230,14 @@ def show_user_management():
 
 
 def main():
+    # 設置頁面配置 - 必須在其他 Streamlit 命令之前
+    st.set_page_config(
+        page_title="智慧販賣機管理系統",
+        page_icon="🏪",
+        layout="wide",
+        initial_sidebar_state="expanded"
+    )
+    
     # 初始化 session state
     init_session_state()
     ui_logger.debug("Session state initialized in main")
