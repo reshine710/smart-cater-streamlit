@@ -11,10 +11,20 @@ from typing import Optional, List, Dict
 # Import MQTT client (assuming it exists in the project)
 try:
     from mqtt_client.client import MQTTClient, initialize_mqtt_client
-except ImportError:
+    MQTT_AVAILABLE = True
+    system_logger.info("MQTT client imported successfully")
+except ImportError as e:
+    system_logger.error(f"MQTT client import failed: {e}")
     st.warning("MQTT client not available. Some features may be limited.")
     MQTTClient = None
     initialize_mqtt_client = None
+    MQTT_AVAILABLE = False
+except Exception as e:
+    system_logger.error(f"MQTT client initialization error: {e}")
+    st.error(f"MQTT client error: {e}")
+    MQTTClient = None
+    initialize_mqtt_client = None
+    MQTT_AVAILABLE = False
 
 def machine_status_page():
     """機台狀態監控頁面"""
@@ -25,7 +35,7 @@ def machine_status_page():
     ui_logger.debug("Machine status page accessed")
     
     # Initialize MQTT client if available
-    if 'mqtt_client' not in st.session_state and MQTTClient:
+    if MQTT_AVAILABLE and 'mqtt_client' not in st.session_state:
         try:
             st.session_state.mqtt_client = MQTTClient()
             mqtt_logger.info("MQTT client initialized in Streamlit session")
@@ -33,9 +43,11 @@ def machine_status_page():
             st.error(f"Failed to initialize MQTT client: {e}")
             mqtt_logger.error(f"Failed to initialize MQTT client: {e}")
             st.session_state.mqtt_client = None
+    elif not MQTT_AVAILABLE:
+        st.session_state.mqtt_client = None
     
     # MQTT connection status and controls
-    if MQTTClient and 'mqtt_client' in st.session_state and st.session_state.mqtt_client:
+    if MQTT_AVAILABLE and 'mqtt_client' in st.session_state and st.session_state.mqtt_client:
         mqtt_client = st.session_state.mqtt_client
         
         # Get detailed connection status
@@ -97,7 +109,10 @@ def machine_status_page():
                     except Exception as e:
                         mqtt_logger.error(f"Failed to subscribe to {topic}: {e}")
     else:
-        st.sidebar.write("**MQTT Status**: ❌ Not Available")
+        if MQTT_AVAILABLE:
+            st.sidebar.write("**MQTT Status**: 🟡 Initializing...")
+        else:
+            st.sidebar.write("**MQTT Status**: ❌ Not Available")
     
     # Get machine data from API
     machines = st.session_state.api.get_machines()

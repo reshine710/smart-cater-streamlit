@@ -148,8 +148,23 @@ def show_menu_item_details(item: Dict, index: int):
         # 顯示標籤
         tags = item.get('tags', [])
         if tags:
-            tags_str = ' '.join([f"#{tag}" for tag in tags])
-            st.write(f"**標籤**: {tags_str}")
+            # 處理標籤格式 - 支援字串和字典格式
+            formatted_tags = []
+            for tag in tags:
+                if isinstance(tag, dict):
+                    # 如果是字典格式，取 name 欄位
+                    tag_name = tag.get('name', str(tag))
+                else:
+                    # 如果是字串格式，直接使用
+                    tag_name = str(tag)
+                formatted_tags.append(tag_name)
+            
+            # 使用 Streamlit 的標籤樣式顯示
+            st.write("**標籤**:")
+            tag_cols = st.columns(min(len(formatted_tags), 4))  # 最多4列
+            for i, tag_name in enumerate(formatted_tags):
+                with tag_cols[i % 4]:
+                    st.markdown(f"`{tag_name}`")
     
     with col2:
         st.write(f"**價格**: NT$ {item.get('price', 0):.1f}")
@@ -197,49 +212,65 @@ def show_menu_item_details(item: Dict, index: int):
             st.markdown("---")
             st.write("**⚠️ 危險操作**")
             
-            # 使用確認對話框
+            # 使用 st.dialog 確認對話框
             if st.button(f"🗑️ 刪除項目", 
                        key=f"delete_{item_id}_{index}",
                        type="secondary",
                        help="此操作無法復原，請謹慎使用"):
-                # 顯示確認對話框
-                if f"confirm_delete_menu_{item_id}" not in st.session_state:
-                    st.session_state[f"confirm_delete_menu_{item_id}"] = False
-                
-                if not st.session_state[f"confirm_delete_menu_{item_id}"]:
-                    st.session_state[f"confirm_delete_menu_{item_id}"] = True
-                    st.rerun()
-            
-            # 確認刪除對話框
-            if st.session_state.get(f"confirm_delete_menu_{item_id}", False):
-                st.error(f"⚠️ 確定要刪除菜單項目 **{item.get('name', 'Unknown')}** 嗎？")
-                st.write("此操作將永久刪除菜單項目及其相關數據，無法復原！")
-                
-                col_confirm, col_cancel = st.columns(2)
-                
-                with col_confirm:
-                    if st.button(f"✅ 確認刪除", 
-                               key=f"confirm_delete_menu_yes_{item_id}_{index}",
-                               type="primary"):
-                        try:
-                            success = st.session_state.api.delete_menu_item(item_id)
-                            if success:
-                                ui_logger.info(f"Admin {st.session_state.get('username')} deleted menu item {item_id} ({item.get('name')})")
-                                # 清除確認狀態
-                                st.session_state[f"confirm_delete_menu_{item_id}"] = False
-                                # 刷新頁面以更新菜單列表
-                                st.rerun()
-                            else:
-                                st.error(f"❌ 刪除菜單項目失敗")
-                        except Exception as e:
-                            st.error(f"❌ 刪除菜單項目時發生錯誤: {str(e)}")
-                            ui_logger.error(f"Error deleting menu item {item_id}: {str(e)}")
-                
-                with col_cancel:
-                    if st.button(f"❌ 取消", 
-                               key=f"confirm_delete_menu_no_{item_id}_{index}"):
-                        st.session_state[f"confirm_delete_menu_{item_id}"] = False
-                        st.rerun()
+                show_delete_confirmation_dialog(item)
+
+
+def show_delete_confirmation_dialog(item: Dict):
+    """顯示刪除確認對話框"""
+    
+    @st.dialog(f"🗑️ 刪除確認 - {item.get('name', 'Unknown')}")
+    def delete_dialog():
+        st.error("⚠️ **危險操作警告**")
+        st.write(f"您即將刪除菜單項目：**{item.get('name', 'Unknown')}**")
+        st.write(f"價格：NT$ {item.get('price', 0):.1f}")
+        
+        # 顯示項目詳細資訊
+        if item.get('description'):
+            st.write(f"描述：{item.get('description')}")
+        
+        st.markdown("---")
+        st.warning("⚠️ **此操作將永久刪除菜單項目及其相關數據，無法復原！**")
+        
+        # 確認輸入
+        st.write("請輸入項目名稱以確認刪除：")
+        confirmation_input = st.text_input("", placeholder=f"請輸入 '{item.get('name', '')}'")
+        
+        col_delete, col_cancel = st.columns(2)
+        
+        with col_delete:
+            # 只有當輸入正確時才啟用刪除按鈕
+            delete_enabled = confirmation_input == item.get('name', '')
+            if st.button("🗑️ 確認刪除", 
+                        use_container_width=True, 
+                        type="primary",
+                        disabled=not delete_enabled):
+                if delete_enabled:
+                    try:
+                        success = st.session_state.api.delete_menu_item(item['id'])
+                        if success:
+                            ui_logger.info(f"Admin {st.session_state.get('username')} deleted menu item {item['id']} ({item.get('name')})")
+                            st.success(f"✅ 菜單項目 '{item.get('name')}' 已成功刪除！")
+                            st.rerun()
+                        else:
+                            st.error("❌ 刪除菜單項目失敗")
+                    except Exception as e:
+                        st.error(f"❌ 刪除菜單項目時發生錯誤: {str(e)}")
+                        ui_logger.error(f"Error deleting menu item {item['id']}: {str(e)}")
+        
+        with col_cancel:
+            if st.button("❌ 取消", use_container_width=True):
+                st.rerun()
+        
+        if not delete_enabled and confirmation_input:
+            st.error("❌ 輸入的項目名稱不正確")
+    
+    # 觸發對話框
+    delete_dialog()
 
 
 def show_edit_menu_item_form(item: Dict):
@@ -296,7 +327,19 @@ def show_tags_management(item: Dict):
     @st.dialog(f"🏷️ 管理標籤 - {item.get('name', 'Unknown')}")
     def tags_dialog():
         current_tags = item.get('tags', [])
-        current_tags_str = ', '.join(current_tags) if current_tags else ''
+        
+        # 處理標籤格式 - 支援字串和字典格式
+        formatted_current_tags = []
+        for tag in current_tags:
+            if isinstance(tag, dict):
+                # 如果是字典格式，取 name 欄位
+                tag_name = tag.get('name', str(tag))
+            else:
+                # 如果是字串格式，直接使用
+                tag_name = str(tag)
+            formatted_current_tags.append(tag_name)
+        
+        current_tags_str = ', '.join(formatted_current_tags) if formatted_current_tags else ''
         
         updated_tags_str = st.text_input("標籤 (用逗號分隔)", value=current_tags_str, 
                                        placeholder="熱門, 健康, 咖啡")

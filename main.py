@@ -276,7 +276,7 @@ def main():
             "📈 銷售數據": "sales_data",
             "🛒 商品管理": "inventory",
             "🤖 AI智能推薦": "ai_recommendations",
-            "⚙️ 系統設定": "settings"
+            "🧾 配方設定": "settings"
         }
         
         ui_logger.debug(f"Available pages for user {username}: {list(pages.keys())}")

@@ -40,8 +40,12 @@ class MQTTClient:
         self._running = False
         
         # 訊息緩存，用於在Streamlit中顯示
-        if 'mqtt_messages' not in st.session_state:
-            st.session_state.mqtt_messages = []
+        try:
+            if 'mqtt_messages' not in st.session_state:
+                st.session_state.mqtt_messages = []
+        except Exception:
+            # 如果不在 Streamlit 環境中，使用本地緩存
+            self._local_messages = []
         
         # 初始化MQTT客戶端
         self._init_mqtt_client()
@@ -121,11 +125,18 @@ class MQTTClient:
                 'payload': payload
             }
             
-            st.session_state.mqtt_messages.append(message_entry)
-            
-            # 保持最多20條訊息
-            if len(st.session_state.mqtt_messages) > 20:
-                st.session_state.mqtt_messages = st.session_state.mqtt_messages[-20:]
+            try:
+                st.session_state.mqtt_messages.append(message_entry)
+                # 保持最多20條訊息
+                if len(st.session_state.mqtt_messages) > 20:
+                    st.session_state.mqtt_messages = st.session_state.mqtt_messages[-20:]
+            except Exception:
+                # 如果不在 Streamlit 環境中，使用本地緩存
+                if not hasattr(self, '_local_messages'):
+                    self._local_messages = []
+                self._local_messages.append(message_entry)
+                if len(self._local_messages) > 20:
+                    self._local_messages = self._local_messages[-20:]
             
             # 調用註冊的回調函數
             self._call_topic_callbacks(msg.topic, payload)
