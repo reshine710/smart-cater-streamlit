@@ -1329,8 +1329,23 @@ class VendingMachineAPI:
             )
             
             if response.status_code == 200:
-                locations_data = response.json()
-                api_logger.info(f"Successfully retrieved {len(locations_data)} locations from API")
+                response_data = response.json()
+                api_logger.debug(f"Raw locations API response: {response_data}")
+                
+                # 檢查是否為分頁格式 {'items': [...], 'total': N}
+                if isinstance(response_data, dict) and 'items' in response_data:
+                    locations_data = response_data['items']
+                    api_logger.info(f"Successfully retrieved {len(locations_data)} locations from paginated API response")
+                elif isinstance(response_data, list):
+                    # 直接返回地點列表
+                    locations_data = response_data
+                    api_logger.info(f"Successfully retrieved {len(locations_data)} locations from API")
+                else:
+                    # 如果不是預期的格式，返回空列表
+                    api_logger.warning(f"Unexpected API response format: {type(response_data)}")
+                    locations_data = []
+                
+                api_logger.debug(f"Locations data: {locations_data}")
                 return locations_data
             elif response.status_code == 500:
                 api_logger.warning("Server error (500) getting locations list, falling back to offline data")
@@ -1416,6 +1431,102 @@ class VendingMachineAPI:
                 "address": "新北市板橋區縣政路"
             }
         ]
+
+    def get_transactional_data(self, start_date: str, end_date: str, machine_id: str = None, 
+                             limit: int = 100, skip: int = 0) -> List[Dict]:
+        """獲取交易數據（AI分析用）"""
+        api_logger.debug(f"Fetching transactional data from {start_date} to {end_date}")
+        try:
+            # 構建查詢參數
+            params = {
+                "start_date": start_date,
+                "end_date": end_date,
+                "limit": limit,
+                "skip": skip
+            }
+            if machine_id:
+                params["machine_id"] = machine_id
+            
+            response = requests.get(
+                f"{self.base_url}/ai/transactional-data",
+                headers=self._get_ai_auth_headers(),
+                params=params,
+                timeout=10
+            )
+            
+            if response.status_code == 200:
+                data = response.json()
+                api_logger.info(f"Successfully fetched {len(data.get('data', []))} transactional records")
+                return data.get('data', [])
+            elif response.status_code == 400:
+                error_detail = response.json().get('detail', 'Invalid request')
+                api_logger.warning(f"Invalid transactional data request: {error_detail}")
+                import streamlit as st
+                st.error(f"❌ 查詢參數無效：{error_detail}")
+                return []
+            elif response.status_code == 401:
+                api_logger.warning("Unauthorized access to transactional data")
+                import streamlit as st
+                st.error("❌ 權限不足：無法存取交易數據")
+                return []
+            else:
+                api_logger.warning(f"Failed to fetch transactional data - Status code: {response.status_code}")
+                import streamlit as st
+                st.error(f"❌ 獲取交易數據失敗 - 狀態碼: {response.status_code}")
+                return []
+                
+        except requests.exceptions.RequestException as e:
+            api_logger.error(f"Network error when fetching transactional data: {str(e)}")
+            import streamlit as st
+            st.error(f"❌ 網路錯誤：{str(e)}")
+            return []
+        except Exception as e:
+            api_logger.error(f"Unexpected error when fetching transactional data: {str(e)}")
+            import streamlit as st
+            st.error(f"❌ 獲取交易數據時發生未預期的錯誤：{str(e)}")
+            return []
+
+    def delete_ai_recommendation(self, recommendation_id: int) -> bool:
+        """刪除AI推薦（軟刪除）"""
+        api_logger.debug(f"Deleting AI recommendation: {recommendation_id}")
+        try:
+            response = requests.delete(
+                f"{self.base_url}/ai/recommendations/{recommendation_id}",
+                headers=self._get_ai_auth_headers(),
+                timeout=10
+            )
+            
+            if response.status_code == 204:
+                api_logger.info(f"Successfully deleted AI recommendation: {recommendation_id}")
+                import streamlit as st
+                st.success(f"✅ AI推薦已成功刪除 - ID: {recommendation_id}")
+                return True
+            elif response.status_code == 404:
+                api_logger.warning(f"AI recommendation not found: {recommendation_id}")
+                import streamlit as st
+                st.warning(f"⚠️ 推薦記錄不存在或已被刪除 - ID: {recommendation_id}")
+                return False
+            elif response.status_code == 401:
+                api_logger.warning("Unauthorized to delete AI recommendation")
+                import streamlit as st
+                st.error("❌ 權限不足：無法刪除AI推薦")
+                return False
+            else:
+                api_logger.warning(f"Failed to delete AI recommendation - Status code: {response.status_code}")
+                import streamlit as st
+                st.error(f"❌ 刪除AI推薦失敗 - 狀態碼: {response.status_code}")
+                return False
+                
+        except requests.exceptions.RequestException as e:
+            api_logger.error(f"Network error when deleting AI recommendation: {str(e)}")
+            import streamlit as st
+            st.error(f"❌ 網路錯誤：{str(e)}")
+            return False
+        except Exception as e:
+            api_logger.error(f"Unexpected error when deleting AI recommendation: {str(e)}")
+            import streamlit as st
+            st.error(f"❌ 刪除AI推薦時發生未預期的錯誤：{str(e)}")
+            return False
     
     def _get_ai_auth_headers(self) -> dict:
         """獲取AI API認證標頭"""

@@ -185,8 +185,22 @@ def machine_status_page():
                     )
                     
                     # 獲取可用地點
-                    locations = st.session_state.api.get_locations()
-                    location_options = [loc.get('name', 'Unknown') for loc in locations]
+                    try:
+                        locations = st.session_state.api.get_locations()
+                        # 確保 locations 是列表且包含字典
+                        if isinstance(locations, list) and locations:
+                            location_options = []
+                            for loc in locations:
+                                if isinstance(loc, dict):
+                                    location_options.append(loc.get('name', 'Unknown'))
+                                else:
+                                    system_logger.warning(f"Invalid location data format: {type(loc)}")
+                        else:
+                            location_options = []
+                            system_logger.warning(f"Invalid locations data: {type(locations)}")
+                    except Exception as e:
+                        system_logger.error(f"Error getting locations: {str(e)}")
+                        location_options = []
                     
                     if location_options:
                         location = st.selectbox(

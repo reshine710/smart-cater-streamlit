@@ -20,7 +20,7 @@ def ai_recommendations_page():
     # AI健康狀態檢查
     with st.sidebar:
         st.subheader("🔍 AI系統狀態")
-        if st.button("🔄 檢查AI狀態"):
+        if st.button("🔄 檢查AI狀態", key="ai_health_check_button"):
             health_status = check_ai_health()
             if health_status.get("status") == "ok":
                 st.success("✅ AI系統運行正常")
@@ -30,7 +30,7 @@ def ai_recommendations_page():
                 st.json(health_status)
     
     # 主要標籤頁
-    tab1, tab2, tab3, tab4 = st.tabs(["📋 推薦列表", "🎯 動態菜單", "📊 推播記錄", "➕ 創建推薦"])
+    tab1, tab2, tab3, tab4, tab5 = st.tabs(["📋 推薦列表", "🎯 動態菜單", "📊 推播記錄", "➕ 創建推薦", "📈 交易數據"])
     
     with tab1:
         show_recommendations_list()
@@ -43,6 +43,9 @@ def ai_recommendations_page():
     
     with tab4:
         show_create_recommendation_form()
+    
+    with tab5:
+        show_transactional_data_analysis()
 
 def check_ai_health() -> dict:
     """檢查AI系統健康狀態"""
@@ -70,21 +73,22 @@ def show_recommendations_list():
     with col1:
         status_filter = st.selectbox(
             "狀態篩選", 
-            ["全部", "PENDING", "APPROVED", "REJECTED", "EXPIRED"],
+            ["全部", "PENDING", "APPROVED", "IMPLEMENTED", "REJECTED", "EXPIRED"],
             format_func=lambda x: {
                 "全部": "全部狀態",
                 "PENDING": "🟡 待審核",
                 "APPROVED": "✅ 已通過",
+                "IMPLEMENTED": "🚀 已實施",
                 "REJECTED": "❌ 已拒絕",
                 "EXPIRED": "⏰ 已過期"
             }.get(x, x)
         )
     
     with col2:
-        machine_filter = st.selectbox("機台篩選", ["全部", "1", "2", "3"])
+        machine_filter = st.selectbox("機台篩選", ["全部", "1", "2", "3"], key="recommendations_machine_filter")
     
     with col3:
-        if st.button("🔄 重新整理"):
+        if st.button("🔄 重新整理", key="recommendations_refresh_button"):
             st.rerun()
     
     # 獲取推薦數據
@@ -125,7 +129,11 @@ def show_recommendation_details(rec: Dict, index: int):
     with col1:
         st.write(f"**AI模型版本**: {rec.get('ai_model_version', 'Unknown')}")
         st.write(f"**目標機台**: {', '.join(rec.get('target_machine_ids', []))}")
-        st.write(f"**信心分數**: {rec.get('confidence_score', 0):.2%}")
+        confidence_score = rec.get('confidence_score')
+        if confidence_score is not None:
+            st.write(f"**信心分數**: {confidence_score:.2%}")
+        else:
+            st.write("**信心分數**: N/A")
         st.write(f"**有效期間**: {rec.get('valid_from', 'Unknown')} ~ {rec.get('valid_until', 'Unknown')}")
     
     with col2:
@@ -156,23 +164,71 @@ def show_recommendation_details(rec: Dict, index: int):
             ui_logger.error(f"No valid ID found for recommendation: {rec}")
             return
         
-        # 審核按鈕（僅待審核狀態顯示）
-        if rec['status'] == 'PENDING':
-            if st.button("✅ 通過", key=f"approve_{rec_id}_{index}"):
-                if update_recommendation_status(rec_id, "APPROVED"):
-                    st.success("✅ 推薦已通過")
-                    # Clear any cached data and force refresh
-                    if 'recommendations_cache' in st.session_state:
-                        del st.session_state['recommendations_cache']
+        # 根據狀態顯示不同的操作按鈕
+        current_status = rec['status']
+        
+        if current_status == 'PENDING':
+            # 待審核狀態：顯示接受/拒絕按鈕
+            col_btn1, col_btn2 = st.columns(2)
+            with col_btn1:
+                if st.button("✅ 通過", key=f"approve_{rec_id}_{index}", use_container_width=True):
+                    if update_recommendation_status(rec_id, "APPROVED"):
+                        st.success("✅ 推薦已通過")
+                        st.rerun()
+            with col_btn2:
+                if st.button("❌ 拒絕", key=f"reject_{rec_id}_{index}", use_container_width=True):
+                    if update_recommendation_status(rec_id, "REJECTED"):
+                        st.success("❌ 推薦已拒絕")
+                        st.rerun()
+        
+        elif current_status == 'APPROVED':
+            # 已通過狀態：可以實施或撤回
+            col_btn1, col_btn2 = st.columns(2)
+            with col_btn1:
+                if st.button("🚀 實施", key=f"implement_{rec_id}_{index}", use_container_width=True, type="primary"):
+                    if update_recommendation_status(rec_id, "IMPLEMENTED"):
+                        st.success("🚀 推薦已實施")
+                        st.rerun()
+            with col_btn2:
+                if st.button("↩️ 撤回", key=f"revoke_{rec_id}_{index}", use_container_width=True):
+                    if update_recommendation_status(rec_id, "PENDING"):
+                        st.success("↩️ 推薦已撤回至待審核")
+                        st.rerun()
+        
+        elif current_status == 'IMPLEMENTED':
+            # 已實施狀態：顯示狀態信息，不可修改
+            st.info("🚀 此推薦已成功實施，無法修改")
+        
+        elif current_status in ['REJECTED', 'EXPIRED']:
+            # 已拒絕或已過期：顯示狀態信息
+            status_msg = "❌ 此推薦已被拒絕" if current_status == 'REJECTED' else "⏰ 此推薦已過期"
+            st.warning(status_msg)
+        
+        # 刪除按鈕（除了已實施的推薦，其他都可以刪除）
+        if current_status != 'IMPLEMENTED':
+            st.markdown("---")
+            if st.button("🗑️ 刪除", key=f"delete_{rec_id}_{index}", type="secondary"):
+                # 使用 session state 來處理確認對話框
+                confirm_key = f"confirm_delete_{rec_id}_{index}"
+                if confirm_key not in st.session_state:
+                    st.session_state[confirm_key] = False
+                
+                if not st.session_state[confirm_key]:
+                    st.session_state[confirm_key] = True
                     st.rerun()
-            
-            if st.button("❌ 拒絕", key=f"reject_{rec_id}_{index}"):
-                if update_recommendation_status(rec_id, "REJECTED"):
-                    st.success("❌ 推薦已拒絕")
-                    # Clear any cached data and force refresh
-                    if 'recommendations_cache' in st.session_state:
-                        del st.session_state['recommendations_cache']
-                    st.rerun()
+                else:
+                    col_confirm1, col_confirm2 = st.columns(2)
+                    with col_confirm1:
+                        if st.button("⚠️ 確認刪除", key=f"confirm_yes_{rec_id}_{index}", type="primary"):
+                            if delete_recommendation(rec_id):
+                                st.success("🗑️ 推薦已刪除")
+                                if confirm_key in st.session_state:
+                                    del st.session_state[confirm_key]
+                                st.rerun()
+                    with col_confirm2:
+                        if st.button("❌ 取消", key=f"confirm_no_{rec_id}_{index}"):
+                            st.session_state[confirm_key] = False
+                            st.rerun()
     
     # 顯示推薦內容
     st.markdown("**📋 推薦內容**")
@@ -194,15 +250,18 @@ def show_dynamic_menu_display():
     """顯示動態菜單接收/顯示功能"""
     st.subheader("🎯 AI動態菜單")
     
-    # 獲取已通過的動態菜單推薦
+    # 獲取已通過和已實施的動態菜單推薦
     try:
         if hasattr(st.session_state, 'api') and st.session_state.api:
-            all_recommendations = st.session_state.api.get_ai_recommendations(status_filter="APPROVED")
+            # 獲取已通過和已實施的推薦
+            approved_recs = st.session_state.api.get_ai_recommendations(status_filter="APPROVED")
+            implemented_recs = st.session_state.api.get_ai_recommendations(status_filter="IMPLEMENTED")
+            all_recommendations = approved_recs + implemented_recs
         else:
             all_recommendations = get_mock_recommendations()
         
         approved_recommendations = [r for r in all_recommendations 
-                                  if r['status'] == 'APPROVED' and r['recommendation_type'] == 'DYNAMIC_MENU']
+                                  if r['status'] in ['APPROVED', 'IMPLEMENTED'] and r['recommendation_type'] == 'DYNAMIC_MENU']
     except Exception as e:
         st.error(f"❌ 獲取動態菜單失敗: {str(e)}")
         approved_recommendations = []
@@ -212,7 +271,7 @@ def show_dynamic_menu_display():
         return
     
     # 選擇機台
-    selected_machine = st.selectbox("選擇機台", ["1", "2", "3", "全部"])
+    selected_machine = st.selectbox("選擇機台", ["1", "2", "3", "全部"], key="dynamic_menu_machine_select")
     
     # 篩選適用的推薦
     applicable_recs = []
@@ -256,7 +315,11 @@ def show_dynamic_menu_display():
                             st.markdown("---")
             
             with col2:
-                st.metric("信心分數", f"{rec.get('confidence_score', 0):.1%}")
+                confidence_score = rec.get('confidence_score')
+                if confidence_score is not None:
+                    st.metric("信心分數", f"{confidence_score:.1%}")
+                else:
+                    st.metric("信心分數", "N/A")
                 st.metric("AI版本", rec.get('ai_model_version', 'Unknown')[:10])
                 
                 # 應用到機台按鈕
@@ -273,9 +336,9 @@ def show_push_notification_records():
     # 日期範圍選擇
     col1, col2 = st.columns(2)
     with col1:
-        start_date = st.date_input("開始日期", datetime.now() - timedelta(days=7))
+        start_date = st.date_input("開始日期", datetime.now() - timedelta(days=7), key="push_records_start_date")
     with col2:
-        end_date = st.date_input("結束日期", datetime.now())
+        end_date = st.date_input("結束日期", datetime.now(), key="push_records_end_date")
     
     # 獲取推播記錄
     push_records = get_mock_push_records(start_date, end_date)
@@ -324,7 +387,8 @@ def show_push_notification_records():
     selected_record = st.selectbox(
         "選擇推播記錄查看詳情",
         push_records,
-        format_func=lambda x: f"{x['push_id']} - {x['recommendation_id']}"
+        format_func=lambda x: f"{x['push_id']} - {x['recommendation_id']}",
+        key="push_record_select"
     )
     
     if selected_record:
@@ -412,6 +476,7 @@ def get_status_icon(status: str) -> str:
     icons = {
         "PENDING": "🟡",
         "APPROVED": "✅", 
+        "IMPLEMENTED": "🚀",
         "REJECTED": "❌",
         "EXPIRED": "⏰"
     }
@@ -422,6 +487,7 @@ def get_status_display(status: str) -> str:
     displays = {
         "PENDING": "🟡 待審核",
         "APPROVED": "✅ 已通過",
+        "IMPLEMENTED": "🚀 已實施",
         "REJECTED": "❌ 已拒絕", 
         "EXPIRED": "⏰ 已過期"
     }
@@ -561,3 +627,146 @@ def apply_dynamic_menu_to_machine(machine_id: str, recommendation: dict) -> bool
     except Exception as e:
         ui_logger.error(f"Failed to apply dynamic menu to machine {machine_id}: {str(e)}")
         return False
+
+def delete_recommendation(rec_id: int) -> bool:
+    """刪除AI推薦"""
+    try:
+        if hasattr(st.session_state, 'api') and st.session_state.api:
+            return st.session_state.api.delete_ai_recommendation(rec_id)
+        else:
+            # 模擬刪除成功
+            ui_logger.info(f"Mock delete AI recommendation: {rec_id}")
+            return True
+    except Exception as e:
+        st.error(f"❌ 刪除推薦失敗: {str(e)}")
+        return False
+
+def show_transactional_data_analysis():
+    """顯示交易數據分析"""
+    st.subheader("📈 交易數據分析")
+    st.markdown("此功能用於AI模型訓練和分析，提供歷史交易數據查詢。")
+    
+    # 查詢參數
+    col1, col2, col3 = st.columns(3)
+    
+    with col1:
+        start_date = st.date_input(
+            "開始日期", 
+            value=datetime.now().date() - timedelta(days=7),
+            key="transactional_start_date"
+        )
+    
+    with col2:
+        end_date = st.date_input(
+            "結束日期", 
+            value=datetime.now().date(),
+            key="transactional_end_date"
+        )
+    
+    with col3:
+        machine_filter = st.selectbox(
+            "機台篩選", 
+            ["全部", "1", "2", "3"],
+            help="選擇特定機台或查看全部機台數據",
+            key="transactional_machine_filter"
+        )
+    
+    # 查詢限制
+    col4, col5 = st.columns(2)
+    with col4:
+        limit = st.number_input("查詢筆數限制", min_value=1, max_value=1000, value=100, key="transactional_limit")
+    
+    with col5:
+        skip = st.number_input("跳過筆數", min_value=0, value=0, key="transactional_skip")
+    
+    # 查詢按鈕
+    if st.button("🔍 查詢交易數據", type="primary", key="transactional_query_button"):
+        try:
+            # 格式化日期
+            start_date_str = start_date.strftime("%Y-%m-%d")
+            end_date_str = end_date.strftime("%Y-%m-%d")
+            machine_id = None if machine_filter == "全部" else machine_filter
+            
+            # 獲取交易數據
+            if hasattr(st.session_state, 'api') and st.session_state.api:
+                transactional_data = st.session_state.api.get_transactional_data(
+                    start_date=start_date_str,
+                    end_date=end_date_str,
+                    machine_id=machine_id,
+                    limit=limit,
+                    skip=skip
+                )
+            else:
+                # 模擬數據
+                transactional_data = get_mock_transactional_data()
+            
+            if transactional_data:
+                st.success(f"✅ 成功獲取 {len(transactional_data)} 筆交易數據")
+                
+                # 顯示數據統計
+                st.markdown("### 📊 數據統計")
+                col1, col2, col3, col4 = st.columns(4)
+                
+                # 計算統計數據
+                total_transactions = len(transactional_data)
+                if transactional_data:
+                    total_revenue = sum(float(t.get('amount', 0)) for t in transactional_data)
+                    unique_machines = len(set(str(t.get('machine_id', '')) for t in transactional_data))
+                    unique_products = len(set(str(t.get('product_id', '')) for t in transactional_data))
+                else:
+                    total_revenue = 0
+                    unique_machines = 0
+                    unique_products = 0
+                
+                with col1:
+                    st.metric("總交易筆數", total_transactions)
+                
+                with col2:
+                    st.metric("總收入", f"${total_revenue:.2f}")
+                
+                with col3:
+                    st.metric("涉及機台數", unique_machines)
+                
+                with col4:
+                    st.metric("商品種類數", unique_products)
+                
+                # 顯示詳細數據表格
+                st.markdown("### 📋 詳細交易記錄")
+                if transactional_data:
+                    df = pd.DataFrame(transactional_data)
+                    st.dataframe(df, use_container_width=True)
+                    
+                    # 提供下載功能
+                    csv = df.to_csv(index=False)
+                    st.download_button(
+                        label="📥 下載 CSV",
+                        data=csv,
+                        file_name=f"transactional_data_{start_date_str}_to_{end_date_str}.csv",
+                        mime="text/csv",
+                        key="transactional_download_csv"
+                    )
+                else:
+                    st.info("📝 查詢期間內沒有交易數據")
+            else:
+                st.warning("⚠️ 未找到符合條件的交易數據")
+                
+        except Exception as e:
+            st.error(f"❌ 查詢交易數據失敗: {str(e)}")
+            api_logger.error(f"Failed to query transactional data: {str(e)}")
+
+def get_mock_transactional_data() -> List[Dict]:
+    """獲取模擬交易數據"""
+    mock_data = []
+    for i in range(50):
+        mock_data.append({
+            "transaction_id": f"TXN-{20250800 + i:06d}",
+            "machine_id": str((i % 3) + 1),
+            "product_id": f"PROD-{(i % 5) + 1:03d}",
+            "product_name": f"商品 {chr(65 + (i % 5))}",
+            "quantity": 1,
+            "amount": round(50 + (i % 10) * 10 + (i % 3) * 5, 2),
+            "payment_method": ["CASH", "CARD", "MOBILE"][i % 3],
+            "transaction_time": (datetime.now() - timedelta(days=i % 7, hours=i % 24)).isoformat(),
+            "status": "COMPLETED"
+        })
+    return mock_data
