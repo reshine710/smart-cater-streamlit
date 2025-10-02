@@ -3,7 +3,7 @@ import pandas as pd
 from utils import init_session_state, VendingMachineAPI, API_BASE_URL
 from datetime import datetime
 from logger_config import auth_logger, ui_logger, system_logger
-from pages import (
+from modules import (
     dashboard_page,
     machine_status_page, 
     menu_management_page,

@@ -1,4 +1,4 @@
-# Pages module for Smart Vending Machine Backend UI
+# Modules for Smart Vending Machine Backend UI
 
 from .dashboard import dashboard_page
 from .machine_status import machine_status_page

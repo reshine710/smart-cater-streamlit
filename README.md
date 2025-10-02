@@ -85,7 +85,7 @@ SmartCaterStreamlit/
 ├── utils.py                # API 客戶端和工具函數
 ├── logger_config.py        # 日誌配置
 ├── config.py               # 系統配置
-├── pages/                  # 頁面模組
+├── modules/                # 頁面模組
 │   ├── dashboard.py        # 儀表板
 │   ├── machine_status.py   # 機台狀態
 │   ├── menu_management.py  # 菜單管理
