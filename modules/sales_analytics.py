@@ -8,7 +8,6 @@ import requests
 def sales_analytics_page():
     """銷售分析頁面"""
     st.title("📈 銷售分析")
-    st.set_page_config(layout="wide",initial_sidebar_state="expanded")
     
     # 日期選擇
     col1, col2 = st.columns(2)

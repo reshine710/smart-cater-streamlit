@@ -8,7 +8,6 @@ def location_management_page():
     """地點管理頁面"""
     ui_logger.info(f"User {st.session_state.get('username', 'Unknown')} accessing location management page")
     st.title("📍 地點管理")
-    st.set_page_config(layout="wide",initial_sidebar_state="expanded")
     st.markdown("---")
     
     # 檢查管理員權限

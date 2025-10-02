@@ -6,7 +6,6 @@ def recipe_settings_page():
     """配方設定頁面"""
     ui_logger.info(f"User {st.session_state.get('username', 'Unknown')} accessing recipe settings page")
     st.title("🧾 配方設定")
-    st.set_page_config(layout="wide",initial_sidebar_state="expanded")
     st.markdown("---")
     
     # 檢查管理員權限
