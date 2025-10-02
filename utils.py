@@ -19,7 +19,7 @@ class SystemStatus:
     DATABASE_ERROR = "database_error"
 
 class VendingMachineAPI:
-    """API 呼叫類別 - 目前使用假資料，後續可替換為真實 API"""
+    """API 呼叫類別"""
     
     def __init__(self, base_url: str, token: str = None):
         self.base_url = base_url
@@ -148,7 +148,7 @@ class VendingMachineAPI:
                     machines_data = response_data['items']
                     api_logger.info(f"Successfully retrieved {len(machines_data)} machines from paginated API response")
                 else:
-                    # 假設直接返回機台列表
+                    # 直接返回機台列表
                     machines_data = response_data
                     api_logger.info(f"Successfully retrieved {len(machines_data)} machines from API")
                 
@@ -160,69 +160,22 @@ class VendingMachineAPI:
                 st.error("❌ 未授權存取，請重新登入")
                 return []
             elif response.status_code == 500:
-                # 伺服器內部錯誤，返回離線資料
-                api_logger.warning("Server error (500) getting machines list, falling back to offline data")
+                # 伺服器內部錯誤
+                api_logger.warning("Server error (500) getting machines list")
                 import streamlit as st
-                st.warning("⚠️ 伺服器資料庫未初始化，顯示模擬資料")
-                return self._get_offline_machines()
+                st.error("⚠️ 伺服器資料庫未初始化")
+                return []
             else:
                 api_logger.warning(f"Failed to get machines list - Status code: {response.status_code}")
                 return []
                 
         except requests.exceptions.RequestException as e:
-            # 網路連接錯誤，返回模擬資料
+            # 網路連接錯誤
             api_logger.error(f"Network error getting machines list: {str(e)}")
             import streamlit as st
-            st.warning(f"🌐 無法連接到 API 伺服器，顯示模擬資料: {str(e)}")
-            return self._get_offline_machines()
+            st.error(f"🌐 無法連接到 API 伺服器: {str(e)}")
+            return []
     
-    def _get_offline_machines(self) -> List[Dict]:
-        """獲取離線模式機台列表"""
-        api_logger.debug("Returning offline machines data")
-        return [
-            {
-                "id": 1,
-                "machine_code": "VM001",
-                "name": "台北101店",
-                "location": "台北市信義區",
-                "status": "online",
-                "temperature": 24.5,
-                "last_heartbeat": "2025-08-21T20:20:00Z",
-                "ip_address": "192.168.1.100",
-                "firmware_version": "1.0.0",
-                "hardware_version": "A1",
-                "max_capacity": 30,
-                "humidity": 60.0
-            },
-            {
-                "id": 2,
-                "machine_code": "VM002",
-                "name": "西門町店",
-                "location": "台北市萬華區",
-                "status": "maintenance",
-                "temperature": 26.1,
-                "last_heartbeat": "2025-08-21T20:18:00Z",
-                "ip_address": "192.168.1.101",
-                "firmware_version": "1.0.1",
-                "hardware_version": "A1",
-                "max_capacity": 30,
-                "humidity": 65.0
-            },
-            {
-                "id": 3,
-                "machine_code": "VM003",
-                "name": "板橋車站店",
-                "location": "新北市板橋區",
-                "status": "offline",
-                "temperature": None,
-                "last_heartbeat": "2025-08-21T18:15:00Z",
-                "ip_address": "192.168.1.102",
-                "firmware_version": "0.9.8",
-                "hardware_version": "A1",
-                "max_capacity": 30,
-                "humidity": None
-            }
-        ]
     
     def get_machine_detail(self, machine_id: int) -> Dict:
         """獲取機台詳細資訊"""
@@ -462,10 +415,10 @@ class VendingMachineAPI:
                 return items
             else:
                 api_logger.error(f"Failed to fetch menu items: {response.status_code} - {response.text}")
-                return self._get_offline_menu_items()
+                return []
         except Exception as e:
             api_logger.error(f"Error fetching menu items: {str(e)}")
-            return self._get_offline_menu_items()
+            return []
     
     def _extract_heating_time(self, heating_params) -> int:
         """從 heating_params 中提取加熱時間"""
@@ -475,71 +428,6 @@ class VendingMachineAPI:
             return heating_params.get('time_seconds', 0)
         return 0
     
-    def _get_offline_menu_items(self) -> List[Dict]:
-        """獲取離線菜單項目數據"""
-        api_logger.info("Using offline menu items data")
-        return [
-            {
-                "id": 1,
-                "name": "經典牛肉漢堡",
-                "description": "新鮮牛肉配生菜番茄",
-                "price": 120.0,
-                "image_url": "https://example.com/burger.jpg",
-                "heating_method": "microwave",
-                "heating_params": {"time_seconds": 90, "power_percent": 80},
-                "heating_time": 90,
-                "is_active": True,
-                "created_at": "2025-08-13T14:00:00",
-                "updated_at": "2025-08-13T14:00:00",
-                "nutrition_info": {
-                    "calories": 450,
-                    "protein": 25,
-                    "carbs": 35,
-                    "fat": 22
-                },
-                "tags": ["熱門", "肉類"]
-            },
-            {
-                "id": 2,
-                "name": "蒸蛋羹",
-                "description": "嫩滑蒸蛋配香蔥",
-                "price": 80.0,
-                "image_url": "https://example.com/egg.jpg",
-                "heating_method": "steam",
-                "heating_params": {"time_seconds": 120, "temperature": 100, "pressure_bar": 1.5},
-                "heating_time": 120,
-                "is_active": True,
-                "created_at": "2025-08-13T14:00:00",
-                "updated_at": "2025-08-13T14:00:00",
-                "nutrition_info": {
-                    "calories": 180,
-                    "protein": 12,
-                    "carbs": 8,
-                    "fat": 10
-                },
-                "tags": ["健康", "蛋類"]
-            },
-            {
-                "id": 3,
-                "name": "涼拌沙拉",
-                "description": "新鮮蔬菜沙拉",
-                "price": 60.0,
-                "image_url": "https://example.com/salad.jpg",
-                "heating_method": "none",
-                "heating_params": None,
-                "heating_time": 0,
-                "is_active": True,
-                "created_at": "2025-08-13T14:00:00",
-                "updated_at": "2025-08-13T14:00:00",
-                "nutrition_info": {
-                    "calories": 120,
-                    "protein": 5,
-                    "carbs": 15,
-                    "fat": 3
-                },
-                "tags": ["健康", "素食"]
-            }
-        ]
     
     def create_menu_item(self, item_data: Dict) -> Dict:
         """建立新菜單項目"""
@@ -707,12 +595,7 @@ class VendingMachineAPI:
                 api_logger.warning(f"Menu item not found: ID {item_id}")
                 return None
             elif response.status_code == 500:
-                api_logger.warning(f"Server error (500) getting menu item detail, falling back to offline data")
-                # 從離線數據中查找
-                offline_items = self._get_offline_menu_items()
-                for item in offline_items:
-                    if item['id'] == item_id:
-                        return item
+                api_logger.warning(f"Server error (500) getting menu item detail")
                 return None
             else:
                 api_logger.warning(f"Failed to get menu item detail - Status code: {response.status_code}")
@@ -720,11 +603,6 @@ class VendingMachineAPI:
                 
         except requests.exceptions.RequestException as e:
             api_logger.error(f"Network error getting menu item detail: {str(e)}")
-            # 從離線數據中查找
-            offline_items = self._get_offline_menu_items()
-            for item in offline_items:
-                if item['id'] == item_id:
-                    return item
             return None
     
     def get_sales_data(self, start_date: str = None, end_date: str = None) -> List[Dict]:
@@ -760,42 +638,25 @@ class VendingMachineAPI:
                 api_logger.info(f"Successfully retrieved {len(sales_data)} sales records from API")
                 return sales_data
             elif response.status_code == 500:
-                # 伺服器內部錯誤，返回離線資料
-                api_logger.warning("Server error (500) getting sales data, falling back to offline data")
+                # 伺服器內部錯誤
+                api_logger.warning("Server error (500) getting sales data")
                 import streamlit as st
-                st.warning("⚠️ 伺服器資料庫未初始化，顯示模擬資料")
-                return self._get_offline_sales_data()
+                st.error("⚠️ 伺服器資料庫未初始化")
+                return []
             else:
                 api_logger.warning(f"Failed to get sales data - Status code: {response.status_code}")
                 return []
                 
         except requests.exceptions.RequestException as e:
-            # 網路連接錯誤，返回模擬資料
+            # 網路連接錯誤
             api_logger.error(f"Network error getting sales data: {str(e)}")
             import streamlit as st
-            st.warning(f"🌐 無法連接到 API 伺服器，顯示模擬資料: {str(e)}")
-            return self._get_offline_sales_data()
+            st.error(f"🌐 無法連接到 API 伺服器: {str(e)}")
+            return []
         except Exception as e:
             api_logger.error(f"Unexpected error getting sales data: {str(e)}")
-            return self._get_offline_sales_data()
+            return []
 
-    def _get_offline_sales_data(self) -> List[Dict]:
-        """獲取離線模式銷售資料"""
-        api_logger.debug("Returning offline sales data")
-        # 生成模擬銷售資料
-        sales_data = []
-        for i in range(50):
-            sales_data.append({
-                "transaction_id": f"T20250803{i:04d}",
-                "machine_id": f"VM{(i % 3) + 1:03d}",
-                "item_name": ["黑咖啡", "拿鐵咖啡", "雞肉便當"][i % 3],
-                "quantity": np.random.randint(1, 4),
-                "price": [50, 75, 120][i % 3],
-                "timestamp": (datetime.now() - timedelta(hours=np.random.randint(0, 72))).isoformat(),
-                "weather": np.random.choice(["晴", "陰", "雨"]),
-                "temperature": np.random.uniform(20, 30)
-            })
-        return sales_data
     
     def get_orders(self, skip: int = 0, limit: int = 100) -> List[Dict]:
         """獲取訂單列表"""
@@ -825,102 +686,22 @@ class VendingMachineAPI:
                     api_logger.warning(f"Unexpected API response format: {type(response_data)}")
                     return []
             elif response.status_code == 500:
-                # 伺服器內部錯誤，返回離線資料
-                api_logger.warning("Server error (500) getting orders list, falling back to offline data")
+                # 伺服器內部錯誤
+                api_logger.warning("Server error (500) getting orders list")
                 import streamlit as st
-                st.warning("⚠️ 伺服器資料庫未初始化，顯示模擬資料")
-                return self._get_offline_orders()
+                st.error("⚠️ 伺服器資料庫未初始化")
+                return []
             else:
                 api_logger.warning(f"Failed to get orders list - Status code: {response.status_code}")
                 return []
                 
         except requests.exceptions.RequestException as e:
-            # 網路連接錯誤，返回模擬資料
+            # 網路連接錯誤
             api_logger.error(f"Network error getting orders list: {str(e)}")
             import streamlit as st
-            st.warning(f"🌐 無法連接到 API 伺服器，顯示模擬資料: {str(e)}")
-            return self._get_offline_orders()
+            st.error(f"🌐 無法連接到 API 伺服器: {str(e)}")
+            return []
 
-    def _get_offline_orders(self) -> List[Dict]:
-        """獲取離線模式訂單列表"""
-        api_logger.debug("Returning offline orders data")
-        return [
-            {
-                "id": 1,
-                "order_number": "ORD-20250822000001-abc123",
-                "machine_id": 1,
-                "total_amount": 120.0,
-                "status": "completed",
-                "payment_status": "paid",
-                "payment_method": "cash",
-                "weather": "晴天",
-                "temperature": 25.0,
-                "created_at": "2025-08-22T10:30:00Z",
-                "updated_at": "2025-08-22T10:35:00Z",
-                "items": [
-                    {
-                        "id": 1,
-                        "menu_item_id": 1,
-                        "quantity": 1,
-                        "unit_price": 120.0,
-                        "subtotal": 120.0,
-                        "order_id": 1,
-                        "created_at": "2025-08-22T10:30:00Z",
-                        "updated_at": "2025-08-22T10:30:00Z"
-                    }
-                ]
-            },
-            {
-                "id": 2,
-                "order_number": "ORD-20250822000002-def456",
-                "machine_id": 1,
-                "total_amount": 200.0,
-                "status": "completed",
-                "payment_status": "paid",
-                "payment_method": "card",
-                "weather": "陰天",
-                "temperature": 22.0,
-                "created_at": "2025-08-22T11:15:00Z",
-                "updated_at": "2025-08-22T11:20:00Z",
-                "items": [
-                    {
-                        "id": 2,
-                        "menu_item_id": 2,
-                        "quantity": 2,
-                        "unit_price": 100.0,
-                        "subtotal": 200.0,
-                        "order_id": 2,
-                        "created_at": "2025-08-22T11:15:00Z",
-                        "updated_at": "2025-08-22T11:15:00Z"
-                    }
-                ]
-            },
-            {
-                "id": 3,
-                "order_number": "ORD-20250822000003-ghi789",
-                "machine_id": 2,
-                "total_amount": 75.0,
-                "status": "created",
-                "payment_status": "pending",
-                "payment_method": "cash",
-                "weather": "雨天",
-                "temperature": 18.0,
-                "created_at": "2025-08-22T12:00:00Z",
-                "updated_at": "2025-08-22T12:00:00Z",
-                "items": [
-                    {
-                        "id": 3,
-                        "menu_item_id": 3,
-                        "quantity": 1,
-                        "unit_price": 75.0,
-                        "subtotal": 75.0,
-                        "order_id": 3,
-                        "created_at": "2025-08-22T12:00:00Z",
-                        "updated_at": "2025-08-22T12:00:00Z"
-                    }
-                ]
-            }
-        ]
 
     def register(self, username: str, email: str, password: str, full_name: str, is_admin: bool = False) -> bool:
         """使用者註冊"""
@@ -1027,19 +808,19 @@ class VendingMachineAPI:
                 api_logger.info(f"Successfully retrieved {len(users_data)} users from API")
                 return users_data
             elif response.status_code == 500:
-                # 伺服器內部錯誤，返回離線資料
-                api_logger.warning("Server error (500) getting users list, falling back to offline data")
+                # 伺服器內部錯誤
+                api_logger.warning("Server error (500) getting users list")
                 import streamlit as st
-                st.warning("⚠️ 伺服器資料庫未初始化，顯示模擬資料")
-                return self._get_offline_users()
+                st.error("⚠️ 伺服器資料庫未初始化")
+                return []
             else:
                 api_logger.warning(f"Failed to get users list - Status code: {response.status_code}")
                 return []
                 
         except requests.exceptions.RequestException as e:
-            # 網路連接錯誤，返回模擬資料
+            # 網路連接錯誤
             api_logger.error(f"Network error getting users list: {str(e)}")
-            return self._get_offline_users()
+            return []
     
     def get_users_count(self) -> int:
         """獲取使用者總數（僅管理員可用）"""
@@ -1057,48 +838,16 @@ class VendingMachineAPI:
                 api_logger.info(f"Successfully retrieved users count: {count}")
                 return count
             elif response.status_code == 500:
-                api_logger.warning("Server error (500) getting users count, falling back to offline data")
-                return len(self._get_offline_users())
+                api_logger.warning("Server error (500) getting users count")
+                return 0
             else:
                 api_logger.warning(f"Failed to get users count - Status code: {response.status_code}")
                 return 0
                 
         except requests.exceptions.RequestException as e:
             api_logger.error(f"Network error getting users count: {str(e)}")
-            return len(self._get_offline_users())
+            return 0
     
-    def _get_offline_users(self) -> List[Dict]:
-        """獲取離線模式使用者列表"""
-        api_logger.debug("Returning offline users data")
-        return [
-            {
-                "id": 1,
-                "username": "testadmin",
-                "email": "testadmin@example.com",
-                "full_name": "Test Admin (Offline)",
-                "is_active": True,
-                "is_admin": True,
-                "created_at": "2025-08-13T10:00:00Z"
-            },
-            {
-                "id": 2,
-                "username": "testuser",
-                "email": "testuser@example.com",
-                "full_name": "Test User (Offline)",
-                "is_active": True,
-                "is_admin": False,
-                "created_at": "2025-08-13T11:00:00Z"
-            },
-            {
-                "id": 3,
-                "username": "demouser",
-                "email": "demo@example.com",
-                "full_name": "Demo User (Offline)",
-                "is_active": True,
-                "is_admin": False,
-                "created_at": "2025-08-13T12:00:00Z"
-            }
-        ]
 
     def delete_menu_item(self, item_id: int) -> bool:
         """刪除菜單項目"""
@@ -1382,10 +1131,10 @@ class VendingMachineAPI:
                 api_logger.debug(f"Locations data: {locations_data}")
                 return locations_data
             elif response.status_code == 500:
-                api_logger.warning("Server error (500) getting locations list, falling back to offline data")
+                api_logger.warning("Server error (500) getting locations list")
                 import streamlit as st
-                st.warning("⚠️ 伺服器資料庫未初始化，顯示模擬資料")
-                return self._get_offline_locations()
+                st.error("⚠️ 伺服器資料庫未初始化")
+                return []
             else:
                 api_logger.warning(f"Failed to get locations list - Status code: {response.status_code}")
                 return []
@@ -1393,8 +1142,8 @@ class VendingMachineAPI:
         except requests.exceptions.RequestException as e:
             api_logger.error(f"Network error getting locations list: {str(e)}")
             import streamlit as st
-            st.warning(f"🌐 無法連接到 API 伺服器，顯示模擬資料: {str(e)}")
-            return self._get_offline_locations()
+            st.error(f"🌐 無法連接到 API 伺服器: {str(e)}")
+            return []
     
     def create_location(self, location_data: Dict) -> Dict:
         """建立新地點"""
@@ -1439,32 +1188,6 @@ class VendingMachineAPI:
             st.error(f"🌐 網路錯誤，無法創建地點: {str(e)}")
             return {}
     
-    def _get_offline_locations(self) -> List[Dict]:
-        """獲取離線模式地點列表"""
-        api_logger.debug("Returning offline locations data")
-        return [
-            {
-                "id": 1,
-                "name": "台北101店",
-                "is_indoor": True,
-                "description": "室內商業區",
-                "address": "台北市信義區信義路五段七號"
-            },
-            {
-                "id": 2,
-                "name": "西門町店",
-                "is_indoor": False,
-                "description": "戶外商圈",
-                "address": "台北市萬華區成都路"
-            },
-            {
-                "id": 3,
-                "name": "板橋車站店",
-                "is_indoor": True,
-                "description": "車站內部",
-                "address": "新北市板橋區縣政路"
-            }
-        ]
 
     def get_transactional_data(self, start_date: str, end_date: str, machine_id: str = None, 
                              limit: int = 100, skip: int = 0) -> List[Dict]:

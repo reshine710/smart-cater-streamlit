@@ -140,33 +140,13 @@ def recipe_settings_page():
             
             st.markdown("---")
             
-            # 模擬加熱過程
+            # 加熱參數預覽
             if heating_method != 'none':
-                if st.button("🔥 模擬加熱過程", use_container_width=True):
-                    ui_logger.info(f"Simulating heating process for {item_name}")
-                    
-                    with st.container():
-                        progress_bar = st.progress(0)
-                        status_text = st.empty()
-                        
-                        heating_time = recipe_config.get('time_seconds', current_heating_time or 60)
-                        
-                        for i in range(101):
-                            progress_bar.progress(i)
-                            if i < 20:
-                                status_text.text(f"🔥 預熱中... {i}% (預計 {heating_time} 秒)")
-                            elif i < 85:
-                                status_text.text(f"🌪️ 加熱中... {i}% ({format_heating_method(heating_method)})")
-                            else:
-                                status_text.text(f"✨ 完成中... {i}%")
-                            time.sleep(0.03)
-                        
-                        st.success(f"✅ {item_name} 加熱完成！")
-                        st.balloons()
+                st.info(f"🔥 加熱方式：{format_heating_method(heating_method)}")
+                heating_time = recipe_config.get('time_seconds', current_heating_time or 60)
+                st.info(f"⏱️ 預計加熱時間：{heating_time} 秒")
             else:
                 st.info("🍽️ 此項目無需加熱，可直接享用")
-                if st.button("🥗 直接供應", use_container_width=True):
-                    st.success(f"✅ {item_name} 已準備好享用！")
         
         st.markdown("---")
         

@@ -8,23 +8,9 @@ def dashboard_page():
     """儀表板頁面"""
     st.title("📊 營運儀表板")
     
-    # 資料模式切換
-    col_title, col_switch = st.columns([3, 1])
-    with col_switch:
-        use_real_data = st.toggle("🔴 真實資料模式", value=True, help="開啟後使用真實 API 資料，關閉後使用模擬資料")
-    
     # 獲取資料
     machines = st.session_state.api.get_machines()
-    
-    if use_real_data:
-        sales_data = st.session_state.api.get_sales_data()
-        # 如果真實API返回空資料，自動回退到模擬資料
-        if not sales_data:
-            st.warning("⚠️ 真實API無資料，自動切換到模擬資料")
-            sales_data = st.session_state.api._get_offline_sales_data()
-    else:
-        sales_data = st.session_state.api._get_offline_sales_data()
-        st.info("📊 目前顯示模擬資料")
+    sales_data = st.session_state.api.get_sales_data()
     
     # 統計卡片
     col1, col2, col3, col4 = st.columns(4)

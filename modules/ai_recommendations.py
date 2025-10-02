@@ -54,13 +54,7 @@ def check_ai_health() -> dict:
         if hasattr(st.session_state, 'api') and st.session_state.api:
             return st.session_state.api.get_ai_health()
         else:
-            # 模擬AI健康檢查
-            return {
-                "status": "ok",
-                "service": "AI Analysis API",
-                "timestamp": datetime.now().isoformat(),
-                "version": "1.0.0"
-            }
+            return {"status": "error", "message": "API client not available"}
     except Exception as e:
         return {"status": "error", "message": str(e)}
 
@@ -105,11 +99,12 @@ def show_recommendations_list():
             api_logger.debug(f"Raw recommendations data structure: {[{k: v for k, v in rec.items() if k in ['id', 'backend_ref_id', 'recommendation_id']} for rec in recommendations]}")
             
         else:
-            recommendations = get_mock_recommendations()
+            st.error("❌ API 客戶端不可用")
+            recommendations = []
     except Exception as e:
         st.error(f"❌ 獲取推薦數據失敗: {str(e)}")
         api_logger.error(f"Failed to get recommendations: {str(e)}")
-        recommendations = get_mock_recommendations()
+        recommendations = []
     
     st.write(f"顯示 {len(recommendations)} 個推薦")
     
@@ -258,7 +253,8 @@ def show_dynamic_menu_display():
             implemented_recs = st.session_state.api.get_ai_recommendations(status_filter="IMPLEMENTED")
             all_recommendations = approved_recs + implemented_recs
         else:
-            all_recommendations = get_mock_recommendations()
+            st.error("❌ API 客戶端不可用")
+            all_recommendations = []
         
         approved_recommendations = [r for r in all_recommendations 
                                   if r['status'] in ['APPROVED', 'IMPLEMENTED'] and r['recommendation_type'] == 'DYNAMIC_MENU']
@@ -340,8 +336,9 @@ def show_push_notification_records():
     with col2:
         end_date = st.date_input("結束日期", datetime.now(), key="push_records_end_date")
     
-    # 獲取推播記錄
-    push_records = get_mock_push_records(start_date, end_date)
+    # 獲取推播記錄 - 目前沒有真實API，顯示空資料
+    push_records = []
+    st.info("📝 推播記錄功能尚未實現")
     
     if not push_records:
         st.info("📝 所選日期範圍內沒有推播記錄")
@@ -502,83 +499,6 @@ def get_push_status_display(status: str) -> str:
     }
     return displays.get(status, status)
 
-def get_mock_recommendations() -> List[Dict]:
-    """獲取模擬推薦數據"""
-    return [
-        {
-            "id": 1,
-            "recommendation_id": "AI-REC-20250823-001",
-            "ai_model_version": "v2.1.3-dynamic-menu",
-            "target_machine_ids": ["1", "2"],
-            "recommendation_type": "DYNAMIC_MENU",
-            "valid_from": "2025-08-23T00:00:00",
-            "valid_until": "2025-08-23T23:59:59",
-            "payload": {
-                "suggested_menu": [
-                    {"meal_id": "B", "suggested_price": 105.0, "priority": 1},
-                    {"meal_id": "C", "suggested_price": 60.0, "priority": 2},
-                    {"meal_id": "A", "suggested_price": 80.0, "priority": 3}
-                ]
-            },
-            "notes": "根據近期陰雨天氣及B餐銷量上升趨勢，提高B餐優先級並微調價格。",
-            "confidence_score": 0.85,
-            "status": "PENDING",
-            "created_at": "2025-08-23T15:27:29",
-            "updated_at": "2025-08-23T15:27:29",
-            "reviewed_by": None,
-            "review_notes": None
-        },
-        {
-            "id": 2,
-            "recommendation_id": "AI-REC-20250823-002",
-            "ai_model_version": "v1.5.2-restock-optimizer",
-            "target_machine_ids": ["3"],
-            "recommendation_type": "RESTOCK",
-            "valid_from": "2025-08-23T08:00:00",
-            "valid_until": "2025-08-23T18:00:00",
-            "payload": {
-                "restock_suggestions": [
-                    {"meal_id": "A", "suggested_quantity": 15, "urgency_level": 3},
-                    {"meal_id": "B", "suggested_quantity": 20, "urgency_level": 5}
-                ]
-            },
-            "notes": "基於銷售預測，B餐需要緊急補貨",
-            "confidence_score": 0.92,
-            "status": "APPROVED",
-            "created_at": "2025-08-23T14:30:00",
-            "updated_at": "2025-08-23T15:00:00",
-            "reviewed_by": "admin",
-            "review_notes": "補貨建議合理，已通過"
-        }
-    ]
-
-def get_mock_push_records(start_date, end_date) -> List[Dict]:
-    """獲取模擬推播記錄"""
-    return [
-        {
-            "push_id": "PUSH-20250823-001",
-            "recommendation_id": "AI-REC-20250823-001",
-            "target_machines": ["1", "2"],
-            "push_time": "2025-08-23T15:30:00",
-            "status": "SUCCESS",
-            "response_time_ms": 245,
-            "payload_size_bytes": 1024,
-            "machine_responses": {
-                "1": {"status": "ACK", "timestamp": "2025-08-23T15:30:01"},
-                "2": {"status": "ACK", "timestamp": "2025-08-23T15:30:02"}
-            }
-        },
-        {
-            "push_id": "PUSH-20250823-002",
-            "recommendation_id": "AI-REC-20250823-002",
-            "target_machines": ["3"],
-            "push_time": "2025-08-23T16:00:00",
-            "status": "FAILED",
-            "response_time_ms": 5000,
-            "error_message": "Machine 3 connection timeout",
-            "retry_count": 3
-        }
-    ]
 
 def update_recommendation_status(rec_id: int, status: str) -> bool:
     """更新推薦狀態"""
@@ -586,9 +506,8 @@ def update_recommendation_status(rec_id: int, status: str) -> bool:
         if hasattr(st.session_state, 'api') and st.session_state.api:
             return st.session_state.api.update_recommendation_status(rec_id, status)
         else:
-            # 模擬更新成功
-            ui_logger.info(f"Mock update recommendation {rec_id} status to {status}")
-            return True
+            st.error("❌ API 客戶端不可用")
+            return False
     except Exception as e:
         st.error(f"❌ 更新狀態失敗: {str(e)}")
         return False
@@ -599,9 +518,8 @@ def create_ai_recommendation(recommendation_data: dict) -> bool:
         if hasattr(st.session_state, 'api') and st.session_state.api:
             return st.session_state.api.create_ai_recommendation(recommendation_data)
         else:
-            # 模擬創建成功
-            ui_logger.info(f"Mock create AI recommendation: {recommendation_data['recommendation_id']}")
-            return True
+            st.error("❌ API 客戶端不可用")
+            return False
     except Exception as e:
         st.error(f"❌ 創建推薦失敗: {str(e)}")
         return False
@@ -634,9 +552,8 @@ def delete_recommendation(rec_id: int) -> bool:
         if hasattr(st.session_state, 'api') and st.session_state.api:
             return st.session_state.api.delete_ai_recommendation(rec_id)
         else:
-            # 模擬刪除成功
-            ui_logger.info(f"Mock delete AI recommendation: {rec_id}")
-            return True
+            st.error("❌ API 客戶端不可用")
+            return False
     except Exception as e:
         st.error(f"❌ 刪除推薦失敗: {str(e)}")
         return False
@@ -697,8 +614,8 @@ def show_transactional_data_analysis():
                     skip=skip
                 )
             else:
-                # 模擬數據
-                transactional_data = get_mock_transactional_data()
+                st.error("❌ API 客戶端不可用")
+                transactional_data = []
             
             if transactional_data:
                 st.success(f"✅ 成功獲取 {len(transactional_data)} 筆交易數據")
@@ -754,19 +671,3 @@ def show_transactional_data_analysis():
             st.error(f"❌ 查詢交易數據失敗: {str(e)}")
             api_logger.error(f"Failed to query transactional data: {str(e)}")
 
-def get_mock_transactional_data() -> List[Dict]:
-    """獲取模擬交易數據"""
-    mock_data = []
-    for i in range(50):
-        mock_data.append({
-            "transaction_id": f"TXN-{20250800 + i:06d}",
-            "machine_id": str((i % 3) + 1),
-            "product_id": f"PROD-{(i % 5) + 1:03d}",
-            "product_name": f"商品 {chr(65 + (i % 5))}",
-            "quantity": 1,
-            "amount": round(50 + (i % 10) * 10 + (i % 3) * 5, 2),
-            "payment_method": ["CASH", "CARD", "MOBILE"][i % 3],
-            "transaction_time": (datetime.now() - timedelta(days=i % 7, hours=i % 24)).isoformat(),
-            "status": "COMPLETED"
-        })
-    return mock_data
