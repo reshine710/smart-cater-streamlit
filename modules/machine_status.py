@@ -641,7 +641,7 @@ def show_delete_machine_confirmation_dialog(machine: dict):
         with col_confirm:
             if st.button("✅ 確認刪除", 
                         type="primary", 
-                        use_container_width=True):
+                        width="stretch"):
                 try:
                     success = st.session_state.api.delete_machine(machine_id)
                     if success:
@@ -658,7 +658,7 @@ def show_delete_machine_confirmation_dialog(machine: dict):
         
         with col_cancel:
             if st.button("❌ 取消", 
-                        use_container_width=True):
+                        width="stretch"):
                 st.rerun()
     
     delete_dialog()

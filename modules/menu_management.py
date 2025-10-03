@@ -86,7 +86,7 @@ def menu_management_page():
             # 標籤
             tags_input = st.text_input("標籤 (用逗號分隔)", placeholder="熱門, 健康, 咖啡")
             
-            submitted = st.form_submit_button("✨ 創建菜單項目", use_container_width=True)
+            submitted = st.form_submit_button("✨ 創建菜單項目", width="stretch")
             
             if submitted:
                 if not new_name or new_price <= 0:
@@ -246,7 +246,7 @@ def show_delete_confirmation_dialog(item: Dict):
             # 只有當輸入正確時才啟用刪除按鈕
             delete_enabled = confirmation_input == item.get('name', '')
             if st.button("🗑️ 確認刪除", 
-                        use_container_width=True, 
+                        width="stretch", 
                         type="primary",
                         disabled=not delete_enabled):
                 if delete_enabled:
@@ -263,7 +263,7 @@ def show_delete_confirmation_dialog(item: Dict):
                         ui_logger.error(f"Error deleting menu item {item['id']}: {str(e)}")
         
         with col_cancel:
-            if st.button("❌ 取消", use_container_width=True):
+            if st.button("❌ 取消", width="stretch"):
                 st.rerun()
         
         if not delete_enabled and confirmation_input:
@@ -295,7 +295,7 @@ def show_edit_menu_item_form(item: Dict):
         
         col_save, col_cancel = st.columns(2)
         with col_save:
-            if st.button("💾 儲存更改", use_container_width=True):
+            if st.button("💾 儲存更改", width="stretch"):
                 update_data = {
                     "name": updated_name,
                     "description": updated_description,
@@ -314,7 +314,7 @@ def show_edit_menu_item_form(item: Dict):
                     st.error("❌ 更新失敗，請稍後再試")
         
         with col_cancel:
-            if st.button("❌ 取消", use_container_width=True):
+            if st.button("❌ 取消", width="stretch"):
                 st.rerun()
     
     # 觸發對話框
@@ -346,7 +346,7 @@ def show_tags_management(item: Dict):
         
         col_save, col_cancel = st.columns(2)
         with col_save:
-            if st.button("🏷️ 更新標籤", use_container_width=True):
+            if st.button("🏷️ 更新標籤", width="stretch"):
                 new_tags = [tag.strip() for tag in updated_tags_str.split(',') if tag.strip()]
                 
                 ui_logger.info(f"Admin {st.session_state.get('username')} updating tags for menu item: {item['id']}")
@@ -358,7 +358,7 @@ def show_tags_management(item: Dict):
                     st.error("❌ 標籤更新失敗，請稍後再試")
         
         with col_cancel:
-            if st.button("❌ 取消", use_container_width=True):
+            if st.button("❌ 取消", width="stretch"):
                 st.rerun()
     
     # 觸發對話框
@@ -427,7 +427,7 @@ def show_menu_analytics(menu_items: List[Dict]):
             })
         
         df = pd.DataFrame(df_data)
-        st.dataframe(df, use_container_width=True, hide_index=True)
+        st.dataframe(df, width="stretch", hide_index=True)
 
 
 def format_heating_method(method: str) -> str:

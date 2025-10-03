@@ -9,7 +9,6 @@ def ai_recommendations_page():
     """AI推薦管理頁面"""
     ui_logger.info(f"User {st.session_state.get('username', 'Unknown')} accessing AI recommendations page")
     st.title("🤖 AI智能推薦管理")
-    st.set_page_config(layout="wide",initial_sidebar_state="expanded")
     st.markdown("---")
     
     # 檢查管理員權限
@@ -167,12 +166,12 @@ def show_recommendation_details(rec: Dict, index: int):
             # 待審核狀態：顯示接受/拒絕按鈕
             col_btn1, col_btn2 = st.columns(2)
             with col_btn1:
-                if st.button("✅ 通過", key=f"approve_{rec_id}_{index}", use_container_width=True):
+                if st.button("✅ 通過", key=f"approve_{rec_id}_{index}", width="stretch"):
                     if update_recommendation_status(rec_id, "APPROVED"):
                         st.success("✅ 推薦已通過")
                         st.rerun()
             with col_btn2:
-                if st.button("❌ 拒絕", key=f"reject_{rec_id}_{index}", use_container_width=True):
+                if st.button("❌ 拒絕", key=f"reject_{rec_id}_{index}", width="stretch"):
                     if update_recommendation_status(rec_id, "REJECTED"):
                         st.success("❌ 推薦已拒絕")
                         st.rerun()
@@ -181,12 +180,12 @@ def show_recommendation_details(rec: Dict, index: int):
             # 已通過狀態：可以實施或撤回
             col_btn1, col_btn2 = st.columns(2)
             with col_btn1:
-                if st.button("🚀 實施", key=f"implement_{rec_id}_{index}", use_container_width=True, type="primary"):
+                if st.button("🚀 實施", key=f"implement_{rec_id}_{index}", width="stretch", type="primary"):
                     if update_recommendation_status(rec_id, "IMPLEMENTED"):
                         st.success("🚀 推薦已實施")
                         st.rerun()
             with col_btn2:
-                if st.button("↩️ 撤回", key=f"revoke_{rec_id}_{index}", use_container_width=True):
+                if st.button("↩️ 撤回", key=f"revoke_{rec_id}_{index}", width="stretch"):
                     if update_recommendation_status(rec_id, "PENDING"):
                         st.success("↩️ 推薦已撤回至待審核")
                         st.rerun()
@@ -234,13 +233,13 @@ def show_recommendation_details(rec: Dict, index: int):
         suggested_menu = payload.get('suggested_menu', [])
         if suggested_menu:
             menu_df = pd.DataFrame(suggested_menu)
-            st.dataframe(menu_df, use_container_width=True)
+            st.dataframe(menu_df, width="stretch")
     
     elif rec['recommendation_type'] == 'RESTOCK':
         restock_suggestions = payload.get('restock_suggestions', [])
         if restock_suggestions:
             restock_df = pd.DataFrame(restock_suggestions)
-            st.dataframe(restock_df, use_container_width=True)
+            st.dataframe(restock_df, width="stretch")
 
 def show_dynamic_menu_display():
     """顯示動態菜單接收/顯示功能"""
@@ -378,7 +377,7 @@ def show_push_notification_records():
         })
     
     df = pd.DataFrame(records_data)
-    st.dataframe(df, use_container_width=True, hide_index=True)
+    st.dataframe(df, width="stretch", hide_index=True)
     
     # 推播詳細資訊
     st.subheader("🔍 推播詳細資訊")
@@ -652,7 +651,7 @@ def show_transactional_data_analysis():
                 st.markdown("### 📋 詳細交易記錄")
                 if transactional_data:
                     df = pd.DataFrame(transactional_data)
-                    st.dataframe(df, use_container_width=True)
+                    st.dataframe(df, width="stretch")
                     
                     # 提供下載功能
                     csv = df.to_csv(index=False)

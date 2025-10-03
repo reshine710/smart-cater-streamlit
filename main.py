@@ -40,7 +40,7 @@ def login_form():
         with st.form("login_form"):
             username = st.text_input("使用者名稱", placeholder="請輸入使用者名稱")
             password = st.text_input("密碼", type="password", placeholder="請輸入密碼")
-            submit_button = st.form_submit_button("登入", use_container_width=True)
+            submit_button = st.form_submit_button("登入", width="stretch")
             
             if submit_button:
                 if username and password:
@@ -97,7 +97,7 @@ def register_form():
                 help="管理員擁有更多系統權限"
             )
             
-            submit_button = st.form_submit_button("註冊", use_container_width=True)
+            submit_button = st.form_submit_button("註冊", width="stretch")
             
             if submit_button:
                 # 表單驗證
@@ -180,7 +180,7 @@ def show_user_management():
             })
         
         df = pd.DataFrame(user_data)
-        st.dataframe(df, use_container_width=True)
+        st.dataframe(df, width="stretch")
         
         # 統計資訊
         col1, col2, col3, col4 = st.columns(4)
@@ -207,7 +207,7 @@ def show_user_management():
     col1, col2 = st.columns(2)
     
     with col1:
-        if st.button("建立測試管理員", use_container_width=True):
+        if st.button("建立測試管理員", width="stretch"):
             ui_logger.info("Admin attempting to create test admin user")
             if st.session_state.api.register("testadmin", "testadmin@example.com", "testpassword", "Test Admin", True):
                 auth_logger.info("Test admin user created successfully via UI")

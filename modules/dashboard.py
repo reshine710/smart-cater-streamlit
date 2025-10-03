@@ -150,7 +150,7 @@ def dashboard_page():
                             )
                         )
                         
-                        st.plotly_chart(fig, use_container_width=True)
+                        st.plotly_chart(fig, width="stretch")
                 except Exception as e:
                     st.error(f"時間戳解析錯誤: {str(e)}")
                     # 顯示原始時間戳格式以便調試
@@ -184,12 +184,12 @@ def dashboard_page():
                 if quantity_field:
                     item_sales = df_sales.groupby(item_field)[quantity_field].sum().reset_index()
                     fig = px.pie(item_sales, values=quantity_field, names=item_field, title='商品銷量分布')
-                    st.plotly_chart(fig, use_container_width=True)
+                    st.plotly_chart(fig, width="stretch")
                 else:
                     # 如果沒有數量欄位，按交易次數統計
                     item_sales = df_sales.groupby(item_field).size().reset_index(name='count')
                     fig = px.pie(item_sales, values='count', names=item_field, title='商品交易次數分布')
-                    st.plotly_chart(fig, use_container_width=True)
+                    st.plotly_chart(fig, width="stretch")
             else:
                 st.info("📊 無法找到商品名稱欄位，無法顯示銷量圖")
         else:

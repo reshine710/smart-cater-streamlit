@@ -154,7 +154,7 @@ def show_create_location_form():
             contact_person = st.text_input("聯絡人", placeholder="負責人姓名")
             contact_phone = st.text_input("聯絡電話", placeholder="聯絡電話號碼")
         
-        submitted = st.form_submit_button("✨ 創建地點", use_container_width=True)
+        submitted = st.form_submit_button("✨ 創建地點", width="stretch")
         
         if submitted:
             if not location_name:
@@ -209,7 +209,7 @@ def show_edit_location_form(location: Dict):
         
         col_save, col_cancel = st.columns(2)
         with col_save:
-            if st.button("💾 儲存更改", use_container_width=True):
+            if st.button("💾 儲存更改", width="stretch"):
                 update_data = {
                     "name": updated_name,
                     "address": updated_address,
@@ -227,7 +227,7 @@ def show_edit_location_form(location: Dict):
                 st.rerun()
         
         with col_cancel:
-            if st.button("❌ 取消", use_container_width=True):
+            if st.button("❌ 取消", width="stretch"):
                 st.rerun()
     
     # 觸發對話框
@@ -295,6 +295,6 @@ def show_location_statistics():
                 })
             
             df = pd.DataFrame(df_data)
-            st.dataframe(df, use_container_width=True, hide_index=True)
+            st.dataframe(df, width="stretch", hide_index=True)
     else:
         st.info("📝 沒有地點數據可供分析")

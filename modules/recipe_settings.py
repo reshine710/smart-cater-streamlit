@@ -154,7 +154,7 @@ def recipe_settings_page():
         col1, col2, col3 = st.columns(3)
         
         with col1:
-            if st.button("💾 儲存配方設定", use_container_width=True):
+            if st.button("💾 儲存配方設定", width="stretch"):
                 # TODO: 實現將配方設定儲存到 API 的功能
                 # 可以調用 API 更新 heating_params
                 ui_logger.info(f"Recipe settings saved for {item_name} by {st.session_state.get('username')}")
@@ -163,13 +163,13 @@ def recipe_settings_page():
                 st.info("💡 提示：配方設定已更新，將在下次重新載入時生效")
                 
         with col2:
-            if st.button("🔄 重設為預設值", use_container_width=True):
+            if st.button("🔄 重設為預設值", width="stretch"):
                 ui_logger.info(f"Recipe settings reset for {item_name} by {st.session_state.get('username')}")
                 st.info(f"🔄 {item_name} 的配方設定已重設")
                 st.rerun()
         
         with col3:
-            if st.button("📋 查看詳細資訊", use_container_width=True):
+            if st.button("📋 查看詳細資訊", width="stretch"):
                 ui_logger.info(f"Viewing detailed info for {item_name}")
                 with st.expander(f"📊 {item_name} 詳細資訊", expanded=True):
                     st.json(selected_item)
@@ -193,7 +193,7 @@ def recipe_settings_page():
             
             import pandas as pd
             df = pd.DataFrame(items_data)
-            st.dataframe(df, use_container_width=True, hide_index=True)
+            st.dataframe(df, width="stretch", hide_index=True)
 
 
 def format_heating_method(method: str) -> str:
