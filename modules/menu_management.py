@@ -1,3 +1,4 @@
+import time
 import streamlit as st
 import pandas as pd
 from datetime import datetime
@@ -118,11 +119,12 @@ def menu_management_page():
                     # 調用 API 創建菜單項目
                     if st.session_state.api.create_menu_item(menu_item_data):
                         st.success(f"✅ 菜單項目 '{new_name}' 創建成功！")
-                        st.balloons()
-                        # 重新整理頁面以顯示新項目
+                        st.toast(f"🎉 已成功建立新菜單項目：{new_name}", icon="✅", duration='long')
+                        time.sleep(2)
                         st.rerun()
                     else:
                         st.error(f"❌ 創建菜單項目 '{new_name}' 失敗，請稍後再試")
+                        st.toast(f"❌ 建立菜單項目失敗：{new_name}", icon="❌", duration='long')
     
     with tab3:
         st.subheader("📊 菜單分析")
@@ -255,6 +257,7 @@ def show_delete_confirmation_dialog(item: Dict):
                         if success:
                             ui_logger.info(f"Admin {st.session_state.get('username')} deleted menu item {item['id']} ({item.get('name')})")
                             st.success(f"✅ 菜單項目 '{item.get('name')}' 已成功刪除！")
+                            time.sleep(1)
                             st.rerun()
                         else:
                             st.error("❌ 刪除菜單項目失敗")

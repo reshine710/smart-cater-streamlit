@@ -467,7 +467,7 @@ class VendingMachineAPI:
             )
             api_logger.debug(f"Create menu item API response status: {response.status_code}")
             
-            if response.status_code == 200:
+            if response.status_code in [200, 201]: 
                 api_logger.info(f"Menu item created successfully: {item_data.get('name')}")
                 return response.json()
             elif response.status_code == 500:
