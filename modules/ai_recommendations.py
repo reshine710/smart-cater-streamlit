@@ -433,13 +433,52 @@ def show_create_recommendation_form():
         if rec_type == "DYNAMIC_MENU":
             st.markdown("**動態菜單配置**")
             
+            # 獲取現有菜單項目
+            available_menu_items = []
+            try:
+                if hasattr(st.session_state, 'api') and st.session_state.api:
+                    menu_data = st.session_state.api.get_menu_items()
+                    if menu_data and 'items' in menu_data:
+                        available_menu_items = menu_data['items']
+                    elif isinstance(menu_data, list):
+                        available_menu_items = menu_data
+            except Exception as e:
+                st.warning(f"無法獲取菜單項目: {str(e)}")
+            
             # 完整的菜單項目輸入（包含補貨資訊）
             menu_items = []
             for i in range(3):
                 st.markdown(f"**餐點 {i+1}**")
                 col_meal, col_price, col_priority = st.columns(3)
                 with col_meal:
-                    meal_id = st.text_input(f"餐點ID", value=chr(65+i), key=f"meal_{i}")
+                    if available_menu_items:
+                        # 創建選項列表，格式為 "ID - 名稱"
+                        menu_options = []
+                        menu_option_map = {}
+                        
+                        for item in available_menu_items:
+                            item_id = str(item.get('id', ''))
+                            item_name = item.get('name', 'Unknown')
+                            option_text = f"{item_id} - {item_name}"
+                            menu_options.append(option_text)
+                            menu_option_map[option_text] = item_id
+                        
+                        # 預設選擇第一個選項
+                        default_option = menu_options[i] if i < len(menu_options) else menu_options[0] if menu_options else "A - 示例餐點"
+                        
+                        selected_option = st.selectbox(
+                            f"選擇餐點", 
+                            options=menu_options,
+                            index=i if i < len(menu_options) else 0,
+                            key=f"meal_{i}",
+                            help="從現有菜單項目中選擇"
+                        )
+                        
+                        # 從選項中提取餐點ID
+                        meal_id = menu_option_map.get(selected_option, chr(65+i))
+                    else:
+                        # 如果無法獲取菜單項目，使用文字輸入
+                        meal_id = st.text_input(f"餐點ID", value=chr(65+i), key=f"meal_{i}")
                 with col_price:
                     price = st.number_input(f"建議價格", value=80.0 + i*20, step=5.0, key=f"price_{i}")
                 with col_priority:

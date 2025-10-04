@@ -404,11 +404,69 @@ def show_menu_analytics(menu_items: List[Dict]):
         if menu_items:
             all_tags = []
             for item in menu_items:
-                all_tags.extend(item.get('tags', []))
+                tags = item.get('tags', [])
+                if tags:  # 確保 tags 是列表且不為空
+                    all_tags.extend(tags)
             
             if all_tags:
-                tag_counts = pd.Series(all_tags).value_counts().head(10)
-                st.bar_chart(tag_counts)
+                # 過濾並確保標籤都是字串類型
+                valid_tags = []
+                for tag in all_tags:
+                    if isinstance(tag, str) and tag.strip():  # 確保是字串且不為空
+                        valid_tags.append(tag.strip())
+                    elif isinstance(tag, dict):  # 如果是字典，嘗試提取名稱
+                        if 'name' in tag:
+                            valid_tags.append(str(tag['name']).strip())
+                        elif 'tag' in tag:
+                            valid_tags.append(str(tag['tag']).strip())
+                        else:
+                            # 如果是字典但沒有預期的鍵，轉為字串
+                            valid_tags.append(str(tag).strip())
+                    else:
+                        # 其他類型轉為字串
+                        valid_tags.append(str(tag).strip())
+                
+                # 計算標籤出現次數
+                from collections import Counter
+                tag_counts = Counter(valid_tags)
+                
+                # 顯示前10個熱門標籤
+                st.write("**最受歡迎的標籤：**")
+                for i, (tag, count) in enumerate(tag_counts.most_common(10), 1):
+                    percentage = (count / len(valid_tags)) * 100
+                    st.write(f"{i}. **{tag}** - {count} 次使用 ({percentage:.1f}%)")
+                
+                # 顯示使用這些標籤的菜單項目
+                st.write("**相關菜單項目：**")
+                popular_tags = [tag for tag, _ in tag_counts.most_common(5)]
+                
+                for tag in popular_tags:
+                    items_with_tag = []
+                    for item in menu_items:
+                        item_tags = item.get('tags', [])
+                        # 檢查標籤是否匹配
+                        for item_tag in item_tags:
+                            if isinstance(item_tag, str) and item_tag.strip() == tag:
+                                items_with_tag.append(item)
+                                break
+                            elif isinstance(item_tag, dict):
+                                tag_name = None
+                                if 'name' in item_tag:
+                                    tag_name = str(item_tag['name']).strip()
+                                elif 'tag' in item_tag:
+                                    tag_name = str(item_tag['tag']).strip()
+                                else:
+                                    tag_name = str(item_tag).strip()
+                                
+                                if tag_name == tag:
+                                    items_with_tag.append(item)
+                                    break
+                    
+                    if items_with_tag:
+                        with st.expander(f"🏷️ {tag} ({len(items_with_tag)} 個項目)", expanded=False):
+                            for item in items_with_tag:
+                                status_icon = "🟢" if item.get('is_active', False) else "🔴"
+                                st.write(f"{status_icon} **{item.get('name', 'Unknown')}** - NT$ {item.get('price', 0):.1f}")
             else:
                 st.info("沒有標籤數據")
     

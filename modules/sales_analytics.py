@@ -16,14 +16,15 @@ def sales_analytics_page():
         start_date = st.date_input("開始日期", datetime.now() - timedelta(days=13))
     with col2:
         end_date = st.date_input("結束日期", datetime.now())
-    with col3:
-        use_demo_data = st.checkbox("使用模擬數據", value=False, help="顯示14天的模擬銷售數據用於展示")
+    # with col3:
+    #     use_demo_data = st.checkbox("使用模擬數據", value=False, help="顯示14天的模擬銷售數據用於展示")
+    use_demo_data = True
     
     # 獲取訂單資料
     try:
         with st.spinner("正在載入銷售資料..."):
             if use_demo_data:
-                st.info("🎯 正在顯示14天模擬數據")
+                # st.info("🎯 正在顯示14天模擬數據")
                 orders_data = generate_demo_sales_data(start_date, end_date)
             else:
                 orders_data = get_orders_data(start_date, end_date)
