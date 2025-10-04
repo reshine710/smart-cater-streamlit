@@ -34,7 +34,7 @@ def menu_management_page():
         with col1:
             search_term = st.text_input("🔍 搜尋菜單項目", placeholder="輸入項目名稱...")
         with col2:
-            status_filter = st.selectbox("狀態篩選", ["全部", "啟用", "停用"])
+            status_filter = st.selectbox("狀態篩選", ["全部", "啟用", "停用"], key="menu_status_filter")
         with col3:
             if st.button("🔄 重新整理"):
                 st.rerun()

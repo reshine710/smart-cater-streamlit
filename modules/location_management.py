@@ -44,7 +44,7 @@ def show_locations_list():
     with col1:
         search_term = st.text_input("🔍 搜尋地點", placeholder="輸入地點名稱...")
     with col2:
-        indoor_filter = st.selectbox("環境篩選", ["全部", "室內", "室外"])
+        indoor_filter = st.selectbox("環境篩選", ["全部", "室內", "室外"], key="location_indoor_filter")
     with col3:
         if st.button("🔄 重新整理"):
             st.rerun()

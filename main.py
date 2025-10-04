@@ -127,14 +127,23 @@ def logout():
     username = st.session_state.get('username', 'Unknown')
     auth_logger.info(f"User logout: {username}")
     
-    st.session_state.logged_in = False
-    st.session_state.token = None
-    st.session_state.username = None
-    st.session_state.user_info = {}
-    st.session_state.is_admin = False
-    # 清除導航狀態
-    if 'current_page' in st.session_state:
-        del st.session_state.current_page
+    # 清除所有認證相關狀態
+    auth_keys = ['logged_in', 'token', 'username', 'user_info', 'is_admin']
+    for key in auth_keys:
+        if key in st.session_state:
+            del st.session_state[key]
+    
+    # 清除導航相關狀態
+    nav_keys = ['current_page', 'main_navigation_selectbox_v2']
+    for key in nav_keys:
+        if key in st.session_state:
+            del st.session_state[key]
+    
+    # 清除其他可能導致問題的狀態
+    other_keys = ['ai_recommendations_cache', 'push_records']
+    for key in other_keys:
+        if key in st.session_state:
+            del st.session_state[key]
     
     system_logger.info("Session state cleared on logout")
     st.rerun()
@@ -281,6 +290,15 @@ def main():
         # 頁面導航
         st.markdown("### 📋 功能選單")
         
+        # 添加重置按鈕（僅在開發模式下顯示）
+        if st.button("🔄 重置導航", help="如果功能選單卡住，點擊此按鈕重置"):
+            # 清除導航相關的 session state
+            keys_to_clear = ['current_page', 'main_navigation_selectbox_v2']
+            for key in keys_to_clear:
+                if key in st.session_state:
+                    del st.session_state[key]
+            st.rerun()
+        
         # 基本功能（所有使用者）
         pages = {
             "🏠 首頁": "dashboard",
@@ -313,18 +331,31 @@ def main():
             current_index = available_pages.index(st.session_state.current_page)
         except (ValueError, IndexError):
             current_index = 0
+            st.session_state.current_page = available_pages[0] if available_pages else "🏠 首頁"
         
-        selected_page = st.selectbox(
-            "選擇功能", 
-            available_pages,
-            index=current_index,
-            key="main_navigation_selectbox",
-            help="選擇要使用的功能模組"
-        )
+        # 使用更強健的 selectbox 實現
+        try:
+            selected_page = st.selectbox(
+                "選擇功能", 
+                available_pages,
+                index=current_index,
+                key="main_navigation_selectbox_v2",
+                help="選擇要使用的功能模組"
+            )
+        except Exception as e:
+            ui_logger.error(f"Selectbox error: {str(e)}")
+            # 如果 selectbox 出錯，重置狀態
+            st.session_state.current_page = available_pages[0] if available_pages else "🏠 首頁"
+            selected_page = st.session_state.current_page
         
         # 更新當前頁面狀態
-        st.session_state.current_page = selected_page
-        page_key = pages[selected_page]
+        if selected_page and selected_page in pages:
+            st.session_state.current_page = selected_page
+            page_key = pages[selected_page]
+        else:
+            # 如果選擇無效，使用預設頁面
+            st.session_state.current_page = available_pages[0] if available_pages else "🏠 首頁"
+            page_key = pages[st.session_state.current_page]
         
         ui_logger.info(f"User {username} selected page: {selected_page} ({page_key})")
         

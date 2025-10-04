@@ -75,7 +75,8 @@ def show_recommendations_list():
                 "IMPLEMENTED": "🚀 已實施",
                 "REJECTED": "❌ 已拒絕",
                 "EXPIRED": "⏰ 已過期"
-            }.get(x, x)
+            }.get(x, x),
+            key="recommendations_status_filter_v2"
         )
     
     with col2:
@@ -553,7 +554,7 @@ def show_create_recommendation_form():
         with col1:
             rec_id = st.text_input("推薦ID", value=f"AI-REC-{datetime.now().strftime('%Y%m%d')}-001")
             ai_model_version = st.text_input("AI模型版本", value="v2.1.3-dynamic-menu")
-            rec_type = st.selectbox("推薦類型", ["DYNAMIC_MENU", "RESTOCK"])
+            rec_type = st.selectbox("推薦類型", ["DYNAMIC_MENU", "RESTOCK"], key="recommendation_type_select")
             
             # 獲取實際機台列表
             available_machines = []
