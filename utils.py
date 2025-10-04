@@ -380,7 +380,7 @@ class VendingMachineAPI:
                 timeout=10
             )
             
-            if response.status_code == 200:
+            if response.status_code in [200, 204]:
                 api_logger.info(f"Successfully deleted machine {machine_id}")
                 return True
             elif response.status_code == 404:
@@ -885,7 +885,7 @@ class VendingMachineAPI:
                 timeout=10
             )
             
-            if response.status_code == 200:
+            if response.status_code in [200, 204]:
                 api_logger.info(f"Successfully deleted menu item {item_id}")
                 import streamlit as st
                 st.success("✅ 菜單項目已成功刪除")
@@ -1043,13 +1043,15 @@ class VendingMachineAPI:
             return False
 
     def update_recommendation_status(self, recommendation_id: int, status: str, 
-                                   review_notes: str = None) -> bool:
+                                   review_notes: str = None, reviewer: str = None) -> bool:
         """更新推薦狀態（審核通過/拒絕）"""
         api_logger.debug(f"Updating recommendation {recommendation_id} status to {status}")
         try:
+            # 使用傳入的 reviewer 或預設為 "admin"
+            reviewer_name = reviewer or "admin"
             update_data = {
                 "new_status": status,  # API 期望的欄位名稱是 new_status
-                "reviewer": "admin"  # API 期望的欄位名稱是 reviewer
+                "reviewer": reviewer_name  # API 期望的欄位名稱是 reviewer
             }
             if review_notes:
                 update_data["review_notes"] = review_notes
@@ -1213,7 +1215,101 @@ class VendingMachineAPI:
             import streamlit as st
             st.error(f"🌐 網路錯誤，無法創建地點: {str(e)}")
             return {}
-    
+
+    def delete_location(self, location_id: int) -> bool:
+        """刪除地點"""
+        api_logger.debug(f"Deleting location ID: {location_id}")
+        try:
+            response = requests.delete(
+                f"{self.base_url}/locations/{location_id}",
+                headers=self._get_auth_headers(),
+                timeout=10
+            )
+            
+            if response.status_code in [200, 204]:
+                api_logger.info(f"Successfully deleted location {location_id}")
+                return True
+            elif response.status_code == 404:
+                api_logger.warning(f"Location not found for ID: {location_id}")
+                import streamlit as st
+                st.error("❌ 地點不存在")
+                return False
+            elif response.status_code in [401, 403]:
+                api_logger.warning("Unauthorized access to location deletion API")
+                import streamlit as st
+                st.error("❌ 權限不足，僅管理員可刪除地點")
+                return False
+            elif response.status_code == 409:
+                api_logger.warning("Cannot delete location - has related machines")
+                import streamlit as st
+                st.error("❌ 無法刪除地點：此地點仍有相關機台。請先處理相關機台後再試。")
+                return False
+            elif response.status_code == 500:
+                api_logger.warning("Server error deleting location")
+                import streamlit as st
+                st.error("⚠️ 伺服器錯誤，請稍後再試")
+                return False
+            else:
+                api_logger.warning(f"Failed to delete location - Status code: {response.status_code}")
+                import streamlit as st
+                st.error(f"❌ 刪除地點失敗 - 狀態碼: {response.status_code}")
+                return False
+                
+        except requests.exceptions.RequestException as e:
+            api_logger.error(f"Network error deleting location: {str(e)}")
+            import streamlit as st
+            st.error(f"🌐 網路錯誤，無法刪除地點: {str(e)}")
+            return False
+
+    def update_location(self, location_id: int, update_data: Dict) -> bool:
+        """更新地點資訊"""
+        api_logger.debug(f"Updating location ID: {location_id}")
+        try:
+            response = requests.put(
+                f"{self.base_url}/locations/{location_id}",
+                headers=self._get_auth_headers(),
+                json=update_data,
+                timeout=10
+            )
+            
+            if response.status_code in [200, 201]:
+                api_logger.info(f"Successfully updated location {location_id}")
+                return True
+            elif response.status_code == 404:
+                api_logger.warning(f"Location not found for ID: {location_id}")
+                import streamlit as st
+                st.error("❌ 地點不存在")
+                return False
+            elif response.status_code == 400:
+                api_logger.warning(f"Bad request updating location - validation error")
+                import streamlit as st
+                try:
+                    error_detail = response.json().get('detail', '資料驗證失敗')
+                    st.error(f"❌ 更新地點失敗：{error_detail}")
+                except:
+                    st.error("❌ 更新地點失敗：資料格式不正確")
+                return False
+            elif response.status_code in [401, 403]:
+                api_logger.warning("Unauthorized access to location update API")
+                import streamlit as st
+                st.error("❌ 權限不足，僅管理員可更新地點")
+                return False
+            elif response.status_code == 500:
+                api_logger.warning("Server error updating location")
+                import streamlit as st
+                st.error("⚠️ 伺服器錯誤，請稍後再試")
+                return False
+            else:
+                api_logger.warning(f"Failed to update location - Status code: {response.status_code}")
+                import streamlit as st
+                st.error(f"❌ 更新地點失敗 - 狀態碼: {response.status_code}")
+                return False
+                
+        except requests.exceptions.RequestException as e:
+            api_logger.error(f"Network error updating location: {str(e)}")
+            import streamlit as st
+            st.error(f"🌐 網路錯誤，無法更新地點: {str(e)}")
+            return False
 
     def get_transactional_data(self, start_date: str, end_date: str, machine_id: str = None, 
                              limit: int = 100, skip: int = 0) -> List[Dict]:

@@ -16,7 +16,7 @@ from modules import (
 def show_main_app():
     """顯示主應用程式"""
     ui_logger.debug(f"Showing main app for user: {st.session_state.get('username', 'Unknown')}")
-    st.set_page_config(layout="centered",initial_sidebar_state="expanded")
+    # st.set_page_config(layout="centered",initial_sidebar_state="expanded")
     st.title("🏪 智慧販賣機管理系統")
     st.markdown("---")
     
@@ -292,8 +292,8 @@ def main():
         
         # 管理員專用功能
         if is_admin:
-            pages["👥 使用者管理"] = "user_management"
             pages["📍 地點管理"] = "location_management"
+            pages["👥 使用者管理"] = "user_management"
             ui_logger.debug(f"Admin pages added for user {username}")
         
         # 選擇頁面

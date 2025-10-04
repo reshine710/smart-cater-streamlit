@@ -202,28 +202,34 @@ def show_recommendation_details(rec: Dict, index: int):
         # 刪除按鈕（除了已實施的推薦，其他都可以刪除）
         if current_status != 'IMPLEMENTED':
             st.markdown("---")
-            if st.button("🗑️ 刪除", key=f"delete_{rec_id}_{index}", type="secondary"):
-                # 使用 session state 來處理確認對話框
-                confirm_key = f"confirm_delete_{rec_id}_{index}"
-                if confirm_key not in st.session_state:
-                    st.session_state[confirm_key] = False
-                
-                if not st.session_state[confirm_key]:
+            confirm_key = f"confirm_delete_{rec_id}_{index}"
+            
+            # 檢查是否處於確認狀態
+            if st.session_state.get(confirm_key, False):
+                # 顯示確認對話框
+                st.warning("⚠️ 確定要刪除此推薦嗎？此操作無法復原。")
+                col_confirm1, col_confirm2 = st.columns(2)
+                with col_confirm1:
+                    if st.button("⚠️ 確認刪除", key=f"confirm_yes_{rec_id}_{index}", type="primary"):
+                        if delete_recommendation(rec_id):
+                            st.success("🗑️ 推薦已刪除")
+                            # 清除確認狀態
+                            if confirm_key in st.session_state:
+                                del st.session_state[confirm_key]
+                            st.rerun()
+                        else:
+                            # 刪除失敗，清除確認狀態
+                            if confirm_key in st.session_state:
+                                del st.session_state[confirm_key]
+                with col_confirm2:
+                    if st.button("❌ 取消", key=f"confirm_no_{rec_id}_{index}"):
+                        st.session_state[confirm_key] = False
+                        st.rerun()
+            else:
+                # 顯示刪除按鈕
+                if st.button("🗑️ 刪除", key=f"delete_{rec_id}_{index}", type="secondary"):
                     st.session_state[confirm_key] = True
                     st.rerun()
-                else:
-                    col_confirm1, col_confirm2 = st.columns(2)
-                    with col_confirm1:
-                        if st.button("⚠️ 確認刪除", key=f"confirm_yes_{rec_id}_{index}", type="primary"):
-                            if delete_recommendation(rec_id):
-                                st.success("🗑️ 推薦已刪除")
-                                if confirm_key in st.session_state:
-                                    del st.session_state[confirm_key]
-                                st.rerun()
-                    with col_confirm2:
-                        if st.button("❌ 取消", key=f"confirm_no_{rec_id}_{index}"):
-                            st.session_state[confirm_key] = False
-                            st.rerun()
     
     # 顯示推薦內容
     st.markdown("**📋 推薦內容**")
@@ -233,6 +239,11 @@ def show_recommendation_details(rec: Dict, index: int):
         suggested_menu = payload.get('suggested_menu', [])
         if suggested_menu:
             menu_df = pd.DataFrame(suggested_menu)
+            # 重新排列欄位順序，確保補貨資訊顯示在後面
+            desired_columns = ['meal_id', 'suggested_price', 'priority', 'restock_quantity', 'restock_date']
+            existing_columns = [col for col in desired_columns if col in menu_df.columns]
+            if existing_columns:
+                menu_df = menu_df[existing_columns]
             st.dataframe(menu_df, width="stretch")
     
     elif rec['recommendation_type'] == 'RESTOCK':
@@ -300,6 +311,9 @@ def show_dynamic_menu_display():
                             
                             with item_col1:
                                 st.markdown(f"**🍽️ 餐點 {item['meal_id']}**")
+                                # 顯示補貨資訊（如果有）
+                                if 'restock_quantity' in item and 'restock_date' in item:
+                                    st.caption(f"📦 補貨: {item['restock_quantity']} 份 @ {item['restock_date']}")
                             
                             with item_col2:
                                 st.markdown(f"**💰 NT$ {item['suggested_price']:.0f}**")
@@ -419,23 +433,35 @@ def show_create_recommendation_form():
         if rec_type == "DYNAMIC_MENU":
             st.markdown("**動態菜單配置**")
             
-            # 簡化的菜單項目輸入
+            # 完整的菜單項目輸入（包含補貨資訊）
             menu_items = []
             for i in range(3):
+                st.markdown(f"**餐點 {i+1}**")
                 col_meal, col_price, col_priority = st.columns(3)
                 with col_meal:
-                    meal_id = st.text_input(f"餐點ID {i+1}", value=chr(65+i), key=f"meal_{i}")
+                    meal_id = st.text_input(f"餐點ID", value=chr(65+i), key=f"meal_{i}")
                 with col_price:
-                    price = st.number_input(f"建議價格 {i+1}", value=80.0 + i*20, key=f"price_{i}")
+                    price = st.number_input(f"建議價格", value=80.0 + i*20, step=5.0, key=f"price_{i}")
                 with col_priority:
-                    priority = st.number_input(f"優先級 {i+1}", value=i+1, min_value=1, max_value=10, key=f"priority_{i}")
+                    priority = st.number_input(f"優先級", value=i+1, min_value=1, max_value=10, key=f"priority_{i}")
+                
+                # 補貨資訊
+                col_quantity, col_date = st.columns(2)
+                with col_quantity:
+                    restock_quantity = st.number_input(f"補貨數量", value=3+i, min_value=0, key=f"restock_qty_{i}")
+                with col_date:
+                    restock_date = st.date_input(f"補貨日期", value=datetime.now().date() + timedelta(days=i*5), key=f"restock_date_{i}")
                 
                 if meal_id:
                     menu_items.append({
                         "meal_id": meal_id,
                         "suggested_price": price,
-                        "priority": priority
+                        "priority": priority,
+                        "restock_quantity": restock_quantity,
+                        "restock_date": restock_date.strftime("%Y/%m/%d")
                     })
+                
+                st.markdown("---")
         
         submitted = st.form_submit_button("🚀 創建推薦", type="primary")
         
@@ -500,16 +526,21 @@ def get_push_status_display(status: str) -> str:
     return displays.get(status, status)
 
 
-def update_recommendation_status(rec_id: int, status: str) -> bool:
+def update_recommendation_status(rec_id: int, status: str, review_notes: str = None) -> bool:
     """更新推薦狀態"""
     try:
         if hasattr(st.session_state, 'api') and st.session_state.api:
-            return st.session_state.api.update_recommendation_status(rec_id, status)
+            # 獲取當前使用者名稱作為審核者
+            reviewer = st.session_state.get('username', 'admin')
+            return st.session_state.api.update_recommendation_status(
+                rec_id, status, review_notes, reviewer
+            )
         else:
             st.error("❌ API 客戶端不可用")
             return False
     except Exception as e:
         st.error(f"❌ 更新狀態失敗: {str(e)}")
+        api_logger.error(f"Failed to update recommendation status: {str(e)}")
         return False
 
 def create_ai_recommendation(recommendation_data: dict) -> bool:

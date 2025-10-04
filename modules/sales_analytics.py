@@ -182,7 +182,7 @@ def display_time_trends(df):
                   title='每日營收趨勢',
                   labels={'revenue': '營收 (NT$)', 'date': '日期'})
     fig.update_layout(xaxis_title="日期", yaxis_title="營收 (NT$)")
-    st.plotly_chart(fig, width="stretch")
+    st.plotly_chart(fig)
     
     # 每小時銷售分布
     hourly_stats = df.groupby('hour').agg({
@@ -194,7 +194,7 @@ def display_time_trends(df):
                  title='每小時營收分布',
                  labels={'subtotal': '營收 (NT$)', 'hour': '小時'})
     fig.update_layout(xaxis_title="小時", yaxis_title="營收 (NT$)")
-    st.plotly_chart(fig, width="stretch")
+    st.plotly_chart(fig)
 
 def display_product_analysis(df):
     """顯示商品分析"""
@@ -211,12 +211,12 @@ def display_product_analysis(df):
                      title='商品銷量排行 (前10名)',
                      labels={'quantity': '銷量', 'item_name': '商品名稱'})
         fig.update_layout(xaxis_tickangle=-45)
-        st.plotly_chart(fig, width="stretch")
+        st.plotly_chart(fig)
     
     with col2:
         fig = px.pie(item_stats.head(10), values='subtotal', names='item_name', 
                      title='營收占比 (前10名)')
-        st.plotly_chart(fig, width="stretch")
+        st.plotly_chart(fig)
 
 def display_machine_comparison(df):
     """顯示機台比較分析"""
@@ -234,17 +234,17 @@ def display_machine_comparison(df):
         fig = px.bar(machine_stats, x='machine_id', y='revenue', 
                      title='各機台營收比較',
                      labels={'revenue': '營收 (NT$)', 'machine_id': '機台ID'})
-        st.plotly_chart(fig, width="stretch")
+        st.plotly_chart(fig)
     
     with col2:
         fig = px.bar(machine_stats, x='machine_id', y='orders', 
                      title='各機台訂單數比較',
                      labels={'orders': '訂單數', 'machine_id': '機台ID'})
-        st.plotly_chart(fig, width="stretch")
+        st.plotly_chart(fig)
     
     # 機台詳細統計表
     st.subheader("機台統計摘要")
-    st.dataframe(machine_stats, width="stretch")
+    st.dataframe(machine_stats, )
 
 def display_detailed_data(df):
     """顯示詳細資料"""
@@ -289,7 +289,6 @@ def display_detailed_data(df):
     
     st.dataframe(
         filtered_df[display_columns].sort_values('created_at', ascending=False),
-        width="stretch"
     )
 
 def generate_demo_sales_data(start_date, end_date):

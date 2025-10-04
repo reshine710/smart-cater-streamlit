@@ -116,14 +116,17 @@ def show_location_details(location: Dict, index: int):
                                key=f"confirm_delete_location_yes_{location_id}_{index}",
                                type="primary"):
                         try:
-                            # 這裡應該調用刪除地點的 API
-                            # success = st.session_state.api.delete_location(location_id)
-                            st.success(f"✅ 地點 {location.get('name')} 已成功刪除")
-                            ui_logger.info(f"Admin {st.session_state.get('username')} deleted location {location_id}")
-                            # 清除確認狀態
-                            st.session_state[f"confirm_delete_location_{location_id}"] = False
-                            # 刷新頁面
-                            st.rerun()
+                            # 調用刪除地點的 API
+                            success = st.session_state.api.delete_location(location_id)
+                            if success:
+                                st.success(f"✅ 地點 {location.get('name')} 已成功刪除")
+                                ui_logger.info(f"Admin {st.session_state.get('username')} deleted location {location_id}")
+                                # 清除確認狀態
+                                st.session_state[f"confirm_delete_location_{location_id}"] = False
+                                # 刷新頁面
+                                st.rerun()
+                            else:
+                                ui_logger.error(f"Failed to delete location {location_id}")
                         except Exception as e:
                             st.error(f"❌ 刪除地點時發生錯誤: {str(e)}")
                             ui_logger.error(f"Error deleting location {location_id}: {str(e)}")
@@ -221,10 +224,17 @@ def show_edit_location_form(location: Dict):
                 
                 ui_logger.info(f"Admin {st.session_state.get('username')} updating location: {location['id']}")
                 
-                # 這裡應該調用更新地點的 API
-                # if st.session_state.api.update_location(location['id'], update_data):
-                st.success(f"✅ {updated_name} 更新成功！")
-                st.rerun()
+                # 調用更新地點的 API
+                try:
+                    success = st.session_state.api.update_location(location['id'], update_data)
+                    if success:
+                        st.success(f"✅ {updated_name} 更新成功！")
+                        st.rerun()
+                    else:
+                        ui_logger.error(f"Failed to update location {location['id']}")
+                except Exception as e:
+                    st.error(f"❌ 更新地點時發生錯誤: {str(e)}")
+                    ui_logger.error(f"Error updating location {location['id']}: {str(e)}")
         
         with col_cancel:
             if st.button("❌ 取消", width="stretch"):
