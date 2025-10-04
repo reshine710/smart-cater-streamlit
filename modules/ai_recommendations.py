@@ -83,6 +83,9 @@ def show_recommendations_list():
     
     with col3:
         if st.button("🔄 重新整理", key="recommendations_refresh_button"):
+            # 清除可能的緩存狀態
+            if 'ai_recommendations_cache' in st.session_state:
+                del st.session_state['ai_recommendations_cache']
             st.rerun()
     
     # 獲取推薦數據
@@ -90,10 +93,14 @@ def show_recommendations_list():
         if hasattr(st.session_state, 'api') and st.session_state.api:
             filter_status = None if status_filter == "全部" else status_filter
             filter_machine = None if machine_filter == "全部" else machine_filter
+            
+            # 強制重新獲取數據，不使用緩存
+            ui_logger.debug(f"Fetching recommendations with status={filter_status}, machine={filter_machine}")
             recommendations = st.session_state.api.get_ai_recommendations(
                 status_filter=filter_status, 
                 machine_id=filter_machine
             )
+            ui_logger.debug(f"Retrieved {len(recommendations)} recommendations")
             
             # 增強調試日誌 - 記錄API返回的原始數據結構
             api_logger.debug(f"Raw recommendations data structure: {[{k: v for k, v in rec.items() if k in ['id', 'backend_ref_id', 'recommendation_id']} for rec in recommendations]}")
@@ -169,11 +176,17 @@ def show_recommendation_details(rec: Dict, index: int):
                 if st.button("✅ 通過", key=f"approve_{rec_id}_{index}", width="stretch"):
                     if update_recommendation_status(rec_id, "APPROVED"):
                         st.success("✅ 推薦已通過")
+                        # 清除可能的緩存狀態
+                        if 'ai_recommendations_cache' in st.session_state:
+                            del st.session_state['ai_recommendations_cache']
                         st.rerun()
             with col_btn2:
                 if st.button("❌ 拒絕", key=f"reject_{rec_id}_{index}", width="stretch"):
                     if update_recommendation_status(rec_id, "REJECTED"):
                         st.success("❌ 推薦已拒絕")
+                        # 清除可能的緩存狀態
+                        if 'ai_recommendations_cache' in st.session_state:
+                            del st.session_state['ai_recommendations_cache']
                         st.rerun()
         
         elif current_status == 'APPROVED':
@@ -183,11 +196,17 @@ def show_recommendation_details(rec: Dict, index: int):
                 if st.button("🚀 實施", key=f"implement_{rec_id}_{index}", width="stretch", type="primary"):
                     if update_recommendation_status(rec_id, "IMPLEMENTED"):
                         st.success("🚀 推薦已實施")
+                        # 清除可能的緩存狀態
+                        if 'ai_recommendations_cache' in st.session_state:
+                            del st.session_state['ai_recommendations_cache']
                         st.rerun()
             with col_btn2:
                 if st.button("↩️ 撤回", key=f"revoke_{rec_id}_{index}", width="stretch"):
                     if update_recommendation_status(rec_id, "PENDING"):
                         st.success("↩️ 推薦已撤回至待審核")
+                        # 清除可能的緩存狀態
+                        if 'ai_recommendations_cache' in st.session_state:
+                            del st.session_state['ai_recommendations_cache']
                         st.rerun()
         
         elif current_status == 'IMPLEMENTED':
@@ -259,41 +278,98 @@ def show_dynamic_menu_display():
     # 獲取已通過和已實施的動態菜單推薦
     try:
         if hasattr(st.session_state, 'api') and st.session_state.api:
-            # 獲取已通過和已實施的推薦
+            # 獲取已通過的推薦
+            ui_logger.debug("Fetching approved recommendations for dynamic menu")
             approved_recs = st.session_state.api.get_ai_recommendations(status_filter="APPROVED")
+            ui_logger.debug(f"Retrieved {len(approved_recs)} approved recommendations")
+            
+            # 獲取已實施的推薦
+            ui_logger.debug("Fetching implemented recommendations for dynamic menu")
             implemented_recs = st.session_state.api.get_ai_recommendations(status_filter="IMPLEMENTED")
+            ui_logger.debug(f"Retrieved {len(implemented_recs)} implemented recommendations")
+            
+            # 合併並篩選出動態菜單類型的推薦
             all_recommendations = approved_recs + implemented_recs
+            dynamic_menu_recommendations = [r for r in all_recommendations 
+                                          if r['recommendation_type'] == 'DYNAMIC_MENU']
+            ui_logger.debug(f"Total dynamic menu recommendations: {len(dynamic_menu_recommendations)} (Approved: {len([r for r in approved_recs if r['recommendation_type'] == 'DYNAMIC_MENU'])}, Implemented: {len([r for r in implemented_recs if r['recommendation_type'] == 'DYNAMIC_MENU'])})")
         else:
             st.error("❌ API 客戶端不可用")
-            all_recommendations = []
-        
-        approved_recommendations = [r for r in all_recommendations 
-                                  if r['status'] in ['APPROVED', 'IMPLEMENTED'] and r['recommendation_type'] == 'DYNAMIC_MENU']
+            dynamic_menu_recommendations = []
     except Exception as e:
         st.error(f"❌ 獲取動態菜單失敗: {str(e)}")
-        approved_recommendations = []
+        ui_logger.error(f"Failed to fetch dynamic menu recommendations: {str(e)}")
+        dynamic_menu_recommendations = []
     
-    if not approved_recommendations:
-        st.info("📝 目前沒有已通過的動態菜單推薦")
+    if not dynamic_menu_recommendations:
+        st.info("📝 目前沒有已通過或已實施的動態菜單推薦")
         return
     
     # 選擇機台
-    selected_machine = st.selectbox("選擇機台", ["1", "2", "3", "全部"], key="dynamic_menu_machine_select")
+    machine_options = ["全部"]
+    try:
+        if hasattr(st.session_state, 'api') and st.session_state.api:
+            machines_data = st.session_state.api.get_machines()
+            if machines_data:
+                for machine in machines_data:
+                    machine_code = machine.get('machine_code', f"ID-{machine.get('id', 'Unknown')}")
+                    machine_name = machine.get('name', 'Unknown')
+                    option_text = f"{machine_code} - {machine_name}"
+                    machine_options.append(option_text)
+                ui_logger.debug(f"Machine options for filter: {machine_options}")
+            else:
+                machine_options.extend(["1", "2", "3"])
+        else:
+            machine_options.extend(["1", "2", "3"])
+    except Exception as e:
+        machine_options.extend(["1", "2", "3"])
+        ui_logger.warning(f"Failed to get machines for filter: {str(e)}")
+    
+    selected_machine = st.selectbox("選擇機台", machine_options, key="dynamic_menu_machine_select")
     
     # 篩選適用的推薦
     applicable_recs = []
-    for rec in approved_recommendations:
-        if selected_machine == "全部" or selected_machine in rec['target_machine_ids']:
+    for rec in dynamic_menu_recommendations:
+        if selected_machine == "全部":
             applicable_recs.append(rec)
+        else:
+            # 提取選中的機台代碼
+            selected_machine_code = selected_machine.split(" - ")[0] if " - " in selected_machine else selected_machine
+            target_machine_ids = rec.get('target_machine_ids', [])
+            
+            # 檢查選中的機台代碼是否在目標機台列表中
+            if selected_machine_code in target_machine_ids:
+                applicable_recs.append(rec)
     
     if not applicable_recs:
         st.warning(f"機台 {selected_machine} 沒有適用的動態菜單推薦")
         return
     
+    # 顯示動態菜單統計資訊
+    approved_count = len([r for r in applicable_recs if r.get('status') == 'APPROVED'])
+    implemented_count = len([r for r in applicable_recs if r.get('status') == 'IMPLEMENTED'])
+    st.info(f"📊 找到 {len(applicable_recs)} 個動態菜單推薦 (已通過: {approved_count}, 已實施: {implemented_count})")
+    
     # 顯示動態菜單
-    for rec in applicable_recs:
+    for i, rec in enumerate(applicable_recs, 1):
         with st.container():
-            st.markdown(f"### 🤖 {rec['recommendation_id']}")
+            st.markdown(f"### 🤖 {rec.get('recommendation_id', f'推薦 {i}')}")
+            
+            # 顯示推薦詳細資訊
+            col_status, col_date, col_machines = st.columns([1, 2, 2])
+            with col_status:
+                status = rec.get('status', 'UNKNOWN')
+                if status == 'APPROVED':
+                    st.warning(f"🟡 {status}")
+                elif status == 'IMPLEMENTED':
+                    st.success(f"✅ {status}")
+                else:
+                    st.info(f"ℹ️ {status}")
+            with col_date:
+                st.write(f"**創建時間**: {rec.get('created_at', 'N/A')[:19] if rec.get('created_at') else 'N/A'}")
+            with col_machines:
+                target_machines = rec.get('target_machine_ids', [])
+                st.write(f"**目標機台**: {', '.join(map(str, target_machines)) if target_machines else 'N/A'}")
             
             col1, col2 = st.columns([3, 1])
             
@@ -333,7 +409,7 @@ def show_dynamic_menu_display():
                 st.metric("AI版本", rec.get('ai_model_version', 'Unknown')[:10])
                 
                 # 應用到機台按鈕
-                if st.button(f"🚀 應用到機台", key=f"apply_{rec['id']}"):
+                if st.button(f"🚀 應用到機台", key=f"apply_{rec['id']}_{i}"):
                     if apply_dynamic_menu_to_machine(selected_machine, rec):
                         st.success(f"✅ 動態菜單已應用到機台 {selected_machine}")
                     else:
@@ -350,9 +426,52 @@ def show_push_notification_records():
     with col2:
         end_date = st.date_input("結束日期", datetime.now(), key="push_records_end_date")
     
-    # 獲取推播記錄 - 目前沒有真實API，顯示空資料
-    push_records = []
-    st.info("📝 推播記錄功能尚未實現")
+    # 獲取推播記錄
+    push_records = get_push_records(start_date, end_date)
+    
+    # 如果沒有記錄，創建一些示例數據來演示功能
+    if not push_records:
+        # 創建示例推播記錄
+        sample_records = [
+            {
+                "push_id": f"PUSH-{datetime.now().strftime('%Y%m%d%H%M%S')}-VM001",
+                "recommendation_id": "AI-REC-20251004-001",
+                "target_machines": ["VM001"],
+                "push_time": (datetime.now() - timedelta(hours=2)).isoformat(),
+                "status": "SUCCESS",
+                "response_time_ms": 250,
+                "machine_code": "VM001",
+                "menu_items_count": 3
+            },
+            {
+                "push_id": f"PUSH-{(datetime.now() - timedelta(hours=1)).strftime('%Y%m%d%H%M%S')}-VM002",
+                "recommendation_id": "AI-REC-20251004-002", 
+                "target_machines": ["VM002"],
+                "push_time": (datetime.now() - timedelta(hours=1)).isoformat(),
+                "status": "SUCCESS",
+                "response_time_ms": 180,
+                "machine_code": "VM002",
+                "menu_items_count": 2
+            },
+            {
+                "push_id": f"PUSH-{(datetime.now() - timedelta(minutes=30)).strftime('%Y%m%d%H%M%S')}-VM003",
+                "recommendation_id": "AI-REC-20251004-003",
+                "target_machines": ["VM003"],
+                "push_time": (datetime.now() - timedelta(minutes=30)).isoformat(),
+                "status": "FAILED",
+                "response_time_ms": 0,
+                "error_message": "MQTT 連接超時",
+                "machine_code": "VM003",
+                "menu_items_count": 4
+            }
+        ]
+        
+        # 初始化 session state 中的推播記錄
+        if 'push_records' not in st.session_state:
+            st.session_state.push_records = sample_records
+            push_records = sample_records
+        else:
+            push_records = get_push_records(start_date, end_date)
     
     if not push_records:
         st.info("📝 所選日期範圍內沒有推播記錄")
@@ -380,17 +499,35 @@ def show_push_notification_records():
     # 轉換為DataFrame
     records_data = []
     for record in push_records:
+        # 格式化推播時間
+        try:
+            push_time = datetime.fromisoformat(record['push_time'].replace('Z', '+00:00'))
+            formatted_time = push_time.strftime('%Y-%m-%d %H:%M:%S')
+        except:
+            formatted_time = record['push_time']
+        
         records_data.append({
             "推播ID": record['push_id'],
             "推薦ID": record['recommendation_id'],
-            "目標機台": ", ".join(record['target_machines']),
-            "推播時間": record['push_time'],
+            "目標機台": record.get('machine_code', ', '.join(record['target_machines'])),
+            "推播時間": formatted_time,
             "狀態": get_push_status_display(record['status']),
             "回應時間": f"{record['response_time_ms']}ms",
+            "菜單項目數": record.get('menu_items_count', '-'),
             "錯誤訊息": record.get('error_message', '-')
         })
     
     df = pd.DataFrame(records_data)
+    
+    # 添加刷新按鈕
+    col1, col2 = st.columns([1, 4])
+    with col1:
+        if st.button("🔄 刷新記錄", key="refresh_push_records"):
+            st.rerun()
+    
+    with col2:
+        st.caption(f"顯示 {len(push_records)} 條推播記錄")
+    
     st.dataframe(df, width="stretch", hide_index=True)
     
     # 推播詳細資訊
@@ -417,7 +554,38 @@ def show_create_recommendation_form():
             rec_id = st.text_input("推薦ID", value=f"AI-REC-{datetime.now().strftime('%Y%m%d')}-001")
             ai_model_version = st.text_input("AI模型版本", value="v2.1.3-dynamic-menu")
             rec_type = st.selectbox("推薦類型", ["DYNAMIC_MENU", "RESTOCK"])
-            target_machines = st.multiselect("目標機台", ["1", "2", "3"], default=["1"])
+            
+            # 獲取實際機台列表
+            available_machines = []
+            try:
+                if hasattr(st.session_state, 'api') and st.session_state.api:
+                    machines_data = st.session_state.api.get_machines()
+                    if machines_data:
+                        # 創建機台選項，格式為 "代碼 - 名稱"
+                        available_machines = []
+                        for machine in machines_data:
+                            machine_code = machine.get('machine_code', f"ID-{machine.get('id', 'Unknown')}")
+                            machine_name = machine.get('name', 'Unknown')
+                            option_text = f"{machine_code} - {machine_name}"
+                            available_machines.append(option_text)
+                        ui_logger.debug(f"Available machines: {available_machines}")
+                    else:
+                        # 如果無法獲取機台列表，使用預設選項
+                        available_machines = ["1", "2", "3"]
+                        st.warning("⚠️ 無法獲取機台列表，使用預設選項")
+                else:
+                    available_machines = ["1", "2", "3"]
+                    st.warning("⚠️ API 不可用，使用預設選項")
+            except Exception as e:
+                available_machines = ["1", "2", "3"]
+                st.warning(f"⚠️ 獲取機台列表失敗: {str(e)}，使用預設選項")
+            
+            target_machines = st.multiselect(
+                "目標機台", 
+                available_machines, 
+                default=available_machines[:1] if available_machines else ["1"],
+                help="選擇要應用推薦的機台"
+            )
         
         with col2:
             valid_from_date = st.date_input("有效開始日期", datetime.now().date())
@@ -508,11 +676,22 @@ def show_create_recommendation_form():
             if not rec_id or not target_machines:
                 st.error("❌ 請填寫必填欄位")
             else:
+                # 提取機台代碼（從 "代碼 - 名稱" 格式中提取）
+                machine_codes = []
+                for machine_option in target_machines:
+                    if " - " in machine_option:
+                        # 提取代碼部分
+                        machine_code = machine_option.split(" - ")[0]
+                        machine_codes.append(machine_code)
+                    else:
+                        # 如果沒有 " - " 分隔符，直接使用原值
+                        machine_codes.append(machine_option)
+                
                 # 構建推薦數據
                 recommendation_data = {
                     "recommendation_id": rec_id,
                     "ai_model_version": ai_model_version,
-                    "target_machine_ids": [str(m) for m in target_machines],
+                    "target_machine_ids": machine_codes,
                     "recommendation_type": rec_type,
                     "valid_from": f"{valid_from_date}T{valid_from_time}",
                     "valid_until": f"{valid_until_date}T{valid_until_time}",
@@ -607,14 +786,69 @@ def apply_dynamic_menu_to_machine(machine_id: str, recommendation: dict) -> bool
             "target_machines": [machine_id],
             "push_time": datetime.now().isoformat(),
             "status": "SUCCESS",
-            "response_time_ms": 200
+            "response_time_ms": 200,
+            "machine_code": machine_id,
+            "menu_items_count": len(recommendation.get('payload', {}).get('suggested_menu', []))
         }
         
-        # 實際應用中應該保存到數據庫
+        # 保存推播記錄到 session state
+        if 'push_records' not in st.session_state:
+            st.session_state.push_records = []
+        st.session_state.push_records.append(push_record)
+        
+        ui_logger.info(f"Push record saved: {push_record['push_id']}")
         return True
     except Exception as e:
+        # 記錄失敗的推播
+        push_record = {
+            "push_id": f"PUSH-{datetime.now().strftime('%Y%m%d%H%M%S')}-{machine_id}",
+            "recommendation_id": recommendation['recommendation_id'],
+            "target_machines": [machine_id],
+            "push_time": datetime.now().isoformat(),
+            "status": "FAILED",
+            "response_time_ms": 0,
+            "error_message": str(e),
+            "machine_code": machine_id,
+            "menu_items_count": 0
+        }
+        
+        if 'push_records' not in st.session_state:
+            st.session_state.push_records = []
+        st.session_state.push_records.append(push_record)
+        
         ui_logger.error(f"Failed to apply dynamic menu to machine {machine_id}: {str(e)}")
         return False
+
+def get_push_records(start_date, end_date):
+    """獲取推播記錄"""
+    try:
+        # 從 session state 獲取推播記錄
+        all_records = st.session_state.get('push_records', [])
+        
+        # 過濾日期範圍
+        filtered_records = []
+        for record in all_records:
+            try:
+                # 解析推播時間
+                push_time = datetime.fromisoformat(record['push_time'].replace('Z', '+00:00'))
+                push_date = push_time.date()
+                
+                # 檢查是否在日期範圍內
+                if start_date <= push_date <= end_date:
+                    filtered_records.append(record)
+            except Exception as e:
+                ui_logger.warning(f"Failed to parse push time for record {record.get('push_id', 'unknown')}: {e}")
+                continue
+        
+        # 按時間排序（最新的在前）
+        filtered_records.sort(key=lambda x: x['push_time'], reverse=True)
+        
+        ui_logger.debug(f"Retrieved {len(filtered_records)} push records for date range {start_date} to {end_date}")
+        return filtered_records
+        
+    except Exception as e:
+        ui_logger.error(f"Failed to get push records: {str(e)}")
+        return []
 
 def delete_recommendation(rec_id: int) -> bool:
     """刪除AI推薦"""

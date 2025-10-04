@@ -964,9 +964,12 @@ class VendingMachineAPI:
             if machine_id:
                 params["machine_id"] = machine_id
             
+            # 禁用緩存，確保獲取最新數據
+            headers = {**self._get_ai_auth_headers(), 'Cache-Control': 'no-cache', 'Pragma': 'no-cache'}
+            
             response = requests.get(
                 f"{self.base_url}/ai/recommendations",
-                headers=self._get_ai_auth_headers(),
+                headers=headers,
                 params=params,
                 timeout=10
             )

@@ -132,6 +132,9 @@ def logout():
     st.session_state.username = None
     st.session_state.user_info = {}
     st.session_state.is_admin = False
+    # 清除導航狀態
+    if 'current_page' in st.session_state:
+        del st.session_state.current_page
     
     system_logger.info("Session state cleared on logout")
     st.rerun()
@@ -296,8 +299,31 @@ def main():
             pages["👥 使用者管理"] = "user_management"
             ui_logger.debug(f"Admin pages added for user {username}")
         
-        # 選擇頁面
-        selected_page = st.selectbox("選擇功能", list(pages.keys()))
+        # 初始化頁面狀態
+        if 'current_page' not in st.session_state:
+            st.session_state.current_page = "🏠 首頁"
+        
+        # 確保當前頁面在可用頁面列表中
+        available_pages = list(pages.keys())
+        if st.session_state.current_page not in available_pages:
+            st.session_state.current_page = available_pages[0] if available_pages else "🏠 首頁"
+        
+        try:
+            # 選擇頁面
+            current_index = available_pages.index(st.session_state.current_page)
+        except (ValueError, IndexError):
+            current_index = 0
+        
+        selected_page = st.selectbox(
+            "選擇功能", 
+            available_pages,
+            index=current_index,
+            key="main_navigation_selectbox",
+            help="選擇要使用的功能模組"
+        )
+        
+        # 更新當前頁面狀態
+        st.session_state.current_page = selected_page
         page_key = pages[selected_page]
         
         ui_logger.info(f"User {username} selected page: {selected_page} ({page_key})")
