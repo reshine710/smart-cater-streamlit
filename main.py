@@ -3,6 +3,8 @@ import pandas as pd
 from utils import init_session_state, VendingMachineAPI, API_BASE_URL
 from datetime import datetime
 from logger_config import auth_logger, ui_logger, system_logger
+from idle_logout import init_idle_tracking, check_idle_timeout, update_activity_time, render_idle_status_widget
+from idle_tracker_component import render_idle_tracker
 from modules import (
     dashboard_page,
     machine_status_page, 
@@ -59,6 +61,9 @@ def login_form():
                         ui_logger.debug(f"Login result: {result}")
                         
                         st.session_state.api = VendingMachineAPI(API_BASE_URL, result["access_token"])
+                        
+                        # 更新活動時間（登入成功）
+                        update_activity_time()
                         
                         # 根據角色顯示不同的成功訊息
                         is_offline = result['user_info'].get('_offline_mode', False)
@@ -263,6 +268,16 @@ def main():
     init_session_state()
     ui_logger.debug("Session state initialized in main")
     
+    # 初始化閒置追蹤
+    init_idle_tracking()
+    
+    # 檢查閒置超時
+    if check_idle_timeout():
+        return  # 如果已登出，直接返回
+    
+    # 載入閒置追蹤組件（隱藏）
+    render_idle_tracker()
+    
     # 檢查登入狀態
     if not st.session_state.logged_in:
         show_main_app()
@@ -386,6 +401,9 @@ def main():
         st.write(f"**API 連接狀態:** {api_status}")
         
         system_logger.info(f"API connection status: {'Connected' if api_connected else 'Offline'}")
+        
+        # 閒置狀態顯示
+        render_idle_status_widget()
         
     # 顯示頁面內容
     if page_key == "machine_status":

@@ -3,6 +3,7 @@ import pandas as pd
 import numpy as np
 import requests
 import json
+import time
 from datetime import datetime, timedelta
 from typing import Dict, List, Optional
 from logger_config import api_logger, auth_logger, system_logger
@@ -1481,4 +1482,11 @@ def init_session_state():
         st.session_state.is_admin = False
     if 'api' not in st.session_state:
         st.session_state.api = VendingMachineAPI(API_BASE_URL)
+    
+    # 初始化閒置追蹤相關狀態
+    if 'last_activity_time' not in st.session_state:
+        st.session_state.last_activity_time = time.time()
+    if 'idle_warning_shown' not in st.session_state:
+        st.session_state.idle_warning_shown = False
+    
     system_logger.info("Session state initialized successfully")
