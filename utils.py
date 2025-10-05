@@ -1184,7 +1184,7 @@ class VendingMachineAPI:
         api_logger.debug("Fetching locations list")
         try:
             response = requests.get(
-                f"{self.base_url}/locations/",
+                f"{self.base_url}/locations",
                 headers=self._get_auth_headers(),
                 timeout=10
             )
