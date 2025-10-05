@@ -68,7 +68,7 @@ def login_function(username, password):
                 else:
                     st.success(f"✅ 使用者登入成功！歡迎 {username}")
             
-            st.rerun()
+            # st.rerun()
         else:
             auth_logger.warning(f"Login failed for username: {username}")
             st.error("❌ 登入失敗，請檢查帳號密碼")
@@ -289,6 +289,9 @@ def main():
     
     # 側邊欄 - 使用者資訊和導航
     with st.sidebar:
+
+        placeholder = st.empty()
+
         st.markdown("---")
         
         # 使用者資訊
@@ -327,22 +330,11 @@ def main():
         if st.button("🚪 登出"):
             logout()
         
-        # 頁面導航
-        st.markdown("### 📋 功能選單")
-        
-        # 添加重置按鈕（僅在開發模式下顯示）
-        if st.button("🔄 重置導航", help="如果功能選單卡住，點擊此按鈕重置"):
-            # 清除導航相關的 session state
-            keys_to_clear = ['current_page', 'main_navigation_selectbox_v2']
-            for key in keys_to_clear:
-                if key in st.session_state:
-                    del st.session_state[key]
-            st.rerun()
         
         # 基本功能（所有使用者）
         pages = {
             "🗄️ 機台狀態": "machine_status",
-            "📊 首頁": "dashboard",
+            "📊 營運儀表板": "dashboard",
             "📈 銷售數據": "sales_data",
             "🛒 商品管理": "inventory",
             "🤖 AI智能推薦": "ai_recommendations",
@@ -359,52 +351,45 @@ def main():
         
         # 初始化頁面狀態
         if 'current_page' not in st.session_state:
-            st.session_state.current_page = "🏠 首頁"
+            st.session_state.current_page = "🗄️ 機台狀態"
         
         # 確保當前頁面在可用頁面列表中
         available_pages = list(pages.keys())
         if st.session_state.current_page not in available_pages:
-            st.session_state.current_page = available_pages[0] if available_pages else "🏠 首頁"
+            st.session_state.current_page = available_pages[0] if available_pages else "🗄️ 機台狀態"
         
-        try:
-            # 選擇頁面
-            current_index = available_pages.index(st.session_state.current_page)
-        except (ValueError, IndexError):
-            current_index = 0
-            st.session_state.current_page = available_pages[0] if available_pages else "🏠 首頁"
-        
-        # 使用更強健的 selectbox 實現
-        try:
-            selected_page = st.selectbox(
-                "選擇功能", 
-                available_pages,
-                index=current_index,
-                key="main_navigation_selectbox_v2",
-                help="選擇要使用的功能模組"
-            )
-        except Exception as e:
-            ui_logger.error(f"Selectbox error: {str(e)}")
-            # 如果 selectbox 出錯，重置狀態
-            st.session_state.current_page = available_pages[0] if available_pages else "🏠 首頁"
-            selected_page = st.session_state.current_page
-        
-        # 更新當前頁面狀態
-        if selected_page and selected_page in pages:
-            st.session_state.current_page = selected_page
-            page_key = pages[selected_page]
-        else:
-            # 如果選擇無效，使用預設頁面
-            st.session_state.current_page = available_pages[0] if available_pages else "🏠 首頁"
-            page_key = pages[st.session_state.current_page]
-        
-        ui_logger.info(f"User {username} selected page: {selected_page} ({page_key})")
-        
-        # API 連接狀態
-        api_connected = check_api_connection()
-        api_status = "🟢 正常" if api_connected else "🔴 離線"
-        st.write(f"**API 連接狀態:** {api_status}")
-        
-        system_logger.info(f"API connection status: {'Connected' if api_connected else 'Offline'}")
+        with placeholder.container():
+            # 顯示功能選單
+            st.markdown("### 📋 功能選單")
+            
+            # 當前頁面狀態
+            page_key = pages.get(st.session_state.current_page, "dashboard")
+            
+            # 顯示所有可用頁面的按鈕
+            for page_name in available_pages:
+                page_value = pages[page_name]
+                is_current_page = (page_key == page_value)
+                
+                # 使用不同的樣式來區分當前頁面和其他頁面
+                if is_current_page:
+                    # 當前頁面使用主要按鈕樣式
+                    if st.button(page_name, key=f"nav_{page_value}", type="primary", use_container_width=True):
+                        st.session_state.current_page = page_name
+                        st.rerun()
+                else:
+                    # 其他頁面使用次要按鈕樣式
+                    if st.button(page_name, key=f"nav_{page_value}", use_container_width=True):
+                        st.session_state.current_page = page_name
+                        st.rerun()
+            
+            ui_logger.info(f"User {username} current page: {st.session_state.current_page} ({page_key})")
+            
+            # API 連接狀態
+            api_connected = check_api_connection()
+            api_status = "🟢 正常" if api_connected else "🔴 離線"
+            st.write(f"**API 連接狀態:** {api_status}")
+            
+            system_logger.info(f"API connection status: {'Connected' if api_connected else 'Offline'}")
         
         # 閒置狀態顯示
         render_idle_status_widget()
