@@ -26,6 +26,212 @@ except Exception as e:
     initialize_mqtt_client = None
     MQTT_AVAILABLE = False
 
+def show_machine_overview(machines: List[Dict]):
+    """顯示機台總覽卡片"""
+    if not machines:
+        st.info("📭 目前沒有機台數據")
+        return
+    
+    # 過濾有效的機台數據
+    valid_machines = []
+    for machine in machines:
+        if isinstance(machine, dict) and machine.get('id'):
+            valid_machines.append(machine)
+    
+    if not valid_machines:
+        st.warning("⚠️ 沒有有效的機台數據")
+        return
+    
+    ui_logger.info(f"Displaying overview for {len(valid_machines)} machines")
+    
+    # 按狀態分組機台
+    status_groups = {
+        'online': [],
+        'maintenance': [],
+        'offline': [],
+        'unknown': []
+    }
+    
+    for machine in valid_machines:
+        status = machine.get('status', 'unknown').lower()
+        if status in status_groups:
+            status_groups[status].append(machine)
+        else:
+            status_groups['unknown'].append(machine)
+    
+    # 顯示機台卡片
+    for status, machines_in_status in status_groups.items():
+        if not machines_in_status:
+            continue
+            
+        # 狀態標題
+        status_config = get_status_config(status)
+        st.markdown(f"### {status_config['icon']} {status_config['title']} ({len(machines_in_status)}台)")
+        
+        # 創建響應式網格布局
+        cols_per_row = 3
+        for i in range(0, len(machines_in_status), cols_per_row):
+            cols = st.columns(cols_per_row)
+            
+            for j, machine in enumerate(machines_in_status[i:i+cols_per_row]):
+                with cols[j]:
+                    render_machine_card(machine, status_config)
+
+def get_status_config(status: str) -> Dict:
+    """獲取狀態配置"""
+    configs = {
+        'online': {
+            'icon': '🟢',
+            'title': '線上',
+            'color': 'success',
+            'bg_color': '#d4edda',
+            'border_color': '#28a745'
+        },
+        'maintenance': {
+            'icon': '🟡',
+            'title': '維護中',
+            'color': 'warning',
+            'bg_color': '#fff3cd',
+            'border_color': '#ffc107'
+        },
+        'offline': {
+            'icon': '🔴',
+            'title': '離線',
+            'color': 'error',
+            'bg_color': '#f8d7da',
+            'border_color': '#dc3545'
+        },
+        'unknown': {
+            'icon': '⚪',
+            'title': '未知狀態',
+            'color': 'info',
+            'bg_color': '#e2e3e5',
+            'border_color': '#6c757d'
+        }
+    }
+    return configs.get(status, configs['unknown'])
+
+def render_machine_card(machine: Dict, status_config: Dict):
+    """渲染單個機台卡片"""
+    machine_id = machine.get('id', 'N/A')
+    machine_code = machine.get('machine_code', 'N/A')
+    machine_name = machine.get('name', '未命名機台')
+    status = machine.get('status', 'unknown')
+    location = machine.get('location', {})
+    
+    # 處理位置資訊
+    if isinstance(location, dict):
+        location_name = location.get('name', '未知位置')
+    else:
+        location_name = str(location) if location else '未知位置'
+    
+    # 獲取其他資訊
+    ip_address = machine.get('ip_address', 'N/A')
+    firmware_version = machine.get('firmware_version', 'N/A')
+    last_heartbeat = machine.get('last_heartbeat', 'N/A')
+    
+    # 計算最後心跳時間
+    heartbeat_status = get_heartbeat_status(last_heartbeat)
+    
+    # 創建卡片容器
+    with st.container():
+        # 使用自定義CSS樣式
+        card_style = f"""
+        <div style="
+            background-color: {status_config['bg_color']};
+            border: 2px solid {status_config['border_color']};
+            border-radius: 10px;
+            padding: 15px;
+            margin: 10px 0;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        ">
+            <div style="text-align: center;">
+                <h4 style="margin: 0; color: {status_config['border_color']};">
+                    {status_config['icon']} {machine_name}
+                </h4>
+                <p style="margin: 5px 0; font-size: 14px; color: #666;">
+                    {machine_code} (ID: {machine_id})
+                </p>
+            </div>
+        </div>
+        """
+        
+        st.markdown(card_style, unsafe_allow_html=True)
+        
+        # 詳細資訊
+        with st.expander(f"📋 {machine_name} 詳細資訊", expanded=False):
+            col1, col2 = st.columns(2)
+            
+            with col1:
+                st.write(f"**機台代碼**: {machine_code}")
+                st.write(f"**位置**: {location_name}")
+                st.write(f"**IP地址**: {ip_address}")
+            
+            with col2:
+                st.write(f"**狀態**: {status_config['icon']} {status_config['title']}")
+                st.write(f"**韌體版本**: {firmware_version}")
+                st.write(f"**心跳狀態**: {heartbeat_status}")
+            
+            # 環境資訊（如果有）
+            if 'temperature' in machine or 'humidity' in machine:
+                st.markdown("**環境資訊**")
+                env_col1, env_col2 = st.columns(2)
+                with env_col1:
+                    if 'temperature' in machine:
+                        temp = machine['temperature']
+                        st.write(f"🌡️ 溫度: {temp}°C" if temp is not None else "🌡️ 溫度: N/A")
+                with env_col2:
+                    if 'humidity' in machine:
+                        humidity = machine['humidity']
+                        st.write(f"💧 濕度: {humidity}%" if humidity is not None else "💧 濕度: N/A")
+            
+            # 操作按鈕（僅管理員）
+            is_admin = st.session_state.get('is_admin', False)
+            if is_admin:
+                st.markdown("**操作**")
+                op_col1, op_col2, op_col3 = st.columns(3)
+                
+                with op_col1:
+                    if st.button("🔄 重啟", key=f"overview_restart_{machine_id}"):
+                        send_mqtt_command(machine_code, "restart")
+                        st.success(f"已發送重啟命令到 {machine_name}")
+                
+                with op_col2:
+                    if st.button("🔧 維護", key=f"overview_maintenance_{machine_id}"):
+                        send_mqtt_command(machine_code, "maintenance_mode", {"enabled": True})
+                        st.success(f"已發送維護模式命令到 {machine_name}")
+                
+                with op_col3:
+                    if st.button("📊 狀態", key=f"overview_status_{machine_id}"):
+                        send_mqtt_command(machine_code, "status_request")
+                        st.success(f"已請求 {machine_name} 狀態更新")
+
+def get_heartbeat_status(last_heartbeat) -> str:
+    """獲取心跳狀態"""
+    if last_heartbeat == 'N/A' or not last_heartbeat:
+        return "🔴 無心跳"
+    
+    try:
+        # 嘗試解析時間戳
+        if isinstance(last_heartbeat, str):
+            heartbeat_time = datetime.fromisoformat(last_heartbeat.replace('Z', '+00:00'))
+        else:
+            heartbeat_time = last_heartbeat
+        
+        # 計算時間差
+        now = datetime.now(heartbeat_time.tzinfo) if heartbeat_time.tzinfo else datetime.now()
+        time_diff = now - heartbeat_time
+        
+        if time_diff.total_seconds() < 60:  # 1分鐘內
+            return "🟢 正常"
+        elif time_diff.total_seconds() < 300:  # 5分鐘內
+            return "🟡 延遲"
+        else:
+            return "🔴 超時"
+    except Exception as e:
+        ui_logger.warning(f"Error parsing heartbeat time: {e}")
+        return "⚪ 未知"
+
 def machine_status_page():
     """機台狀態監控頁面"""
     ui_logger.info(f"User {st.session_state.get('username', 'Unknown')} accessing machine status page")
@@ -164,6 +370,12 @@ def machine_status_page():
         st.metric("🟡 維護中", status_counts.get('maintenance', 0))
     with col3:
         st.metric("🔴 離線", status_counts.get('offline', 0))
+    
+    st.markdown("---")
+    
+    # 機台總覽卡片
+    st.subheader("📊 機台總覽")
+    show_machine_overview(machines)
     
     st.markdown("---")
     
@@ -348,7 +560,7 @@ def machine_status_page():
                                 mqtt_client.get_connection_status().get('connected', False))
                 
                 if st.button(f"🔄 重啟機台 {machine_id}", 
-                           key=f"restart_{machine_id}",
+                           key=f"detail_restart_{machine_id}",
                            disabled=not mqtt_available):
                     if mqtt_available:
                         # 發送 MQTT 命令
@@ -366,7 +578,7 @@ def machine_status_page():
                         st.error("❌ MQTT 連接不可用，無法發送命令")
                 
                 if st.button(f"🔧 維護模式 {machine_id}", 
-                           key=f"maintenance_{machine_id}",
+                           key=f"detail_maintenance_{machine_id}",
                            disabled=not mqtt_available):
                     if mqtt_available:
                         # 發送 MQTT 命令
@@ -384,7 +596,7 @@ def machine_status_page():
                         st.error("❌ MQTT 連接不可用，無法發送命令")
                 
                 if st.button(f"📊 更新狀態 {machine_id}", 
-                           key=f"status_{machine_id}",
+                           key=f"detail_status_{machine_id}",
                            disabled=not mqtt_available):
                     if mqtt_available:
                         try:

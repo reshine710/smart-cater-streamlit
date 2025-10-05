@@ -86,7 +86,7 @@ def login_form():
                 else:
                     st.warning("請輸入使用者名稱和密碼")
         
-        st.info("💡 預設測試帳號:")
+        st.info("💡 預設測試帳號: 管理員: testadmin / testpassword")
         st.code("管理員: testadmin / testpassword")
 
 
@@ -337,8 +337,8 @@ def main():
         
         # 基本功能（所有使用者）
         pages = {
-            "🏠 首頁": "dashboard",
-            "📊 機台狀態": "machine_status",
+            "🗄️ 機台狀態": "machine_status",
+            "📊 首頁": "dashboard",
             "📈 銷售數據": "sales_data",
             "🛒 商品管理": "inventory",
             "🤖 AI智能推薦": "ai_recommendations",
