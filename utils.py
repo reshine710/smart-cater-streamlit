@@ -1458,6 +1458,98 @@ class VendingMachineAPI:
             st.error(f"❌ 刪除AI推薦時發生未預期的錯誤：{str(e)}")
             return False
     
+    def update_machine_menu_items(self, machine_id: int, menu_item_ids: List[int], display_orders: List[int]) -> Dict:
+        """更新機台菜單項目"""
+        api_logger.info(f"Updating machine {machine_id} menu items: {menu_item_ids} with display orders: {display_orders}")
+        try:
+            payload = {
+                "menu_item_ids": menu_item_ids,
+                "display_orders": display_orders
+            }
+            
+            response = requests.post(
+                f"{self.base_url}/machines/{machine_id}/update-menu-items",
+                headers=self._get_auth_headers(),
+                json=payload,
+                timeout=10
+            )
+            
+            api_logger.debug(f"Update machine menu items API response status: {response.status_code}")
+            
+            if response.status_code in [200, 201]:
+                result = response.json()
+                api_logger.info(f"Successfully updated machine {machine_id} menu items")
+                return result
+            elif response.status_code == 404:
+                api_logger.warning(f"Machine {machine_id} not found")
+                import streamlit as st
+                st.error(f"❌ 機台 {machine_id} 不存在")
+                return None
+            elif response.status_code == 401:
+                api_logger.warning("Unauthorized to update machine menu items")
+                import streamlit as st
+                st.error("❌ 權限不足：無法更新機台菜單")
+                return None
+            else:
+                api_logger.warning(f"Failed to update machine menu items - Status code: {response.status_code}")
+                import streamlit as st
+                st.error(f"❌ 更新機台菜單失敗 - 狀態碼: {response.status_code}")
+                return None
+                
+        except requests.exceptions.RequestException as e:
+            api_logger.error(f"Network error when updating machine menu items: {str(e)}")
+            import streamlit as st
+            st.error(f"❌ 網路錯誤：{str(e)}")
+            return None
+        except Exception as e:
+            api_logger.error(f"Unexpected error when updating machine menu items: {str(e)}")
+            import streamlit as st
+            st.error(f"❌ 更新機台菜單時發生未預期的錯誤：{str(e)}")
+            return None
+
+    def get_machine_current_menu_items(self, machine_id: int) -> Dict:
+        """獲取機台當前菜單項目"""
+        api_logger.info(f"Getting current menu items for machine {machine_id}")
+        try:
+            response = requests.get(
+                f"{self.base_url}/machines/{machine_id}/current-menu-items",
+                headers=self._get_auth_headers(),
+                timeout=10
+            )
+            
+            api_logger.debug(f"Get machine current menu items API response status: {response.status_code}")
+            
+            if response.status_code == 200:
+                result = response.json()
+                api_logger.info(f"Successfully retrieved current menu items for machine {machine_id}")
+                return result
+            elif response.status_code == 404:
+                api_logger.warning(f"Machine {machine_id} not found")
+                import streamlit as st
+                st.error(f"❌ 機台 {machine_id} 不存在")
+                return None
+            elif response.status_code == 401:
+                api_logger.warning("Unauthorized to get machine menu items")
+                import streamlit as st
+                st.error("❌ 權限不足：無法獲取機台菜單")
+                return None
+            else:
+                api_logger.warning(f"Failed to get machine menu items - Status code: {response.status_code}")
+                import streamlit as st
+                st.error(f"❌ 獲取機台菜單失敗 - 狀態碼: {response.status_code}")
+                return None
+                
+        except requests.exceptions.RequestException as e:
+            api_logger.error(f"Network error when getting machine menu items: {str(e)}")
+            import streamlit as st
+            st.error(f"❌ 網路錯誤：{str(e)}")
+            return None
+        except Exception as e:
+            api_logger.error(f"Unexpected error when getting machine menu items: {str(e)}")
+            import streamlit as st
+            st.error(f"❌ 獲取機台菜單時發生未預期的錯誤：{str(e)}")
+            return None
+
     def _get_ai_auth_headers(self) -> dict:
         """獲取AI API認證標頭"""
         # 使用固定的AI API Key，實際應用中應該從環境變數或配置檔案讀取

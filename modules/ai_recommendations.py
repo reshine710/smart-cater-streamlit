@@ -89,6 +89,15 @@ def show_recommendations_list():
                 del st.session_state['ai_recommendations_cache']
             st.rerun()
     
+    # 批量操作模式切換
+    st.markdown("---")
+    col_mode1, col_mode2 = st.columns([1, 4])
+    with col_mode1:
+        batch_mode = st.checkbox("🔧 批量操作模式", key="batch_mode_toggle", help="啟用批量選擇和更新機台菜單功能")
+    with col_mode2:
+        if batch_mode:
+            st.info("💡 批量操作模式已啟用：您可以選擇多個AI推薦菜單項目，然後一次性更新到機台")
+    
     # 獲取推薦數據
     try:
         if hasattr(st.session_state, 'api') and st.session_state.api:
@@ -116,14 +125,105 @@ def show_recommendations_list():
     
     st.write(f"顯示 {len(recommendations)} 個推薦")
     
+    # 初始化批量選擇狀態
+    if 'selected_recommendations' not in st.session_state:
+        st.session_state.selected_recommendations = []
+    
+    # 批量操作控制面板
+    if batch_mode:
+        st.markdown("### 🔧 批量操作控制面板")
+        col_control1, col_control2, col_control3 = st.columns(3)
+        
+        with col_control1:
+            if st.button("✅ 全選", key="select_all_batch"):
+                # 只選擇動態菜單類型的推薦
+                dynamic_menu_recs = [rec for rec in recommendations if rec['recommendation_type'] == 'DYNAMIC_MENU']
+                st.session_state.selected_recommendations = [rec['id'] for rec in dynamic_menu_recs]
+                st.rerun()
+        
+        with col_control2:
+            if st.button("❌ 清除選擇", key="clear_selection_batch"):
+                st.session_state.selected_recommendations = []
+                st.rerun()
+        
+        with col_control3:
+            selected_count = len(st.session_state.selected_recommendations)
+            st.metric("已選擇項目", selected_count)
+        
+        # 顯示已選擇的推薦摘要
+        if selected_count > 0:
+            st.markdown("**📋 已選擇的推薦摘要**")
+            selected_recs = [rec for rec in recommendations if rec['id'] in st.session_state.selected_recommendations]
+            
+            # 收集所有菜單項目
+            all_menu_items = []
+            for rec in selected_recs:
+                payload = rec.get('payload', {})
+                suggested_menu = payload.get('suggested_menu', [])
+                for item in suggested_menu:
+                    all_menu_items.append({
+                        'meal_id': item.get('meal_id'),
+                        'suggested_price': item.get('suggested_price'),
+                        'priority': item.get('priority'),
+                        'recommendation_id': rec.get('recommendation_id')
+                    })
+            
+            if all_menu_items:
+                menu_df = pd.DataFrame(all_menu_items)
+                st.dataframe(menu_df, width="stretch")
+                
+                # 機台選擇和更新按鈕
+                st.markdown("**🎯 選擇目標機台並更新菜單**")
+                col_machine, col_update = st.columns([2, 1])
+                
+                with col_machine:
+                    target_machine = st.selectbox(
+                        "選擇目標機台",
+                        ["1", "2", "3"],
+                        key="batch_target_machine",
+                        help="選擇要更新菜單的機台"
+                    )
+                
+                with col_update:
+                    if st.button("🚀 批量更新機台菜單", key="batch_update_menu", type="primary"):
+                        if batch_update_machine_menu(target_machine, all_menu_items):
+                            st.success(f"✅ 成功更新機台 {target_machine} 的菜單！")
+                            st.balloons()
+                        else:
+                            st.error("❌ 更新機台菜單失敗")
+        
+        st.markdown("---")
+    
     # 顯示推薦列表
     for i, rec in enumerate(recommendations):
         # 調試日誌 - 記錄每個推薦的ID字段
         id_debug_info = {k: rec.get(k) for k in ['id', 'backend_ref_id', 'recommendation_id'] if k in rec}
         api_logger.debug(f"Recommendation {i} ID fields: {id_debug_info}")
         
-        with st.expander(f"{get_status_icon(rec['status'])} {rec['recommendation_id']} - {rec['recommendation_type']}", expanded=False):
-            show_recommendation_details(rec, i)
+        # 在批量模式下，為動態菜單推薦添加選擇框
+        if batch_mode and rec['recommendation_type'] == 'DYNAMIC_MENU':
+            col_checkbox, col_expander = st.columns([1, 9])
+            
+            with col_checkbox:
+                is_selected = rec['id'] in st.session_state.selected_recommendations
+                if st.checkbox(
+                    "選擇", 
+                    value=is_selected, 
+                    key=f"select_rec_{rec['id']}",
+                    help="選擇此推薦進行批量操作"
+                ):
+                    if rec['id'] not in st.session_state.selected_recommendations:
+                        st.session_state.selected_recommendations.append(rec['id'])
+                else:
+                    if rec['id'] in st.session_state.selected_recommendations:
+                        st.session_state.selected_recommendations.remove(rec['id'])
+            
+            with col_expander:
+                with st.expander(f"{get_status_icon(rec['status'])} {rec['recommendation_id']} - {rec['recommendation_type']}", expanded=False):
+                    show_recommendation_details(rec, i)
+        else:
+            with st.expander(f"{get_status_icon(rec['status'])} {rec['recommendation_id']} - {rec['recommendation_type']}", expanded=False):
+                show_recommendation_details(rec, i)
 
 def show_recommendation_details(rec: Dict, index: int):
     """顯示推薦詳細資訊"""
@@ -258,13 +358,78 @@ def show_recommendation_details(rec: Dict, index: int):
     if rec['recommendation_type'] == 'DYNAMIC_MENU':
         suggested_menu = payload.get('suggested_menu', [])
         if suggested_menu:
-            menu_df = pd.DataFrame(suggested_menu)
-            # 重新排列欄位順序，確保補貨資訊顯示在後面
-            desired_columns = ['meal_id', 'suggested_price', 'priority', 'restock_quantity', 'restock_date']
-            existing_columns = [col for col in desired_columns if col in menu_df.columns]
-            if existing_columns:
-                menu_df = menu_df[existing_columns]
-            st.dataframe(menu_df, width="stretch")
+            # 初始化選擇狀態
+            if f'selected_menu_items_{rec_id}' not in st.session_state:
+                st.session_state[f'selected_menu_items_{rec_id}'] = []
+            
+            # 獲取菜單項目名稱映射
+            menu_name_mapping = get_menu_item_names()
+            
+            # 條列式顯示推薦菜單
+            st.markdown("**🍽️ 推薦菜單項目**")
+            for i, item in enumerate(suggested_menu):
+                meal_id = item.get('meal_id', '')
+                meal_name = menu_name_mapping.get(str(meal_id), f"餐點 {meal_id}")
+                suggested_price = item.get('suggested_price', 0)
+                priority = item.get('priority', 1)
+                restock_quantity = item.get('restock_quantity', 0)
+                restock_date = item.get('restock_date', '')
+                
+                # 創建選擇框和菜單項目顯示
+                col_check, col_content = st.columns([1, 9])
+                
+                with col_check:
+                    is_selected = i in st.session_state[f'selected_menu_items_{rec_id}']
+                    if st.checkbox(
+                        "選擇", 
+                        value=is_selected, 
+                        key=f"select_menu_item_{rec_id}_{i}",
+                        help=f"選擇 {meal_name}"
+                    ):
+                        if i not in st.session_state[f'selected_menu_items_{rec_id}']:
+                            st.session_state[f'selected_menu_items_{rec_id}'].append(i)
+                    else:
+                        if i in st.session_state[f'selected_menu_items_{rec_id}']:
+                            st.session_state[f'selected_menu_items_{rec_id}'].remove(i)
+                
+                with col_content:
+                    # 顯示菜單項目資訊
+                    st.markdown(f"**🍽️ {meal_name}**")
+                    
+                    # 顯示詳細資訊
+                    col_info1, col_info2, col_info3 = st.columns(3)
+                    
+                    with col_info1:
+                        st.caption(f"💰 建議價格: NT$ {suggested_price:.0f}")
+                    
+                    with col_info2:
+                        priority_icon = {1: "🔴", 2: "🟡", 3: "🟢"}.get(priority, "⚪")
+                        st.caption(f"{priority_icon} 優先級: {priority}")
+                    
+                    with col_info3:
+                        if restock_quantity and restock_date:
+                            st.caption(f"📦 補貨: {restock_quantity} 份 @ {restock_date}")
+                        else:
+                            st.caption("📦 補貨: 無")
+                    
+                    st.markdown("---")
+            
+            # 顯示選擇摘要
+            selected_count = len(st.session_state[f'selected_menu_items_{rec_id}'])
+            if selected_count > 0:
+                st.info(f"✅ 已選擇 {selected_count} 個菜單項目")
+                
+                # 顯示已選擇的項目
+                selected_items = []
+                for i in st.session_state[f'selected_menu_items_{rec_id}']:
+                    if i < len(suggested_menu):
+                        item = suggested_menu[i]
+                        meal_id = item.get('meal_id', '')
+                        meal_name = menu_name_mapping.get(str(meal_id), f"餐點 {meal_id}")
+                        selected_items.append(meal_name)
+                
+                if selected_items:
+                    st.markdown("**已選擇的項目**: " + ", ".join(selected_items))
     
     elif rec['recommendation_type'] == 'RESTOCK':
         restock_suggestions = payload.get('restock_suggestions', [])
@@ -975,4 +1140,91 @@ def show_transactional_data_analysis():
         except Exception as e:
             st.error(f"❌ 查詢交易數據失敗: {str(e)}")
             api_logger.error(f"Failed to query transactional data: {str(e)}")
+
+def batch_update_machine_menu(machine_id: str, menu_items: List[Dict]) -> bool:
+    """批量更新機台菜單"""
+    try:
+        if not hasattr(st.session_state, 'api') or not st.session_state.api:
+            st.error("❌ API 客戶端不可用")
+            return False
+        
+        # 提取菜單項目ID和顯示順序
+        menu_item_ids = []
+        display_orders = []
+        
+        for i, item in enumerate(menu_items, 1):
+            # 從meal_id中提取數字ID，如果meal_id是字符串則嘗試轉換
+            meal_id = item.get('meal_id', '')
+            try:
+                # 如果meal_id是純數字字符串，直接轉換
+                if meal_id.isdigit():
+                    menu_item_ids.append(int(meal_id))
+                else:
+                    # 如果是字母開頭（如A, B, C），轉換為數字
+                    if meal_id and meal_id[0].isalpha():
+                        menu_item_ids.append(ord(meal_id[0]) - ord('A') + 1)
+                    else:
+                        # 默認使用索引+1
+                        menu_item_ids.append(i)
+            except (ValueError, TypeError):
+                # 如果轉換失敗，使用索引+1
+                menu_item_ids.append(i)
+            
+            display_orders.append(i)
+        
+        ui_logger.info(f"Batch updating machine {machine_id} with menu items: {menu_item_ids}, display orders: {display_orders}")
+        
+        # 調用API更新機台菜單
+        result = st.session_state.api.update_machine_menu_items(
+            machine_id=int(machine_id),
+            menu_item_ids=menu_item_ids,
+            display_orders=display_orders
+        )
+        
+        if result and result.get('success'):
+            ui_logger.info(f"Successfully updated machine {machine_id} menu with {len(menu_items)} items")
+            
+            # 顯示更新結果
+            updated_items = result.get('data', {}).get('updated_menu_items', [])
+            if updated_items:
+                st.markdown("**📋 更新結果**")
+                result_df = pd.DataFrame(updated_items)
+                st.dataframe(result_df, width="stretch")
+            
+            return True
+        else:
+            ui_logger.error(f"Failed to update machine {machine_id} menu")
+            return False
+            
+    except Exception as e:
+        ui_logger.error(f"Error in batch_update_machine_menu: {str(e)}")
+        st.error(f"❌ 批量更新機台菜單時發生錯誤: {str(e)}")
+        return False
+
+def get_menu_item_names() -> Dict[str, str]:
+    """獲取菜單項目ID到名稱的映射"""
+    try:
+        if hasattr(st.session_state, 'api') and st.session_state.api:
+            menu_data = st.session_state.api.get_menu_items()
+            if menu_data and 'items' in menu_data:
+                menu_items = menu_data['items']
+            elif isinstance(menu_data, list):
+                menu_items = menu_data
+            else:
+                menu_items = []
+            
+            # 創建ID到名稱的映射
+            name_mapping = {}
+            for item in menu_items:
+                item_id = str(item.get('id', ''))
+                item_name = item.get('name', f"餐點 {item_id}")
+                name_mapping[item_id] = item_name
+            
+            return name_mapping
+        else:
+            # 如果API不可用，返回空映射
+            return {}
+    except Exception as e:
+        ui_logger.error(f"Error getting menu item names: {str(e)}")
+        return {}
 

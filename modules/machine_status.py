@@ -193,18 +193,21 @@ def render_machine_card(machine: Dict, status_config: Dict):
                 
                 with op_col1:
                     if st.button("🔄 重啟", key=f"overview_restart_{machine_id}"):
-                        send_mqtt_command(machine_code, "restart")
-                        st.success(f"已發送重啟命令到 {machine_name}")
+                        show_mqtt_command_dialog(machine_code, machine_name, "restart", "重啟")
                 
                 with op_col2:
                     if st.button("🔧 維護", key=f"overview_maintenance_{machine_id}"):
-                        send_mqtt_command(machine_code, "maintenance_mode", {"enabled": True})
-                        st.success(f"已發送維護模式命令到 {machine_name}")
+                        show_mqtt_command_dialog(machine_code, machine_name, "maintenance_mode", "維護模式", {"enabled": True})
                 
                 with op_col3:
                     if st.button("📊 狀態", key=f"overview_status_{machine_id}"):
-                        send_mqtt_command(machine_code, "status_request")
-                        st.success(f"已請求 {machine_name} 狀態更新")
+                        show_mqtt_command_dialog(machine_code, machine_name, "status_request", "狀態請求")
+            
+            
+            # 菜單查看按鈕（所有用戶）
+            st.markdown("**菜單資訊**")
+            if st.button("📋 查看當前菜單", key=f"view_menu_{machine_id}"):
+                show_machine_menu_dialog(machine_id, machine_name)
 
 def get_heartbeat_status(last_heartbeat) -> str:
     """獲取心跳狀態"""
@@ -874,5 +877,224 @@ def show_delete_machine_confirmation_dialog(machine: dict):
                 st.rerun()
     
     delete_dialog()
+
+# 定義對話框函數
+@st.dialog("🍽️ 機台菜單")
+def show_machine_menu_dialog_content(machine_id: int, machine_name: str):
+    """對話框內容函數"""
+    try:
+        ui_logger.info(f"Showing current menu dialog for machine {machine_id} ({machine_name})")
+        
+        # 調用API獲取機台當前菜單
+        if hasattr(st.session_state, 'api') and st.session_state.api:
+            menu_data = st.session_state.api.get_machine_current_menu_items(machine_id)
+            
+            if menu_data and menu_data.get('success'):
+                data = menu_data.get('data', {})
+                current_menu_items = data.get('current_menu_items', [])
+                total_items = data.get('total_items', 0)
+                
+                # 顯示菜單標題和基本資訊
+                st.markdown(f"### 🍽️ {machine_name} 當前菜單")
+                st.markdown(f"**總項目數**: {total_items}")
+                
+                if current_menu_items:
+                    # 創建菜單項目表格
+                    menu_df = pd.DataFrame(current_menu_items)
+                    
+                    # 重新排列欄位順序，讓重要資訊在前面
+                    desired_columns = ['display_order', 'menu_item_name', 'price', 'heating_method', 'is_ai_recommended']
+                    existing_columns = [col for col in desired_columns if col in menu_df.columns]
+                    other_columns = [col for col in menu_df.columns if col not in desired_columns]
+                    final_columns = existing_columns + other_columns
+                    
+                    if final_columns:
+                        menu_df = menu_df[final_columns]
+                    
+                    # 美化顯示
+                    menu_df_display = menu_df.copy()
+                    
+                    # 格式化價格
+                    if 'price' in menu_df_display.columns:
+                        menu_df_display['price'] = menu_df_display['price'].apply(lambda x: f"NT$ {x:.0f}" if pd.notna(x) else "N/A")
+                    
+                    # 格式化AI推薦狀態
+                    if 'is_ai_recommended' in menu_df_display.columns:
+                        menu_df_display['is_ai_recommended'] = menu_df_display['is_ai_recommended'].apply(
+                            lambda x: "🤖 AI推薦" if x else "📋 手動設定"
+                        )
+                    
+                    # 格式化加熱方式
+                    if 'heating_method' in menu_df_display.columns:
+                        heating_icons = {
+                            'microwave': '🔥 微波',
+                            'steam': '💨 蒸煮',
+                            'fry': '🍳 油炸',
+                            'bake': '🔥 烘烤'
+                        }
+                        menu_df_display['heating_method'] = menu_df_display['heating_method'].apply(
+                            lambda x: heating_icons.get(x, f"🔥 {x}")
+                        )
+                    
+                    # 重新命名欄位為中文
+                    column_mapping = {
+                        'display_order': '顯示順序',
+                        'menu_item_name': '餐點名稱',
+                        'price': '價格',
+                        'heating_method': '加熱方式',
+                        'is_ai_recommended': '推薦來源',
+                        'description': '描述',
+                        'image_url': '圖片',
+                        'menu_item_id': '菜單ID'
+                    }
+                    
+                    menu_df_display = menu_df_display.rename(columns=column_mapping)
+                    
+                    # 顯示表格
+                    st.dataframe(menu_df_display, width="stretch", hide_index=True)
+                    
+                    # 顯示統計資訊
+                    col1, col2, col3 = st.columns(3)
+                    
+                    with col1:
+                        ai_recommended_count = len([item for item in current_menu_items if item.get('is_ai_recommended', False)])
+                        st.metric("🤖 AI推薦項目", ai_recommended_count)
+                    
+                    with col2:
+                        manual_count = total_items - ai_recommended_count
+                        st.metric("📋 手動設定項目", manual_count)
+                    
+                    with col3:
+                        if current_menu_items:
+                            avg_price = sum(item.get('price', 0) for item in current_menu_items) / len(current_menu_items)
+                            st.metric("💰 平均價格", f"NT$ {avg_price:.0f}")
+                        else:
+                            st.metric("💰 平均價格", "N/A")
+                    
+                    # 顯示詳細資訊
+                    st.markdown("### 📋 菜單項目詳細資訊")
+                    for i, item in enumerate(current_menu_items, 1):
+                        with st.expander(f"{i}. {item.get('menu_item_name', 'Unknown')}", expanded=False):
+                            col_detail1, col_detail2 = st.columns(2)
+                            
+                            with col_detail1:
+                                st.write(f"**菜單ID**: {item.get('menu_item_id', 'N/A')}")
+                                st.write(f"**顯示順序**: {item.get('display_order', 'N/A')}")
+                                st.write(f"**價格**: NT$ {item.get('price', 0):.0f}")
+                                st.write(f"**加熱方式**: {item.get('heating_method', 'N/A')}")
+                            
+                            with col_detail2:
+                                st.write(f"**推薦來源**: {'🤖 AI推薦' if item.get('is_ai_recommended', False) else '📋 手動設定'}")
+                                if item.get('description'):
+                                    st.write(f"**描述**: {item['description']}")
+                                if item.get('image_url'):
+                                    st.write(f"**圖片**: {item['image_url']}")
+                
+                else:
+                    st.info("📭 此機台目前沒有菜單項目")
+                    
+            else:
+                st.error("❌ 獲取機台菜單失敗")
+                if menu_data:
+                    st.error(f"錯誤訊息: {menu_data.get('message', '未知錯誤')}")
+        else:
+            st.error("❌ API 客戶端不可用")
+            
+    except Exception as e:
+        ui_logger.error(f"Error showing machine menu dialog: {str(e)}")
+        st.error(f"❌ 顯示機台菜單時發生錯誤: {str(e)}")
+
+def show_machine_menu_dialog(machine_id: int, machine_name: str):
+    """顯示機台菜單對話框"""
+    # 調用對話框函數
+    show_machine_menu_dialog_content(machine_id, machine_name)
+
+# 定義MQTT命令對話框函數
+@st.dialog("🔧 MQTT命令執行")
+def show_mqtt_command_dialog_content(machine_code: str, machine_name: str, command: str, command_name: str, parameters: dict = None):
+    """MQTT命令對話框內容函數"""
+    try:
+        ui_logger.info(f"Executing MQTT command '{command}' for machine {machine_code} ({machine_name})")
+        
+        # 顯示命令資訊
+        st.markdown(f"### 🔧 執行MQTT命令")
+        st.markdown(f"**機台**: {machine_name} ({machine_code})")
+        st.markdown(f"**命令**: {command_name}")
+        st.markdown(f"**命令類型**: {command}")
+        
+        if parameters:
+            st.markdown(f"**參數**: {parameters}")
+        
+        # 執行MQTT命令
+        with st.spinner("正在發送MQTT命令..."):
+            result = send_mqtt_command(machine_code, command, parameters)
+        
+        # 顯示執行結果
+        st.markdown("### 📊 執行結果")
+        
+        if result:
+            st.success("✅ MQTT命令發送成功！")
+            
+            # 顯示詳細資訊
+            col1, col2 = st.columns(2)
+            
+            with col1:
+                st.metric("發送狀態", "成功")
+                st.metric("機台代碼", machine_code)
+            
+            with col2:
+                st.metric("命令類型", command_name)
+                st.metric("執行時間", "即時")
+            
+            # 顯示命令詳情
+            st.markdown("### 📋 命令詳情")
+            command_details = {
+                "機台名稱": machine_name,
+                "機台代碼": machine_code,
+                "命令": command,
+                "命令描述": command_name,
+                "參數": parameters if parameters else "無",
+                "發送時間": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                "狀態": "已發送"
+            }
+            
+            for key, value in command_details.items():
+                st.write(f"**{key}**: {value}")
+            
+            # 顯示注意事項
+            st.markdown("### ⚠️ 注意事項")
+            if command == "restart":
+                st.warning("🔄 重啟命令已發送，機台將在幾秒內重新啟動。請等待機台重新上線。")
+            elif command == "maintenance_mode":
+                st.info("🔧 維護模式已啟用，機台將進入維護狀態，暫停正常服務。")
+            elif command == "status_request":
+                st.info("📊 狀態請求已發送，機台將回傳最新的狀態資訊。")
+        
+        else:
+            st.error("❌ MQTT命令發送失敗！")
+            
+            # 顯示錯誤資訊
+            st.markdown("### ❌ 錯誤詳情")
+            st.write("**可能的原因**:")
+            st.write("- MQTT連接未建立")
+            st.write("- 機台離線或無回應")
+            st.write("- 網路連接問題")
+            st.write("- 命令格式錯誤")
+            
+            # 顯示建議操作
+            st.markdown("### 💡 建議操作")
+            st.write("1. 檢查MQTT連接狀態")
+            st.write("2. 確認機台是否在線")
+            st.write("3. 檢查網路連接")
+            st.write("4. 稍後重試")
+            
+    except Exception as e:
+        ui_logger.error(f"Error in MQTT command dialog: {str(e)}")
+        st.error(f"❌ 執行MQTT命令時發生錯誤: {str(e)}")
+
+def show_mqtt_command_dialog(machine_code: str, machine_name: str, command: str, command_name: str, parameters: dict = None):
+    """顯示MQTT命令執行對話框"""
+    # 調用對話框函數
+    show_mqtt_command_dialog_content(machine_code, machine_name, command, command_name, parameters)
 
 
