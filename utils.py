@@ -62,6 +62,10 @@ class VendingMachineAPI:
             if response.status_code == 200:
                 token_data = response.json()
                 
+                # 更新 API 客戶端的 token
+                self.token = token_data["access_token"]
+                self.headers["Authorization"] = f"Bearer {self.token}"
+                
                 # 獲取使用者資訊，傳遞 username 以便離線模式使用
                 user_info = self.get_current_user(token_data["access_token"], username)
                 
@@ -753,7 +757,7 @@ class VendingMachineAPI:
             )
             auth_logger.debug(f"Registration API response status: {response.status_code}")
             
-            if response.status_code == 200:
+            if response.status_code in [200, 201]:
                 auth_logger.info(f"Registration successful for username: {username}")
                 return True
             elif response.status_code == 500:
@@ -774,47 +778,90 @@ class VendingMachineAPI:
             return False
     
     def get_current_user(self, token: str, username: str = None) -> Dict:
-        """獲取當前使用者資訊 - 由於後台沒有 /users/me 端點，直接使用離線模式"""
-        api_logger.info(f"Getting current user info for username: {username} (using offline mode)")
-        # 後台 API 沒有 /users/me 端點，直接使用離線用戶資訊
-        return self._get_offline_user_info(token, username)
+        """獲取當前使用者資訊 - 優先使用 API，失敗時使用離線模式"""
+        api_logger.info(f"Getting current user info for username: {username}")
+        
+        # 嘗試使用 API 獲取使用者資訊
+        try:
+            response = requests.get(
+                f"{self.base_url}/users/me",
+                headers=self._get_auth_headers(),
+                timeout=10
+            )
+            
+            if response.status_code == 200:
+                user_data = response.json()
+                api_logger.info(f"Successfully retrieved user info from API for user: {user_data.get('username', 'Unknown')}")
+                auth_logger.debug(f"API user data: {user_data}")
+                return user_data
+            elif response.status_code == 401:
+                # 未授權，token 可能已過期
+                api_logger.warning("Unauthorized access to /users/me - token may be expired")
+                auth_logger.warning("Token expired, falling back to offline mode")
+                return self._get_offline_user_info(token, username)
+            elif response.status_code == 500:
+                # 伺服器內部錯誤
+                api_logger.warning("Server error (500) getting current user info")
+                auth_logger.warning("Server error, falling back to offline mode")
+                return self._get_offline_user_info(token, username)
+            else:
+                # 其他 HTTP 錯誤
+                api_logger.warning(f"Failed to get current user info - Status code: {response.status_code}")
+                auth_logger.warning(f"API error {response.status_code}, falling back to offline mode")
+                return self._get_offline_user_info(token, username)
+                
+        except requests.exceptions.RequestException as e:
+            # 網路連接錯誤
+            api_logger.error(f"Network error getting current user info: {str(e)}")
+            auth_logger.warning(f"Network error, falling back to offline mode: {str(e)}")
+            return self._get_offline_user_info(token, username)
+        except Exception as e:
+            # 其他未預期的錯誤
+            api_logger.error(f"Unexpected error getting current user info: {str(e)}")
+            auth_logger.warning(f"Unexpected error, falling back to offline mode: {str(e)}")
+            return self._get_offline_user_info(token, username)
     
     def _get_offline_user_info(self, token: str, username: str = None) -> Dict:
-        """獲取離線模式使用者資訊"""
+        """獲取離線模式使用者資訊 - 當 API 不可用時使用"""
         # 優先使用傳入的 username，否則檢查 session state
         import streamlit as st
         if not username:
             username = st.session_state.get('username', '')
         
+        auth_logger.info(f"🔌 離線模式 - 使用本地使用者資訊，username: {username}")
         auth_logger.debug(f"Offline mode - username: {username}, token: {token[:20] if token else 'None'}...")
         
         # 根據用戶名判斷是否為管理員
         # 支援你資料庫中的管理員帳號：testadmin 和 admin
-        if username in ["testadmin", "admin"] or "admin" in token:
+        if username in ["testadmin", "admin"]:
             user_data = {
                 "id": 1 if username == "testadmin" else 3,  # 根據實際資料庫 ID
                 "username": username or "testadmin",
                 "email": f"{username or 'testadmin'}@example.com",
-                "full_name": "Test Admin (Offline)" if username == "testadmin" else "Jimmy Shen (Offline)",
+                "full_name": "Test Admin (離線模式)" if username == "testadmin" else "Jimmy Shen (離線模式)",
                 "is_active": True,
                 "is_admin": True,
-                "created_at": datetime.now().isoformat()
+                "created_at": datetime.now().isoformat(),
+                "updated_at": datetime.now().isoformat(),
+                "_offline_mode": True  # 標記這是離線模式
             }
-            auth_logger.info(f"Offline mode - returning admin data for {user_data['username']}")
-            auth_logger.debug(f"Admin user data: {user_data}")
+            auth_logger.info(f"🔌 離線模式 - 返回管理員資料: {user_data['username']}")
+            auth_logger.debug(f"Offline admin user data: {user_data}")
             return user_data
         else:
             user_data = {
                 "id": 2,
                 "username": username or "testuser",
                 "email": f"{username or 'testuser'}@example.com",
-                "full_name": f"Test User (Offline)",
+                "full_name": f"Test User (離線模式)",
                 "is_active": True,
                 "is_admin": False,
-                "created_at": datetime.now().isoformat()
+                "created_at": datetime.now().isoformat(),
+                "updated_at": datetime.now().isoformat(),
+                "_offline_mode": True  # 標記這是離線模式
             }
-            auth_logger.info(f"Offline mode - returning user data for {user_data['username']}")
-            auth_logger.debug(f"User data: {user_data}")
+            auth_logger.info(f"🔌 離線模式 - 返回一般使用者資料: {user_data['username']}")
+            auth_logger.debug(f"Offline user data: {user_data}")
             return user_data
     
     def get_users(self, skip: int = 0, limit: int = 100) -> List[Dict]:

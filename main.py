@@ -51,6 +51,7 @@ def login_form():
                         st.session_state.username = result['user_info'].get('username', '')
                         st.session_state.user_info = result['user_info']
                         st.session_state.is_admin = result['user_info'].get('is_admin', False)
+                        print(result['user_info'])
                         
                         system_logger.info(f"Session state updated for user: {st.session_state.username}, admin: {st.session_state.is_admin}")
                         user_info = result['user_info']
@@ -60,10 +61,18 @@ def login_form():
                         st.session_state.api = VendingMachineAPI(API_BASE_URL, result["access_token"])
                         
                         # 根據角色顯示不同的成功訊息
+                        is_offline = result['user_info'].get('_offline_mode', False)
+                        
                         if st.session_state.is_admin:
-                            st.success(f"🎉 管理員登入成功！歡迎 {username}")
+                            if is_offline:
+                                st.warning(f"🔌 管理員登入成功（離線模式）！歡迎 {username}")
+                            else:
+                                st.success(f"🎉 管理員登入成功！歡迎 {username}")
                         else:
-                            st.success(f"✅ 使用者登入成功！歡迎 {username}")
+                            if is_offline:
+                                st.warning(f"🔌 使用者登入成功（離線模式）！歡迎 {username}")
+                            else:
+                                st.success(f"✅ 使用者登入成功！歡迎 {username}")
                         
                         st.rerun()
                     else:
@@ -279,10 +288,22 @@ def main():
         # 顯示使用者詳細資訊
         if user_info:
             with st.expander("👤 使用者資訊"):
+                # 檢查是否為離線模式
+                is_offline = user_info.get('_offline_mode', False)
+                
+                if is_offline:
+                    st.warning("🔌 **離線模式** - API 連接不可用，使用本地資料")
+                
                 st.write(f"**姓名**: {user_info.get('full_name', 'N/A')}")
                 st.write(f"**電子郵件**: {user_info.get('email', 'N/A')}")
                 st.write(f"**帳號狀態**: {'啟用' if user_info.get('is_active', False) else '停用'}")
                 st.write(f"**權限等級**: {'管理員' if user_info.get('is_admin', False) else '一般使用者'}")
+                
+                # 顯示連接狀態
+                if is_offline:
+                    st.write(f"**連接狀態**: 🔌 離線模式")
+                else:
+                    st.write(f"**連接狀態**: 🌐 線上模式")
         
         if st.button("🚪 登出"):
             logout()
