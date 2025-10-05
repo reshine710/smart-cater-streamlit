@@ -90,8 +90,8 @@ def login_form():
             if submit_button:
                 login_function(username, password)
         
-        st.info("💡 預設測試帳號: 管理員: testadmin / testpassword")
-        st.button("使用測試帳號登入", on_click=login_function, args=("testadmin", "testpassword"))
+        st.info("💡 預設測試帳號: 管理員: test_admin / admin123")
+        st.button("使用測試帳號登入", on_click=login_function, args=("test_admin", "admin123"))
 
 
 def register_form():
