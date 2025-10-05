@@ -67,14 +67,11 @@ def show_recommendations_list():
     with col1:
         status_filter = st.selectbox(
             "狀態篩選", 
-            ["全部", "PENDING", "APPROVED", "IMPLEMENTED", "REJECTED", "EXPIRED"],
+            ["全部", "PENDING", "IMPLEMENTED"],
             format_func=lambda x: {
                 "全部": "全部狀態",
                 "PENDING": "🟡 待審核",
-                "APPROVED": "✅ 已通過",
                 "IMPLEMENTED": "🚀 已實施",
-                "REJECTED": "❌ 已拒絕",
-                "EXPIRED": "⏰ 已過期"
             }.get(x, x),
             key="recommendations_status_filter_v2"
         )
@@ -84,9 +81,15 @@ def show_recommendations_list():
     
     with col3:
         if st.button("🔄 重新整理", key="recommendations_refresh_button"):
-            # 清除可能的緩存狀態
-            if 'ai_recommendations_cache' in st.session_state:
-                del st.session_state['ai_recommendations_cache']
+            # 清除所有可能的緩存狀態
+            cache_keys_to_clear = [
+                'ai_recommendations_cache',
+                'ai_recommendations_data',
+                'recommendations_data'
+            ]
+            for key in cache_keys_to_clear:
+                if key in st.session_state:
+                    del st.session_state[key]
             st.rerun()
     
     # 批量操作模式切換
@@ -275,19 +278,41 @@ def show_recommendation_details(rec: Dict, index: int):
             col_btn1, col_btn2 = st.columns(2)
             with col_btn1:
                 if st.button("✅ 通過", key=f"approve_{rec_id}_{index}", width="stretch"):
+                    # 先更新狀態為APPROVED
                     if update_recommendation_status(rec_id, "APPROVED"):
-                        st.success("✅ 推薦已通過")
-                        # 清除可能的緩存狀態
-                        if 'ai_recommendations_cache' in st.session_state:
-                            del st.session_state['ai_recommendations_cache']
+                        # 然後自動實施
+                        if update_recommendation_status(rec_id, "IMPLEMENTED"):
+                            st.success("✅ 推薦已通過並實施")
+                        else:
+                            st.success("✅ 推薦已通過")
+                        # 清除所有可能的緩存狀態
+                        cache_keys_to_clear = [
+                            'ai_recommendations_cache',
+                            'ai_recommendations_data',
+                            'recommendations_data'
+                        ]
+                        for key in cache_keys_to_clear:
+                            if key in st.session_state:
+                                del st.session_state[key]
+                        # 添加短暫延遲確保後端數據更新
+                        import time
+                        time.sleep(0.5)
+                        # 強制刷新頁面
                         st.rerun()
             with col_btn2:
                 if st.button("❌ 拒絕", key=f"reject_{rec_id}_{index}", width="stretch"):
                     if update_recommendation_status(rec_id, "REJECTED"):
                         st.success("❌ 推薦已拒絕")
-                        # 清除可能的緩存狀態
-                        if 'ai_recommendations_cache' in st.session_state:
-                            del st.session_state['ai_recommendations_cache']
+                        # 清除所有可能的緩存狀態
+                        cache_keys_to_clear = [
+                            'ai_recommendations_cache',
+                            'ai_recommendations_data',
+                            'recommendations_data'
+                        ]
+                        for key in cache_keys_to_clear:
+                            if key in st.session_state:
+                                del st.session_state[key]
+                        # 強制刷新頁面
                         st.rerun()
         
         elif current_status == 'APPROVED':
@@ -297,17 +322,31 @@ def show_recommendation_details(rec: Dict, index: int):
                 if st.button("🚀 實施", key=f"implement_{rec_id}_{index}", width="stretch", type="primary"):
                     if update_recommendation_status(rec_id, "IMPLEMENTED"):
                         st.success("🚀 推薦已實施")
-                        # 清除可能的緩存狀態
-                        if 'ai_recommendations_cache' in st.session_state:
-                            del st.session_state['ai_recommendations_cache']
+                        # 清除所有可能的緩存狀態
+                        cache_keys_to_clear = [
+                            'ai_recommendations_cache',
+                            'ai_recommendations_data',
+                            'recommendations_data'
+                        ]
+                        for key in cache_keys_to_clear:
+                            if key in st.session_state:
+                                del st.session_state[key]
+                        # 強制刷新頁面
                         st.rerun()
             with col_btn2:
                 if st.button("↩️ 撤回", key=f"revoke_{rec_id}_{index}", width="stretch"):
                     if update_recommendation_status(rec_id, "PENDING"):
                         st.success("↩️ 推薦已撤回至待審核")
-                        # 清除可能的緩存狀態
-                        if 'ai_recommendations_cache' in st.session_state:
-                            del st.session_state['ai_recommendations_cache']
+                        # 清除所有可能的緩存狀態
+                        cache_keys_to_clear = [
+                            'ai_recommendations_cache',
+                            'ai_recommendations_data',
+                            'recommendations_data'
+                        ]
+                        for key in cache_keys_to_clear:
+                            if key in st.session_state:
+                                del st.session_state[key]
+                        # 強制刷新頁面
                         st.rerun()
         
         elif current_status == 'IMPLEMENTED':
