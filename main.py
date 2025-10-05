@@ -32,6 +32,49 @@ def show_main_app():
         register_form()
 
 
+def login_function(username, password):
+
+    if username and password:
+        result = st.session_state.api.login(username, password)
+        if result:
+            st.session_state.logged_in = True
+            st.session_state.token = result['access_token']
+            st.session_state.username = result['user_info'].get('username', '')
+            st.session_state.user_info = result['user_info']
+            st.session_state.is_admin = result['user_info'].get('is_admin', False)
+            print(result['user_info'])
+            
+            system_logger.info(f"Session state updated for user: {st.session_state.username}, admin: {st.session_state.is_admin}")
+            user_info = result['user_info']
+            auth_logger.info(f"UI Login successful - User ID: {user_info.get('id', 'N/A')}, Username: {user_info.get('username', 'Unknown')}, is_admin: {user_info.get('is_admin', False)}")
+            ui_logger.debug(f"Login result: {result}")
+            
+            st.session_state.api = VendingMachineAPI(API_BASE_URL, result["access_token"])
+            
+            # 更新活動時間（登入成功）
+            update_activity_time()
+            
+            # 根據角色顯示不同的成功訊息
+            is_offline = result['user_info'].get('_offline_mode', False)
+            
+            if st.session_state.is_admin:
+                if is_offline:
+                    st.warning(f"🔌 管理員登入成功（離線模式）！歡迎 {username}")
+                else:
+                    st.success(f"🎉 管理員登入成功！歡迎 {username}")
+            else:
+                if is_offline:
+                    st.warning(f"🔌 使用者登入成功（離線模式）！歡迎 {username}")
+                else:
+                    st.success(f"✅ 使用者登入成功！歡迎 {username}")
+            
+            st.rerun()
+        else:
+            auth_logger.warning(f"Login failed for username: {username}")
+            st.error("❌ 登入失敗，請檢查帳號密碼")
+    else:
+        st.warning("請輸入使用者名稱和密碼")
+
 def login_form():
     """登入表單"""
     col1, col2, col3 = st.columns([1, 2, 1])
@@ -45,49 +88,10 @@ def login_form():
             submit_button = st.form_submit_button("登入", width="stretch")
             
             if submit_button:
-                if username and password:
-                    result = st.session_state.api.login(username, password)
-                    if result:
-                        st.session_state.logged_in = True
-                        st.session_state.token = result['access_token']
-                        st.session_state.username = result['user_info'].get('username', '')
-                        st.session_state.user_info = result['user_info']
-                        st.session_state.is_admin = result['user_info'].get('is_admin', False)
-                        print(result['user_info'])
-                        
-                        system_logger.info(f"Session state updated for user: {st.session_state.username}, admin: {st.session_state.is_admin}")
-                        user_info = result['user_info']
-                        auth_logger.info(f"UI Login successful - User ID: {user_info.get('id', 'N/A')}, Username: {user_info.get('username', 'Unknown')}, is_admin: {user_info.get('is_admin', False)}")
-                        ui_logger.debug(f"Login result: {result}")
-                        
-                        st.session_state.api = VendingMachineAPI(API_BASE_URL, result["access_token"])
-                        
-                        # 更新活動時間（登入成功）
-                        update_activity_time()
-                        
-                        # 根據角色顯示不同的成功訊息
-                        is_offline = result['user_info'].get('_offline_mode', False)
-                        
-                        if st.session_state.is_admin:
-                            if is_offline:
-                                st.warning(f"🔌 管理員登入成功（離線模式）！歡迎 {username}")
-                            else:
-                                st.success(f"🎉 管理員登入成功！歡迎 {username}")
-                        else:
-                            if is_offline:
-                                st.warning(f"🔌 使用者登入成功（離線模式）！歡迎 {username}")
-                            else:
-                                st.success(f"✅ 使用者登入成功！歡迎 {username}")
-                        
-                        st.rerun()
-                    else:
-                        auth_logger.warning(f"Login failed for username: {username}")
-                        st.error("❌ 登入失敗，請檢查帳號密碼")
-                else:
-                    st.warning("請輸入使用者名稱和密碼")
+                login_function(username, password)
         
         st.info("💡 預設測試帳號: 管理員: testadmin / testpassword")
-        st.code("管理員: testadmin / testpassword")
+        st.button("使用測試帳號登入", on_click=login_function, args=("testadmin", "testpassword"))
 
 
 def register_form():
