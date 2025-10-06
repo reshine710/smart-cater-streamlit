@@ -205,21 +205,21 @@ def show_recommendations_list():
         
         # 在批量模式下，為動態菜單推薦添加選擇框
         if batch_mode and rec['recommendation_type'] == 'DYNAMIC_MENU':
-            col_checkbox, col_expander = st.columns([1, 9])
+            _, col_expander = st.columns([1, 9]) # delete col_checkbox
             
-            with col_checkbox:
-                is_selected = rec['id'] in st.session_state.selected_recommendations
-                if st.checkbox(
-                    "選擇", 
-                    value=is_selected, 
-                    key=f"select_rec_{rec['id']}",
-                    help="選擇此推薦進行批量操作"
-                ):
-                    if rec['id'] not in st.session_state.selected_recommendations:
-                        st.session_state.selected_recommendations.append(rec['id'])
-                else:
-                    if rec['id'] in st.session_state.selected_recommendations:
-                        st.session_state.selected_recommendations.remove(rec['id'])
+            # with col_checkbox:
+            #     is_selected = rec['id'] in st.session_state.selected_recommendations
+            #     if st.checkbox(
+            #         "選擇", 
+            #         value=is_selected, 
+            #         key=f"select_rec_{rec['id']}",
+            #         help="選擇此推薦進行批量操作"
+            #     ):
+            #         if rec['id'] not in st.session_state.selected_recommendations:
+            #             st.session_state.selected_recommendations.append(rec['id'])
+            #     else:
+            #         if rec['id'] in st.session_state.selected_recommendations:
+            #             st.session_state.selected_recommendations.remove(rec['id'])
             
             with col_expander:
                 with st.expander(f"{get_status_icon(rec['status'])} {rec['recommendation_id']} - {rec['recommendation_type']}", expanded=False):
@@ -280,11 +280,33 @@ def show_recommendation_details(rec: Dict, index: int):
                 if st.button("✅ 通過", key=f"approve_{rec_id}_{index}", width="stretch"):
                     # 先更新狀態為APPROVED
                     if update_recommendation_status(rec_id, "APPROVED"):
-                        # 然後自動實施
                         if update_recommendation_status(rec_id, "IMPLEMENTED"):
-                            st.success("✅ 推薦已通過並實施")
+                                st.success("✅ 推薦已通過並實施")
                         else:
                             st.success("✅ 推薦已通過")
+
+                        # TODO: 實施選中的菜單項目，尚未完成
+                        # # 檢查是否是動態菜單推薦且有選中的菜單項目
+                        # if (rec['recommendation_type'] == 'DYNAMIC_MENU' and 
+                        #     f'selected_menu_items_{rec_id}' in st.session_state and 
+                        #     st.session_state[f'selected_menu_items_{rec_id}']):
+                            
+                        #     # 實施選中的菜單項目
+                        #     if implement_selected_menu_items(rec, rec_id):
+                        #         # 更新推薦狀態為已實施
+                        #         if update_recommendation_status(rec_id, "IMPLEMENTED"):
+                        #             st.success("✅ 推薦已通過並實施選中的菜單項目")
+                        #         else:
+                        #             st.success("✅ 推薦已通過，菜單項目已實施")
+                        #     else:
+                        #         st.success("✅ 推薦已通過")
+                        # else:
+                        #     # 非動態菜單推薦或沒有選中項目，只更新狀態
+                        #     if update_recommendation_status(rec_id, "IMPLEMENTED"):
+                        #         st.success("✅ 推薦已通過並實施")
+                        #     else:
+                        #         st.success("✅ 推薦已通過")
+                        
                         # 清除所有可能的緩存狀態
                         cache_keys_to_clear = [
                             'ai_recommendations_cache',
@@ -415,21 +437,21 @@ def show_recommendation_details(rec: Dict, index: int):
                 restock_date = item.get('restock_date', '')
                 
                 # 創建選擇框和菜單項目顯示
-                col_check, col_content = st.columns([1, 9])
+                _, col_content = st.columns([1, 9]) # delete col_check
                 
-                with col_check:
-                    is_selected = i in st.session_state[f'selected_menu_items_{rec_id}']
-                    if st.checkbox(
-                        "選擇", 
-                        value=is_selected, 
-                        key=f"select_menu_item_{rec_id}_{i}",
-                        help=f"選擇 {meal_name}"
-                    ):
-                        if i not in st.session_state[f'selected_menu_items_{rec_id}']:
-                            st.session_state[f'selected_menu_items_{rec_id}'].append(i)
-                    else:
-                        if i in st.session_state[f'selected_menu_items_{rec_id}']:
-                            st.session_state[f'selected_menu_items_{rec_id}'].remove(i)
+                # with col_check:
+                #     is_selected = i in st.session_state[f'selected_menu_items_{rec_id}']
+                #     if st.checkbox(
+                #         "選擇", 
+                #         value=is_selected, 
+                #         key=f"select_menu_item_{rec_id}_{i}",
+                #         help=f"選擇 {meal_name}"
+                #     ):
+                #         if i not in st.session_state[f'selected_menu_items_{rec_id}']:
+                #             st.session_state[f'selected_menu_items_{rec_id}'].append(i)
+                #     else:
+                #         if i in st.session_state[f'selected_menu_items_{rec_id}']:
+                #             st.session_state[f'selected_menu_items_{rec_id}'].remove(i)
                 
                 with col_content:
                     # 顯示菜單項目資訊
@@ -453,22 +475,22 @@ def show_recommendation_details(rec: Dict, index: int):
                     
                     st.markdown("---")
             
-            # 顯示選擇摘要
-            selected_count = len(st.session_state[f'selected_menu_items_{rec_id}'])
-            if selected_count > 0:
-                st.info(f"✅ 已選擇 {selected_count} 個菜單項目")
+            # # 顯示選擇摘要
+            # selected_count = len(st.session_state[f'selected_menu_items_{rec_id}'])
+            # if selected_count > 0:
+            #     st.info(f"✅ 已選擇 {selected_count} 個菜單項目")
                 
-                # 顯示已選擇的項目
-                selected_items = []
-                for i in st.session_state[f'selected_menu_items_{rec_id}']:
-                    if i < len(suggested_menu):
-                        item = suggested_menu[i]
-                        meal_id = item.get('meal_id', '')
-                        meal_name = menu_name_mapping.get(str(meal_id), f"餐點 {meal_id}")
-                        selected_items.append(meal_name)
+            #     # 顯示已選擇的項目
+            #     selected_items = []
+            #     for i in st.session_state[f'selected_menu_items_{rec_id}']:
+            #         if i < len(suggested_menu):
+            #             item = suggested_menu[i]
+            #             meal_id = item.get('meal_id', '')
+            #             meal_name = menu_name_mapping.get(str(meal_id), f"餐點 {meal_id}")
+            #             selected_items.append(meal_name)
                 
-                if selected_items:
-                    st.markdown("**已選擇的項目**: " + ", ".join(selected_items))
+            #     if selected_items:
+            #         st.markdown("**已選擇的項目**: " + ", ".join(selected_items))
     
     elif rec['recommendation_type'] == 'RESTOCK':
         restock_suggestions = payload.get('restock_suggestions', [])
@@ -1266,4 +1288,103 @@ def get_menu_item_names() -> Dict[str, str]:
     except Exception as e:
         ui_logger.error(f"Error getting menu item names: {str(e)}")
         return {}
+
+def implement_selected_menu_items(rec: Dict, rec_id: int) -> bool:
+    """實施選中的菜單項目到目標機台"""
+    try:
+        # 獲取選中的菜單項目索引
+        selected_indices = st.session_state.get(f'selected_menu_items_{rec_id}', [])
+        if not selected_indices:
+            ui_logger.warning(f"No selected menu items for recommendation {rec_id}")
+            return False
+        
+        # 獲取推薦的菜單項目
+        suggested_menu = rec.get('payload', {}).get('suggested_menu', [])
+        if not suggested_menu:
+            ui_logger.warning(f"No suggested menu items for recommendation {rec_id}")
+            return False
+        
+        # 獲取目標機台ID
+        target_machine_ids = rec.get('target_machine_ids', [])
+        if not target_machine_ids:
+            ui_logger.warning(f"No target machine IDs for recommendation {rec_id}")
+            return False
+        
+        # 構建選中的菜單項目數據
+        selected_menu_items = []
+        for i in selected_indices:
+            if i < len(suggested_menu):
+                item = suggested_menu[i]
+                meal_id = item.get('meal_id', '')
+                if meal_id:
+                    selected_menu_items.append({
+                        'meal_id': meal_id,
+                        'suggested_price': item.get('suggested_price', 0),
+                        'priority': item.get('priority', 1),
+                        'restock_quantity': item.get('restock_quantity', 0),
+                        'restock_date': item.get('restock_date', '')
+                    })
+        
+        if not selected_menu_items:
+            ui_logger.warning(f"No valid selected menu items for recommendation {rec_id}")
+            return False
+        
+        # 為每個目標機台實施選中的菜單項目
+        success_count = 0
+        for machine_id in target_machine_ids:
+            try:
+                # 提取菜單項目ID和顯示順序
+                menu_item_ids = []
+                display_orders = []
+                
+                for idx, item in enumerate(selected_menu_items):
+                    meal_id = item['meal_id']
+                    # 處理meal_id可能是字符串或數字的情況
+                    if isinstance(meal_id, str) and meal_id.isdigit():
+                        menu_item_ids.append(int(meal_id))
+                    elif isinstance(meal_id, (int, float)):
+                        menu_item_ids.append(int(meal_id))
+                    else:
+                        # 如果是字符串且包含非數字字符，跳過
+                        ui_logger.warning(f"Skipping invalid meal_id: {meal_id}")
+                        continue
+                    
+                    # 顯示順序從1開始
+                    display_orders.append(idx + 1)
+                
+                if menu_item_ids:
+                    # 調用API更新機台菜單項目
+                    if hasattr(st.session_state, 'api') and st.session_state.api:
+                        # 記錄API調用詳情
+                        ui_logger.info(f"🚀 調用API更新機台 {machine_id} 菜單項目")
+                        ui_logger.info(f"📡 POST {st.session_state.api.base_url}/machines/{machine_id}/update-menu-items")
+                        ui_logger.info(f"📦 Request Body: {{'menu_item_ids': {menu_item_ids}, 'display_orders': {display_orders}}}")
+                        
+                        result = st.session_state.api.update_machine_menu_items(
+                            int(machine_id), menu_item_ids, display_orders
+                        )
+                        
+                        # 記錄API回應結果
+                        if result:
+                            success_count += 1
+                            ui_logger.info(f"✅ 成功更新機台 {machine_id} 菜單項目")
+                            ui_logger.info(f"📊 Response: {result}")
+                        else:
+                            ui_logger.error(f"❌ 更新機台 {machine_id} 菜單項目失敗")
+                            ui_logger.error(f"📊 Response: {result}")
+                    else:
+                        ui_logger.error("❌ API 客戶端不可用")
+                else:
+                    ui_logger.warning(f"No valid menu item IDs for machine {machine_id}")
+                    
+            except Exception as e:
+                ui_logger.error(f"Error updating machine {machine_id}: {str(e)}")
+                continue
+        
+        # 返回是否至少有一個機台更新成功
+        return success_count > 0
+        
+    except Exception as e:
+        ui_logger.error(f"Error implementing selected menu items: {str(e)}")
+        return False
 

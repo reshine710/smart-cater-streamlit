@@ -1050,8 +1050,17 @@ class VendingMachineAPI:
 
     def create_ai_recommendation(self, recommendation_data: dict) -> bool:
         """創建AI推薦"""
-        api_logger.debug(f"Creating AI recommendation: {recommendation_data.get('recommendation_id')}")
+        rec_id = recommendation_data.get('recommendation_id', 'Unknown')
+        api_logger.info(f"🚀 開始創建AI推薦: {rec_id}")
+        api_logger.info(f"📋 推薦類型: {recommendation_data.get('recommendation_type', 'Unknown')}")
+        api_logger.info(f"🎯 目標機台: {recommendation_data.get('target_machine_ids', [])}")
+        
         try:
+            # 記錄完整的API調用資訊
+            api_logger.info(f"📡 API調用: POST {self.base_url}/ai/recommendations")
+            api_logger.info(f"📦 Request Headers: {self._get_ai_auth_headers()}")
+            api_logger.info(f"📦 Request Body: {recommendation_data}")
+            
             response = requests.post(
                 f"{self.base_url}/ai/recommendations",
                 headers=self._get_ai_auth_headers(),
@@ -1059,36 +1068,49 @@ class VendingMachineAPI:
                 timeout=10
             )
             
+            # 記錄回應詳情
+            api_logger.info(f"📊 Response Status Code: {response.status_code}")
+            api_logger.info(f"📊 Response Headers: {dict(response.headers)}")
+            
+            try:
+                response_json = response.json()
+                api_logger.info(f"📊 Response Body: {response_json}")
+            except:
+                api_logger.info(f"📊 Response Text: {response.text}")
+            
             if response.status_code == 200:
                 result = response.json()
-                api_logger.info(f"Successfully created AI recommendation: {result.get('backend_ref_id')}")
+                backend_ref_id = result.get('backend_ref_id', 'N/A')
+                api_logger.info(f"✅ 成功創建AI推薦: {rec_id} (後端參考ID: {backend_ref_id})")
                 import streamlit as st
-                st.success(f"✅ AI推薦已成功創建 - 參考ID: {result.get('backend_ref_id')}")
+                st.success(f"✅ AI推薦已成功創建 - 參考ID: {backend_ref_id}")
                 return True
             elif response.status_code == 400:
                 error_detail = response.json().get('detail', 'Unknown error')
-                api_logger.warning(f"Invalid recommendation data: {error_detail}")
+                api_logger.warning(f"❌ 推薦資料無效: {error_detail}")
+                api_logger.warning(f"📊 Error Response: {response.json()}")
                 import streamlit as st
                 st.error(f"❌ 推薦資料無效：{error_detail}")
                 return False
             elif response.status_code == 401:
-                api_logger.warning("Unauthorized to create AI recommendation")
+                api_logger.warning("❌ 權限不足：無法創建AI推薦")
                 import streamlit as st
                 st.error("❌ 權限不足：無法創建AI推薦")
                 return False
             else:
-                api_logger.warning(f"Failed to create AI recommendation - Status code: {response.status_code}")
+                api_logger.warning(f"❌ 創建AI推薦失敗 - 狀態碼: {response.status_code}")
+                api_logger.warning(f"📊 Error Response: {response.text}")
                 import streamlit as st
                 st.error(f"❌ 創建AI推薦失敗 - 狀態碼: {response.status_code}")
                 return False
                 
         except requests.exceptions.RequestException as e:
-            api_logger.error(f"Network error when creating AI recommendation: {str(e)}")
+            api_logger.error(f"❌ 網路錯誤: {str(e)}")
             import streamlit as st
             st.error(f"❌ 網路錯誤：{str(e)}")
             return False
         except Exception as e:
-            api_logger.error(f"Unexpected error when creating AI recommendation: {str(e)}")
+            api_logger.error(f"❌ 創建AI推薦時發生未預期的錯誤: {str(e)}")
             import streamlit as st
             st.error(f"❌ 創建AI推薦時發生未預期的錯誤：{str(e)}")
             return False
@@ -1460,12 +1482,20 @@ class VendingMachineAPI:
     
     def update_machine_menu_items(self, machine_id: int, menu_item_ids: List[int], display_orders: List[int]) -> Dict:
         """更新機台菜單項目"""
-        api_logger.info(f"Updating machine {machine_id} menu items: {menu_item_ids} with display orders: {display_orders}")
+        api_logger.info(f"🔄 開始更新機台 {machine_id} 菜單項目")
+        api_logger.info(f"📋 菜單項目ID: {menu_item_ids}")
+        api_logger.info(f"📋 顯示順序: {display_orders}")
+        
         try:
             payload = {
                 "menu_item_ids": menu_item_ids,
                 "display_orders": display_orders
             }
+            
+            # 記錄完整的API調用資訊
+            api_logger.info(f"📡 API調用: POST {self.base_url}/machines/{machine_id}/update-menu-items")
+            api_logger.info(f"📦 Request Headers: {self._get_auth_headers()}")
+            api_logger.info(f"📦 Request Body: {payload}")
             
             response = requests.post(
                 f"{self.base_url}/machines/{machine_id}/update-menu-items",
@@ -1474,24 +1504,32 @@ class VendingMachineAPI:
                 timeout=10
             )
             
-            api_logger.debug(f"Update machine menu items API response status: {response.status_code}")
+            # 記錄回應詳情
+            api_logger.info(f"📊 Response Status Code: {response.status_code}")
+            api_logger.info(f"📊 Response Headers: {dict(response.headers)}")
+            
+            try:
+                response_json = response.json()
+                api_logger.info(f"📊 Response Body: {response_json}")
+            except:
+                api_logger.info(f"📊 Response Text: {response.text}")
             
             if response.status_code in [200, 201]:
                 result = response.json()
-                api_logger.info(f"Successfully updated machine {machine_id} menu items")
+                api_logger.info(f"✅ 成功更新機台 {machine_id} 菜單項目")
                 return result
             elif response.status_code == 404:
-                api_logger.warning(f"Machine {machine_id} not found")
+                api_logger.warning(f"❌ 機台 {machine_id} 不存在")
                 import streamlit as st
                 st.error(f"❌ 機台 {machine_id} 不存在")
                 return None
             elif response.status_code == 401:
-                api_logger.warning("Unauthorized to update machine menu items")
+                api_logger.warning("❌ 權限不足：無法更新機台菜單")
                 import streamlit as st
                 st.error("❌ 權限不足：無法更新機台菜單")
                 return None
             else:
-                api_logger.warning(f"Failed to update machine menu items - Status code: {response.status_code}")
+                api_logger.warning(f"❌ 更新機台菜單失敗 - 狀態碼: {response.status_code}")
                 import streamlit as st
                 st.error(f"❌ 更新機台菜單失敗 - 狀態碼: {response.status_code}")
                 return None
