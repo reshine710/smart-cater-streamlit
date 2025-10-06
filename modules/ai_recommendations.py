@@ -774,6 +774,32 @@ def show_create_recommendation_form():
     """顯示創建推薦表單"""
     st.subheader("➕ 創建AI推薦")
     
+    # 初始化菜單項目數量（在表單外部）
+    if 'menu_item_count' not in st.session_state:
+        st.session_state.menu_item_count = 3
+    
+    # 菜單項目控制按鈕（在表單外部）
+    st.markdown("**🍽️ 菜單項目配置**")
+    col_add, col_remove, col_info = st.columns([1, 1, 2])
+    
+    with col_add:
+        if st.button("➕ 增加項目", key="add_menu_item", help="增加一個菜單項目"):
+            st.session_state.menu_item_count += 1
+            st.rerun()
+    
+    with col_remove:
+        if st.session_state.menu_item_count > 1:
+            if st.button("➖ 減少項目", key="remove_menu_item", help="減少一個菜單項目"):
+                st.session_state.menu_item_count -= 1
+                st.rerun()
+        else:
+            st.button("➖ 減少項目", key="remove_menu_item_disabled", disabled=True, help="至少需要一個菜單項目")
+    
+    with col_info:
+        st.info(f"目前有 {st.session_state.menu_item_count} 個菜單項目")
+    
+    st.markdown("---")
+    
     with st.form("create_ai_recommendation"):
         col1, col2 = st.columns(2)
         
@@ -840,11 +866,14 @@ def show_create_recommendation_form():
             except Exception as e:
                 st.warning(f"無法獲取菜單項目: {str(e)}")
             
-            # 完整的菜單項目輸入（包含補貨資訊）
+            # 動態菜單項目輸入（包含補貨資訊）
+            
+            # 動態生成菜單項目輸入表單
             menu_items = []
-            for i in range(3):
+            for i in range(st.session_state.menu_item_count):
                 st.markdown(f"**餐點 {i+1}**")
                 col_meal, col_price, col_priority = st.columns(3)
+                
                 with col_meal:
                     if available_menu_items:
                         # 創建選項列表，格式為 "ID - 名稱"
@@ -859,12 +888,12 @@ def show_create_recommendation_form():
                             menu_option_map[option_text] = item_id
                         
                         # 預設選擇第一個選項
-                        default_option = menu_options[i] if i < len(menu_options) else menu_options[0] if menu_options else "A - 示例餐點"
+                        default_index = i if i < len(menu_options) else 0
                         
                         selected_option = st.selectbox(
                             f"選擇餐點", 
                             options=menu_options,
-                            index=i if i < len(menu_options) else 0,
+                            index=default_index,
                             key=f"meal_{i}",
                             help="從現有菜單項目中選擇"
                         )
@@ -874,8 +903,10 @@ def show_create_recommendation_form():
                     else:
                         # 如果無法獲取菜單項目，使用文字輸入
                         meal_id = st.text_input(f"餐點ID", value=chr(65+i), key=f"meal_{i}")
+                
                 with col_price:
                     price = st.number_input(f"建議價格", value=80.0 + i*20, step=5.0, key=f"price_{i}")
+                
                 with col_priority:
                     priority = st.number_input(f"優先級", value=i+1, min_value=1, max_value=10, key=f"priority_{i}")
                 
