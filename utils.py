@@ -347,8 +347,15 @@ class VendingMachineAPI:
     
     def update_machine(self, machine_id: int, machine_data: Dict) -> bool:
         """更新機台資訊"""
-        api_logger.debug(f"Updating machine ID: {machine_id}")
+        api_logger.info(f"🔄 開始更新機台 {machine_id} 資訊")
+        api_logger.info(f"📋 更新數據: {machine_data}")
+        
         try:
+            # 記錄完整的API調用資訊
+            api_logger.info(f"📡 API調用: PUT {self.base_url}/machines/{machine_id}")
+            api_logger.info(f"📦 Request Headers: {self._get_auth_headers()}")
+            api_logger.info(f"📦 Request Body: {machine_data}")
+            
             response = requests.put(
                 f"{self.base_url}/machines/{machine_id}",
                 headers=self._get_auth_headers(),
@@ -356,19 +363,36 @@ class VendingMachineAPI:
                 timeout=10
             )
             
+            # 記錄回應詳情
+            api_logger.info(f"📊 Response Status Code: {response.status_code}")
+            api_logger.info(f"📊 Response Headers: {dict(response.headers)}")
+            
+            try:
+                response_json = response.json()
+                api_logger.info(f"📊 Response Body: {response_json}")
+            except:
+                api_logger.info(f"📊 Response Text: {response.text}")
+            
             if response.status_code == 200:
-                api_logger.info(f"Successfully updated machine {machine_id}")
+                api_logger.info(f"✅ 成功更新機台 {machine_id} 資訊")
+                import streamlit as st
+                st.success(f"✅ 機台 {machine_id} 資訊已更新")
                 return True
             elif response.status_code == 404:
-                api_logger.warning(f"Machine not found for ID: {machine_id}")
+                api_logger.warning(f"❌ 機台 {machine_id} 不存在")
+                import streamlit as st
+                st.error(f"❌ 機台 {machine_id} 不存在")
                 return False
             elif response.status_code == 401:
-                api_logger.warning("Unauthorized access to machine update API")
+                api_logger.warning("❌ 權限不足：無法更新機台資訊")
                 import streamlit as st
                 st.error("❌ 未授權存取，請重新登入")
                 return False
             else:
-                api_logger.warning(f"Failed to update machine - Status code: {response.status_code}")
+                api_logger.warning(f"❌ 更新機台資訊失敗 - 狀態碼: {response.status_code}")
+                api_logger.warning(f"📊 Error Response: {response.text}")
+                import streamlit as st
+                st.error(f"❌ 更新機台資訊失敗 - 狀態碼: {response.status_code}")
                 return False
                 
         except requests.exceptions.RequestException as e:

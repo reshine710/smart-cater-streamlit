@@ -204,6 +204,12 @@ def render_machine_card(machine: Dict, status_config: Dict):
                         show_mqtt_command_dialog(machine_code, machine_name, "status_request", "狀態請求")
             
             
+            # 编辑机台按钮（仅管理员）
+            if is_admin:
+                st.markdown("**機台管理**")
+                if st.button("✏️ 編輯機台資訊", key=f"edit_machine_{machine_id}"):
+                    show_edit_machine_dialog(machine)
+            
             # 菜單查看按鈕（所有用戶）
             st.markdown("**菜單資訊**")
             if st.button("📋 查看當前菜單", key=f"view_menu_{machine_id}"):
@@ -1096,5 +1102,187 @@ def show_mqtt_command_dialog(machine_code: str, machine_name: str, command: str,
     """顯示MQTT命令執行對話框"""
     # 調用對話框函數
     show_mqtt_command_dialog_content(machine_code, machine_name, command, command_name, parameters)
+
+@st.dialog("✏️ 編輯機台資訊")
+def show_edit_machine_dialog_content(machine: Dict):
+    """編輯機台資訊的對話框內容"""
+    machine_id = machine.get('id')
+    
+    st.markdown(f"### 編輯機台: {machine.get('name', '未命名')}")
+    st.markdown(f"**機台ID**: {machine_id}")
+    st.markdown(f"**機台代碼**: {machine.get('machine_code', 'N/A')}")
+    st.markdown("---")
+    
+    with st.form(key=f"edit_machine_form_{machine_id}"):
+        # 機台基本資訊
+        st.markdown("**📋 基本資訊**")
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            machine_name = st.text_input(
+                "機台名稱 *",
+                value=machine.get('name', ''),
+                key=f"edit_name_{machine_id}",
+                help="機台的顯示名稱"
+            )
+            
+            machine_code = st.text_input(
+                "機台代碼 *",
+                value=machine.get('machine_code', ''),
+                key=f"edit_code_{machine_id}",
+                help="機台的唯一識別碼",
+                disabled=True  # 機台代碼通常不允許修改
+            )
+        
+        with col2:
+            ip_address = st.text_input(
+                "IP地址",
+                value=machine.get('ip_address', ''),
+                key=f"edit_ip_{machine_id}",
+                help="機台的IP地址"
+            )
+            
+            firmware_version = st.text_input(
+                "韌體版本",
+                value=machine.get('firmware_version', ''),
+                key=f"edit_firmware_{machine_id}",
+                help="機台的韌體版本號"
+            )
+        
+        # 機台狀態
+        st.markdown("**🔧 狀態設定**")
+        status_options = ["online", "offline", "maintenance", "error"]
+        current_status = machine.get('status', 'offline')
+        status_index = status_options.index(current_status) if current_status in status_options else 1
+        
+        status = st.selectbox(
+            "機台狀態(測試環境)",
+            options=status_options,
+            index=status_index,
+            format_func=lambda x: {
+                "online": "🟢 在線",
+                "offline": "🔴 離線",
+                "maintenance": "🟡 維護中",
+            }.get(x, x),
+            key=f"edit_status_{machine_id}"
+        )
+        
+        # 位置資訊
+        st.markdown("**📍 位置資訊**")
+        
+        # 獲取所有位置選項
+        try:
+            if hasattr(st.session_state, 'api') and st.session_state.api:
+                locations_data = st.session_state.api.get_locations()
+                if locations_data:
+                    location_options = []
+                    location_map = {}
+                    
+                    for loc in locations_data:
+                        loc_id = loc.get('id')
+                        loc_name = loc.get('name', f'Location {loc_id}')
+                        location_options.append(loc_name)
+                        location_map[loc_name] = loc_id
+                    
+                    # 當前位置
+                    current_location = machine.get('location', {})
+                    if isinstance(current_location, dict):
+                        current_location_name = current_location.get('name', '')
+                    else:
+                        current_location_name = ''
+                    
+                    # 找到當前位置的索引
+                    location_index = location_options.index(current_location_name) if current_location_name in location_options else 0
+                    
+                    selected_location_name = st.selectbox(
+                        "機台位置",
+                        options=location_options,
+                        index=location_index,
+                        key=f"edit_location_{machine_id}"
+                    )
+                    
+                    location_id = location_map.get(selected_location_name)
+                else:
+                    location_id = None
+                    st.warning("無法獲取位置列表")
+            else:
+                location_id = None
+                st.warning("API不可用")
+        except Exception as e:
+            ui_logger.error(f"Error fetching locations: {str(e)}")
+            location_id = None
+            st.error(f"獲取位置列表失敗: {str(e)}")
+        
+        # 其他資訊
+        st.markdown("**📝 其他資訊**")
+        description = st.text_area(
+            "描述",
+            value=machine.get('description', ''),
+            key=f"edit_description_{machine_id}",
+            help="機台的詳細描述（選填）",
+            height=100
+        )
+        
+        st.markdown("---")
+        st.markdown("*標示 `*` 為必填欄位")
+        
+        # 提交按鈕
+        col_submit, col_cancel = st.columns(2)
+        
+        with col_submit:
+            submitted = st.form_submit_button("💾 儲存變更", type="primary", use_container_width=True)
+        
+        with col_cancel:
+            cancelled = st.form_submit_button("❌ 取消", use_container_width=True)
+        
+        if cancelled:
+            st.rerun()
+        
+        if submitted:
+            # 驗證必填欄位
+            if not machine_name:
+                st.error("❌ 請填寫機台名稱")
+                return
+            
+            # 準備更新數據
+            update_data = {
+                "name": machine_name,
+                "ip_address": ip_address if ip_address else None,
+                "firmware_version": firmware_version if firmware_version else None,
+                "status": status,
+                "description": description if description else None
+            }
+            
+            # 如果有位置ID，添加到更新數據中
+            if location_id:
+                update_data["location_id"] = location_id
+            
+            # 記錄API調用
+            ui_logger.info(f"🔄 開始更新機台 {machine_id} 資訊")
+            ui_logger.info(f"📋 更新數據: {update_data}")
+            
+            # 調用API更新機台資訊
+            try:
+                if hasattr(st.session_state, 'api') and st.session_state.api:
+                    success = st.session_state.api.update_machine(machine_id, update_data)
+                    
+                    if success:
+                        st.success("✅ 機台資訊已成功更新！")
+                        ui_logger.info(f"✅ 成功更新機台 {machine_id} 資訊")
+                        time.sleep(1)
+                        st.rerun()
+                    else:
+                        st.error("❌ 更新機台資訊失敗")
+                        ui_logger.error(f"❌ 更新機台 {machine_id} 資訊失敗")
+                else:
+                    st.error("❌ API 客戶端不可用")
+                    ui_logger.error("❌ API 客戶端不可用")
+            except Exception as e:
+                st.error(f"❌ 更新機台資訊時發生錯誤: {str(e)}")
+                ui_logger.error(f"❌ 更新機台資訊時發生錯誤: {str(e)}")
+
+def show_edit_machine_dialog(machine: Dict):
+    """顯示編輯機台資訊對話框"""
+    show_edit_machine_dialog_content(machine)
 
 
