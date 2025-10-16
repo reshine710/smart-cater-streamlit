@@ -93,13 +93,16 @@ def show_recommendations_list():
             st.rerun()
     
     # 批量操作模式切換
-    st.markdown("---")
-    col_mode1, col_mode2 = st.columns([1, 4])
-    with col_mode1:
-        batch_mode = st.checkbox("🔧 批量操作模式", key="batch_mode_toggle", help="啟用批量選擇和更新機台菜單功能")
-    with col_mode2:
-        if batch_mode:
-            st.info("💡 批量操作模式已啟用：您可以選擇多個AI推薦菜單項目，然後一次性更新到機台")
+    # st.markdown("---")
+    # col_mode1, col_mode2 = st.columns([1, 4])
+    # with col_mode1:
+    #     batch_mode = st.checkbox("🔧 批量操作模式", key="batch_mode_toggle", help="啟用批量選擇和更新機台菜單功能")
+    # with col_mode2:
+    #     if batch_mode:
+    #         st.info("💡 批量操作模式已啟用：您可以選擇多個AI推薦菜單項目，然後一次性更新到機台")
+    
+    # 批量模式預設為關閉
+    batch_mode = False
     
     # 獲取推薦數據
     try:
@@ -203,30 +206,31 @@ def show_recommendations_list():
         id_debug_info = {k: rec.get(k) for k in ['id', 'backend_ref_id', 'recommendation_id'] if k in rec}
         api_logger.debug(f"Recommendation {i} ID fields: {id_debug_info}")
         
+        # TODO: 在批量模式下，為動態菜單推薦添加選擇框，尚未完成
         # 在批量模式下，為動態菜單推薦添加選擇框
-        if batch_mode and rec['recommendation_type'] == 'DYNAMIC_MENU':
-            _, col_expander = st.columns([1, 9]) # delete col_checkbox
-            
-            # with col_checkbox:
-            #     is_selected = rec['id'] in st.session_state.selected_recommendations
-            #     if st.checkbox(
-            #         "選擇", 
-            #         value=is_selected, 
-            #         key=f"select_rec_{rec['id']}",
-            #         help="選擇此推薦進行批量操作"
-            #     ):
-            #         if rec['id'] not in st.session_state.selected_recommendations:
-            #             st.session_state.selected_recommendations.append(rec['id'])
-            #     else:
-            #         if rec['id'] in st.session_state.selected_recommendations:
-            #             st.session_state.selected_recommendations.remove(rec['id'])
-            
-            with col_expander:
-                with st.expander(f"{get_status_icon(rec['status'])} {rec['recommendation_id']} - {rec['recommendation_type']}", expanded=False):
-                    show_recommendation_details(rec, i)
-        else:
-            with st.expander(f"{get_status_icon(rec['status'])} {rec['recommendation_id']} - {rec['recommendation_type']}", expanded=False):
-                show_recommendation_details(rec, i)
+        # if batch_mode and rec['recommendation_type'] == 'DYNAMIC_MENU':
+        #     _, col_expander = st.columns([1, 9]) # delete col_checkbox
+        #     
+        #     # with col_checkbox:
+        #     #     is_selected = rec['id'] in st.session_state.selected_recommendations
+        #     #     if st.checkbox(
+        #     #         "選擇", 
+        #     #         value=is_selected, 
+        #     #         key=f"select_rec_{rec['id']}",
+        #     #         help="選擇此推薦進行批量操作"
+        #     #     ):
+        #     #         if rec['id'] not in st.session_state.selected_recommendations:
+        #     #             st.session_state.selected_recommendations.append(rec['id'])
+        #     #     else:
+        #     #         if rec['id'] in st.session_state.selected_recommendations:
+        #     #             st.session_state.selected_recommendations.remove(rec['id'])
+        #     
+        #     with col_expander:
+        #         with st.expander(f"{get_status_icon(rec['status'])} {rec['recommendation_id']} - {rec['recommendation_type']}", expanded=False):
+        #             show_recommendation_details(rec, i)
+        # else:
+        with st.expander(f"{get_status_icon(rec['status'])} {rec['recommendation_id']} - {rec['recommendation_type']}", expanded=False):
+            show_recommendation_details(rec, i)
 
 def show_recommendation_details(rec: Dict, index: int):
     """顯示推薦詳細資訊"""
@@ -420,9 +424,10 @@ def show_recommendation_details(rec: Dict, index: int):
     if rec['recommendation_type'] == 'DYNAMIC_MENU':
         suggested_menu = payload.get('suggested_menu', [])
         if suggested_menu:
-            # 初始化選擇狀態
+            # 初始化選擇狀態 - 預設全選所有菜單項目
             if f'selected_menu_items_{rec_id}' not in st.session_state:
-                st.session_state[f'selected_menu_items_{rec_id}'] = []
+                # 預設選擇所有菜單項目
+                st.session_state[f'selected_menu_items_{rec_id}'] = list(range(len(suggested_menu)))
             
             # 獲取菜單項目名稱映射
             menu_name_mapping = get_menu_item_names()
@@ -446,7 +451,7 @@ def show_recommendation_details(rec: Dict, index: int):
                         "選擇", 
                         value=is_selected, 
                         key=f"select_menu_item_{rec_id}_{i}",
-                        help=f"選擇 {meal_name}"
+                        help=f"選擇 {meal_name}",
                     ):
                         if i not in st.session_state[f'selected_menu_items_{rec_id}']:
                             st.session_state[f'selected_menu_items_{rec_id}'].append(i)
