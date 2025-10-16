@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <title>Idle Tracker</title>
+</head>
+<body>
+    <script src="idle_tracker.js"></script>
+    <script>
+        // 監聽來自Streamlit的消息
+        window.addEventListener('message', function(event) {
+            if (event.data && event.data.type === 'streamlit') {
+                // 處理Streamlit消息
+                console.log('Received Streamlit message:', event.data);
+            }
+        });
+        
+        // 定期檢查localStorage中的動作
+        setInterval(function() {
+            try {
+                const action = localStorage.getItem('idle_tracker_action');
+                if (action) {
+                    const data = JSON.parse(action);
+                    console.log('Idle tracker action:', data);
+                    
+                    // 清除已處理的動作
+                    localStorage.removeItem('idle_tracker_action');
+                }
+            } catch (e) {
+                // 忽略localStorage錯誤
+            }
+        }, 1000);
+    </script>
+</body>
+</html>
