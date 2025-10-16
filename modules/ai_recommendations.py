@@ -286,26 +286,27 @@ def show_recommendation_details(rec: Dict, index: int):
                             st.success("✅ 推薦已通過")
 
                         # TODO: 實施選中的菜單項目，尚未完成
-                        # # 檢查是否是動態菜單推薦且有選中的菜單項目
-                        # if (rec['recommendation_type'] == 'DYNAMIC_MENU' and 
-                        #     f'selected_menu_items_{rec_id}' in st.session_state and 
-                        #     st.session_state[f'selected_menu_items_{rec_id}']):
+                        # 檢查是否是動態菜單推薦且有選中的菜單項目
+                        if (rec['recommendation_type'] == 'DYNAMIC_MENU' and 
+                            f'selected_menu_items_{rec_id}' in st.session_state and 
+                            st.session_state[f'selected_menu_items_{rec_id}']):
                             
-                        #     # 實施選中的菜單項目
-                        #     if implement_selected_menu_items(rec, rec_id):
-                        #         # 更新推薦狀態為已實施
-                        #         if update_recommendation_status(rec_id, "IMPLEMENTED"):
-                        #             st.success("✅ 推薦已通過並實施選中的菜單項目")
-                        #         else:
-                        #             st.success("✅ 推薦已通過，菜單項目已實施")
-                        #     else:
-                        #         st.success("✅ 推薦已通過")
-                        # else:
-                        #     # 非動態菜單推薦或沒有選中項目，只更新狀態
-                        #     if update_recommendation_status(rec_id, "IMPLEMENTED"):
-                        #         st.success("✅ 推薦已通過並實施")
-                        #     else:
-                        #         st.success("✅ 推薦已通過")
+                            print(f"selected_menu_items_{rec_id}: {st.session_state[f'selected_menu_items_{rec_id}']}")
+                            # 實施選中的菜單項目
+                            if implement_selected_menu_items(rec, rec_id):
+                                # 更新推薦狀態為已實施
+                                if update_recommendation_status(rec_id, "IMPLEMENTED"):
+                                    st.success("✅ 推薦已通過並實施選中的菜單項目")
+                                else:
+                                    st.success("✅ 推薦已通過，菜單項目已實施")
+                            else:
+                                st.success("✅ 推薦已通過")
+                        else:
+                            # 非動態菜單推薦或沒有選中項目，只更新狀態
+                            if update_recommendation_status(rec_id, "IMPLEMENTED"):
+                                st.success("✅ 推薦已通過並實施")
+                            else:
+                                st.success("✅ 推薦已通過")
                         
                         # 清除所有可能的緩存狀態
                         cache_keys_to_clear = [
@@ -437,21 +438,21 @@ def show_recommendation_details(rec: Dict, index: int):
                 restock_date = item.get('restock_date', '')
                 
                 # 創建選擇框和菜單項目顯示
-                _, col_content = st.columns([1, 9]) # delete col_check
+                col_check, col_content = st.columns([1, 9]) # delete col_check
                 
-                # with col_check:
-                #     is_selected = i in st.session_state[f'selected_menu_items_{rec_id}']
-                #     if st.checkbox(
-                #         "選擇", 
-                #         value=is_selected, 
-                #         key=f"select_menu_item_{rec_id}_{i}",
-                #         help=f"選擇 {meal_name}"
-                #     ):
-                #         if i not in st.session_state[f'selected_menu_items_{rec_id}']:
-                #             st.session_state[f'selected_menu_items_{rec_id}'].append(i)
-                #     else:
-                #         if i in st.session_state[f'selected_menu_items_{rec_id}']:
-                #             st.session_state[f'selected_menu_items_{rec_id}'].remove(i)
+                with col_check:
+                    is_selected = i in st.session_state[f'selected_menu_items_{rec_id}']
+                    if st.checkbox(
+                        "選擇", 
+                        value=is_selected, 
+                        key=f"select_menu_item_{rec_id}_{i}",
+                        help=f"選擇 {meal_name}"
+                    ):
+                        if i not in st.session_state[f'selected_menu_items_{rec_id}']:
+                            st.session_state[f'selected_menu_items_{rec_id}'].append(i)
+                    else:
+                        if i in st.session_state[f'selected_menu_items_{rec_id}']:
+                            st.session_state[f'selected_menu_items_{rec_id}'].remove(i)
                 
                 with col_content:
                     # 顯示菜單項目資訊
@@ -475,22 +476,22 @@ def show_recommendation_details(rec: Dict, index: int):
                     
                     st.markdown("---")
             
-            # # 顯示選擇摘要
-            # selected_count = len(st.session_state[f'selected_menu_items_{rec_id}'])
-            # if selected_count > 0:
-            #     st.info(f"✅ 已選擇 {selected_count} 個菜單項目")
+            # 顯示選擇摘要
+            selected_count = len(st.session_state[f'selected_menu_items_{rec_id}'])
+            if selected_count > 0:
+                st.info(f"✅ 已選擇 {selected_count} 個菜單項目")
                 
-            #     # 顯示已選擇的項目
-            #     selected_items = []
-            #     for i in st.session_state[f'selected_menu_items_{rec_id}']:
-            #         if i < len(suggested_menu):
-            #             item = suggested_menu[i]
-            #             meal_id = item.get('meal_id', '')
-            #             meal_name = menu_name_mapping.get(str(meal_id), f"餐點 {meal_id}")
-            #             selected_items.append(meal_name)
+                # 顯示已選擇的項目
+                selected_items = []
+                for i in st.session_state[f'selected_menu_items_{rec_id}']:
+                    if i < len(suggested_menu):
+                        item = suggested_menu[i]
+                        meal_id = item.get('meal_id', '')
+                        meal_name = menu_name_mapping.get(str(meal_id), f"餐點 {meal_id}")
+                        selected_items.append(meal_name)
                 
-            #     if selected_items:
-            #         st.markdown("**已選擇的項目**: " + ", ".join(selected_items))
+                if selected_items:
+                    st.markdown("**已選擇的項目**: " + ", ".join(selected_items))
     
     elif rec['recommendation_type'] == 'RESTOCK':
         restock_suggestions = payload.get('restock_suggestions', [])
