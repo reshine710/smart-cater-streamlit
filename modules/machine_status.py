@@ -1170,11 +1170,15 @@ def show_edit_machine_dialog_content(machine: Dict):
         # 位置資訊
         st.markdown("**📍 位置資訊**")
         
+        # 初始化位置ID變量
+        location_id = None
+        selected_location_name = None
+        
         # 獲取所有位置選項
         try:
             if hasattr(st.session_state, 'api') and st.session_state.api:
                 locations_data = st.session_state.api.get_locations()
-                if locations_data:
+                if locations_data and len(locations_data) > 0:
                     location_options = []
                     location_map = {}
                     
@@ -1192,26 +1196,33 @@ def show_edit_machine_dialog_content(machine: Dict):
                         current_location_name = ''
                     
                     # 找到當前位置的索引
-                    location_index = location_options.index(current_location_name) if current_location_name in location_options else 0
+                    if current_location_name and current_location_name in location_options:
+                        location_index = location_options.index(current_location_name)
+                    else:
+                        location_index = 0
                     
                     selected_location_name = st.selectbox(
                         "機台位置",
                         options=location_options,
                         index=location_index,
-                        key=f"edit_location_{machine_id}"
+                        key=f"edit_location_{machine_id}",
+                        help="選擇機台所在的位置"
                     )
                     
+                    # 從選擇的位置名稱獲取位置ID
                     location_id = location_map.get(selected_location_name)
+                    
+                    # 記錄選擇的位置信息
+                    ui_logger.debug(f"Selected location: {selected_location_name} (ID: {location_id})")
                 else:
-                    location_id = None
-                    st.warning("無法獲取位置列表")
+                    st.warning("⚠️ 無法獲取位置列表，請確認後端API正常運作")
+                    ui_logger.warning("No locations data available")
             else:
-                location_id = None
-                st.warning("API不可用")
+                st.warning("⚠️ API不可用，無法載入位置列表")
+                ui_logger.warning("API client not available")
         except Exception as e:
             ui_logger.error(f"Error fetching locations: {str(e)}")
-            location_id = None
-            st.error(f"獲取位置列表失敗: {str(e)}")
+            st.error(f"❌ 獲取位置列表失敗: {str(e)}")
         
         # 其他資訊
         st.markdown("**📝 其他資訊**")
@@ -1254,12 +1265,16 @@ def show_edit_machine_dialog_content(machine: Dict):
             }
             
             # 如果有位置ID，添加到更新數據中
-            if location_id:
+            if location_id is not None:
                 update_data["location_id"] = location_id
+                ui_logger.info(f"📍 將更新位置ID為: {location_id} (選擇的位置: {selected_location_name})")
+            else:
+                ui_logger.warning("⚠️ 未選擇位置或位置ID為None，不更新位置資訊")
             
             # 記錄API調用
             ui_logger.info(f"🔄 開始更新機台 {machine_id} 資訊")
             ui_logger.info(f"📋 更新數據: {update_data}")
+            ui_logger.info(f"📋 位置資訊: location_id={location_id}, selected_location={selected_location_name}")
             
             # 調用API更新機台資訊
             try:
