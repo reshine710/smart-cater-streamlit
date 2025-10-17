@@ -1,0 +1,89 @@
+version: '3.8'
+
+# ===================================
+# 本地開發測試配置
+# ===================================
+# 用於在本地電腦上測試部署架構
+# 與生產環境的主要差異：
+# - 不使用 SSL（HTTP only）
+# - 使用 localhost 訪問
+# - 簡化的配置
+
+services:
+  # ===================================
+  # Streamlit 智慧販賣機管理系統
+  # ===================================
+  streamlit_app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: smartcater-streamlit-local
+    restart: unless-stopped
+    environment:
+      # 使用預設環境（開發模式）
+      - ENV_FOR_DYNACONF=default
+      # API 配置：連接到宿主機的 localhost API
+      # host.docker.internal 是 Docker 提供的特殊 DNS 名稱，指向宿主機
+      # 您的後端使用 nginx 在 port 80，所以不需要指定端口
+      - DYNACONF_API_URL=http://host.docker.internal/api/v1
+      # 日誌配置
+      - LOG_LEVEL=DEBUG
+    volumes:
+      # 持久化日誌文件
+      - ./logs:/app/logs
+      # 掛載本地代碼（方便即時測試修改）
+      - ./main.py:/app/main.py
+      - ./utils.py:/app/utils.py
+      - ./modules:/app/modules
+      - ./settings.toml:/app/settings.toml
+    networks:
+      - local-network
+    # Mac 和 Windows 需要這個配置來訪問 host.docker.internal
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/_stcore/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  # ===================================
+  # Nginx 反向代理（本地版本）
+  # ===================================
+  nginx:
+    image: nginx:1.25-alpine
+    container_name: smartcater-nginx-local
+    restart: unless-stopped
+    ports:
+      # 本地測試端口
+      - "8501:80"  # Streamlit Dashboard
+      - "8502:8080" # 直接訪問 Streamlit（不經過 Nginx）
+    volumes:
+      # Nginx 配置文件
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./nginx/conf.d/smartcater.local.conf:/etc/nginx/conf.d/default.conf:ro
+      # Nginx 日誌
+      - ./nginx/logs:/var/log/nginx
+    networks:
+      - local-network
+    depends_on:
+      - streamlit_app
+    healthcheck:
+      test: ["CMD", "nginx", "-t"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+networks:
+  local-network:
+    driver: bridge
+
+# 注意事項：
+# 1. 此配置假設您的後端 API 在宿主機的 localhost:8000 上運行
+# 2. 訪問方式：
+#    - 通過 Nginx: http://localhost:8501
+#    - 直接訪問: http://localhost:8502
+# 3. 如果後端 API 在不同的端口，請修改 DYNACONF_API_URL
+# 4. 如果需要測試完整的網域名稱，請修改本地 hosts 文件
+

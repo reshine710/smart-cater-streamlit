@@ -1,0 +1,130 @@
+version: '3.8'
+
+services:
+  # ===================================
+  # 後端 API 服務
+  # ===================================
+  smartcater_api:
+    # 注意：這裡假設您的 API 專案在 ../SmartCaterAPI 目錄
+    # 請根據實際路徑調整，或使用預先建置的映像檔
+    image: smartcater-api:latest
+    # build:
+    #   context: ../SmartCaterAPI
+    #   dockerfile: Dockerfile
+    container_name: smartcater-api
+    restart: always
+    environment:
+      # 資料庫配置
+      - DATABASE_URL=${DATABASE_URL}
+      # JWT 配置
+      - SECRET_KEY=${SECRET_KEY}
+      - ALGORITHM=${ALGORITHM:-HS256}
+      - ACCESS_TOKEN_EXPIRE_MINUTES=${ACCESS_TOKEN_EXPIRE_MINUTES:-30}
+      # MQTT 配置
+      - MQTT_BROKER_HOST=${MQTT_BROKER_HOST:-}
+      - MQTT_BROKER_PORT=${MQTT_BROKER_PORT:-1883}
+      - MQTT_USERNAME=${MQTT_USERNAME:-}
+      - MQTT_PASSWORD=${MQTT_PASSWORD:-}
+      # 其他配置
+      - ENVIRONMENT=production
+    volumes:
+      # API 日誌（如果需要）
+      - ./api_logs:/app/logs
+    networks:
+      - app-network
+    # 如果使用 PostgreSQL，需要等待資料庫啟動
+    # depends_on:
+    #   - db
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  # ===================================
+  # Streamlit 智慧販賣機管理系統
+  # ===================================
+  streamlit_app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: smartcater-streamlit
+    restart: always
+    environment:
+      # 環境切換：production 使用生產環境配置
+      - ENV_FOR_DYNACONF=production
+      # API 配置：指向同一網路中的 API 服務
+      - DYNACONF_API_URL=http://smartcater_api:8000/api/v1
+      # MQTT 配置（如需要）
+      - MQTT_BROKER_HOST=${MQTT_BROKER_HOST:-}
+      - MQTT_BROKER_PORT=${MQTT_BROKER_PORT:-1883}
+      - MQTT_USERNAME=${MQTT_USERNAME:-}
+      - MQTT_PASSWORD=${MQTT_PASSWORD:-}
+      - MQTT_CLIENT_ID=${MQTT_CLIENT_ID:-smartcater_streamlit}
+      # 日誌配置
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+    volumes:
+      # 持久化日誌文件
+      - ./logs:/app/logs
+      # 如果需要在不重建容器的情況下更新配置文件
+      - ./settings.production.toml:/app/settings.production.toml:ro
+    networks:
+      - app-network
+    depends_on:
+      - smartcater_api
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/_stcore/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  # ===================================
+  # Nginx 反向代理
+  # ===================================
+  nginx:
+    image: nginx:1.25-alpine
+    container_name: smartcater-nginx
+    restart: always
+    ports:
+      # 對外開放的端口
+      - "80:80"
+      - "443:443"
+    volumes:
+      # Nginx 配置文件
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./nginx/conf.d:/etc/nginx/conf.d:ro
+      # SSL 憑證（Let's Encrypt）
+      - ./certbot/conf:/etc/letsencrypt:ro
+      - ./certbot/www:/var/www/certbot:ro
+      # Nginx 日誌
+      - ./nginx/logs:/var/log/nginx
+    networks:
+      - app-network
+    depends_on:
+      - streamlit_app
+    healthcheck:
+      test: ["CMD", "nginx", "-t"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # ===================================
+  # Certbot SSL 憑證自動更新
+  # ===================================
+  certbot:
+    image: certbot/certbot:latest
+    container_name: smartcater-certbot
+    volumes:
+      - ./certbot/conf:/etc/letsencrypt
+      - ./certbot/www:/var/www/certbot
+    # 每 12 小時檢查一次憑證更新
+    entrypoint: "/bin/sh -c 'trap exit TERM; while :; do certbot renew; sleep 12h & wait $${!}; done;'"
+    networks:
+      - app-network
+
+networks:
+  app-network:
+    driver: bridge
+
