@@ -1,3 +1,4 @@
 [default]
 API_URL_OFFLINE = "http://127.0.0.1:8000/api/v1"
-API_URL = "https://scb-api-954587932054.asia-east1.run.app/api/v1"
+API_URL_ONLINE = "https://scb-api-954587932054.asia-east1.run.app/api/v1"
+API_URL = "https://sihai.baimeng.co/api/v1"
