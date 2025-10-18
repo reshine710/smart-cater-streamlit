@@ -22,9 +22,9 @@ services:
       # 環境切換：production 使用生產環境配置
       - ENV_FOR_DYNACONF=production
       
-      # API 配置：連接到後端的 API 服務
-      # 注意：後端容器名稱是 smartcater_api（下劃線）
-      - DYNACONF_API_URL=http://smartcater_api:8000/api/v1
+      # API 配置：使用相對路徑（單一網域方案）
+      # 前端透過 /api/v1 訪問後端，Nginx 會代理到 smartcater_api
+      - DYNACONF_API_URL=/api/v1
       
       # MQTT 配置：連接到後端的 EMQX
       - MQTT_BROKER_HOST=smartcater_emqx
@@ -81,5 +81,8 @@ networks:
 # 注意事項：
 # 1. 此配置不包含 Nginx 和 Certbot，因為後端已經有了
 # 2. Streamlit 服務會加入後端的 smartcater_network
-# 3. 後端的 Nginx 需要添加 dashboard.<hostname> 的配置來代理此服務
-# 4. 確保後端服務已經啟動並且網路已創建
+# 3. 後端的 Nginx 需要配置單一網域路由：
+#    - / → Streamlit 前端
+#    - /api/ → 後端 API
+# 4. 使用相對路徑 /api/v1 訪問 API（單一網域方案）
+# 5. 確保後端服務已經啟動並且網路已創建
