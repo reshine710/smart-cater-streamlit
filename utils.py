@@ -1445,6 +1445,20 @@ class VendingMachineAPI:
                 import streamlit as st
                 st.error("❌ 權限不足：無法存取交易數據")
                 return []
+            elif response.status_code == 422:
+                # 參數驗證錯誤 - 記錄詳細信息
+                try:
+                    error_detail = response.json()
+                    api_logger.error(f"Validation error (422) for transactional data request:")
+                    api_logger.error(f"  Request params: {params}")
+                    api_logger.error(f"  Error detail: {error_detail}")
+                    import streamlit as st
+                    st.error(f"❌ 參數驗證錯誤：{error_detail}")
+                except:
+                    api_logger.error(f"422 error, raw response: {response.text}")
+                    import streamlit as st
+                    st.error(f"❌ 參數驗證錯誤 (422)")
+                return []
             else:
                 api_logger.warning(f"Failed to fetch transactional data - Status code: {response.status_code}")
                 import streamlit as st
@@ -1460,6 +1474,267 @@ class VendingMachineAPI:
             api_logger.error(f"Unexpected error when fetching transactional data: {str(e)}")
             import streamlit as st
             st.error(f"❌ 獲取交易數據時發生未預期的錯誤：{str(e)}")
+            return []
+
+    def get_transactional_data_for_dashboard(self, start_date: str, end_date: str, 
+                                             machine_id: str = None, limit: int = 1000) -> List[Dict]:
+        """
+        獲取適用於 Dashboard 的交易數據
+        將 transactional-data API 的格式轉換為 Dashboard 需要的格式
+        """
+        api_logger.info(f"Fetching transactional data for dashboard: {start_date} to {end_date}")
+        
+        # 硬編碼映射表（備用方案）
+        FALLBACK_MEAL_ID_MAP = {
+            'A001': '早餐套餐',
+            'A002': '午餐套餐A',
+            'A003': '午餐套餐B',
+            'A004': '午餐套餐C',
+            'A005': '下午茶套餐',
+            'A006': '晚餐套餐A',
+            'A007': '晚餐套餐B',
+            'A008': '雞塊套餐',
+            'A009': '沙拉套餐',
+            'A010': '飲料套餐',
+            'A011': '魷魚套餐',
+            'A012': '薯條套餐',
+            'A013': '滷味三寶飯套餐',
+            'A014': '便當套餐',
+            'B001': '咖啡套餐',
+            'B002': '茶飲套餐',
+            'B003': '果汁套餐',
+            'C001': '甜點套餐',
+        }
+        
+        try:
+            # 調用現有的 get_transactional_data 方法
+            transactions = self.get_transactional_data(start_date, end_date, machine_id, limit)
+            
+            if not transactions:
+                api_logger.warning("No transactional data returned from API")
+                return []
+            
+            # 獲取菜單項目以便映射 meal_id 到 item_name
+            menu_items = []
+            try:
+                menu_items = self.get_menu_items()
+            except Exception as e:
+                api_logger.warning(f"Failed to fetch menu items: {str(e)}")
+            
+            # 建立映射表（支援多種映射方式）
+            menu_map = {}
+            product_code_map = {}
+            
+            for item in menu_items:
+                # ID 映射
+                item_id = str(item.get('id', ''))
+                if item_id:
+                    menu_map[item_id] = item.get('name', 'Unknown')
+                
+                # product_code 映射
+                product_code = str(item.get('product_code', ''))
+                if product_code:
+                    product_code_map[product_code] = item.get('name', 'Unknown')
+            
+            # 如果菜單為空，記錄警告
+            if not menu_map and not product_code_map:
+                api_logger.warning("Menu items not available, using meal_id as item name")
+            
+            # 轉換數據格式
+            dashboard_data = []
+            for tx in transactions:
+                # 基本交易資訊
+                tx_id = tx.get('transaction_id', 'Unknown')
+                machine_id = tx.get('machine_id', 'Unknown')
+                timestamp = tx.get('purchase_timestamp', '')
+                context = tx.get('context', {})
+                
+                # 處理每個交易項目
+                for detail in tx.get('transaction_details', []):
+                    meal_id = str(detail.get('meal_id', 'Unknown'))
+                    
+                    # 多層映射策略
+                    item_name = meal_id  # 預設使用 meal_id
+                    
+                    # 策略 1: 從 product_code 映射（優先，因為 meal_id 看起來是產品代碼）
+                    if meal_id in product_code_map:
+                        item_name = product_code_map[meal_id]
+                    # 策略 2: 從 ID 映射
+                    elif meal_id in menu_map:
+                        item_name = menu_map[meal_id]
+                    # 策略 3: 使用硬編碼映射表（備用）
+                    elif meal_id in FALLBACK_MEAL_ID_MAP:
+                        item_name = FALLBACK_MEAL_ID_MAP[meal_id]
+                    
+                    record = {
+                        'timestamp': timestamp,
+                        'created_at': timestamp,
+                        'order_id': tx_id,
+                        'transaction_id': tx_id,
+                        'machine_id': str(machine_id),
+                        'item_name': item_name,
+                        'product_name': item_name,
+                        'meal_id': meal_id,  # 保留原始 meal_id
+                        'quantity': detail.get('quantity_sold', 1),
+                        'price': detail.get('unit_price', 0),
+                        'unit_price': detail.get('unit_price', 0),
+                        'amount': detail.get('quantity_sold', 1) * detail.get('unit_price', 0),
+                        'total_amount': detail.get('quantity_sold', 1) * detail.get('unit_price', 0),
+                        'status': 'completed',  # 假設所有交易都已完成
+                        'payment_method': 'unknown',  # API未提供，使用預設值
+                        'weather': context.get('weather', 'Unknown'),
+                        'temperature': context.get('temperature_celsius', 0),
+                        'humidity': context.get('humidity', 0),
+                        'is_holiday': context.get('is_holiday', False),
+                        'hour_of_day': context.get('hour_of_day', 0),
+                        'recommended_items': tx.get('recommended_items', [])
+                    }
+                    
+                    dashboard_data.append(record)
+            
+            api_logger.info(f"Converted {len(dashboard_data)} transaction records for dashboard")
+            return dashboard_data
+            
+        except Exception as e:
+            api_logger.error(f"Error converting transactional data for dashboard: {str(e)}")
+            import streamlit as st
+            st.error(f"❌ 數據轉換錯誤：{str(e)}")
+            return []
+
+    def get_transactional_data_for_sales_analytics(self, start_date: str, end_date: str,
+                                                    machine_id: str = None, limit: int = 1000) -> List[Dict]:
+        """
+        獲取適用於 Sales Analytics 的訂單數據
+        將 transactional-data API 的格式轉換為 Sales Analytics 需要的訂單格式
+        """
+        api_logger.info(f"Fetching transactional data for sales analytics: {start_date} to {end_date}")
+        
+        # 硬編碼映射表（備用方案）
+        FALLBACK_MEAL_ID_MAP = {
+            'A001': '早餐套餐',
+            'A002': '午餐套餐A',
+            'A003': '午餐套餐B',
+            'A004': '午餐套餐C',
+            'A005': '下午茶套餐',
+            'A006': '晚餐套餐A',
+            'A007': '晚餐套餐B',
+            'A008': '雞塊套餐',
+            'A009': '沙拉套餐',
+            'A010': '飲料套餐',
+            'A011': '魷魚套餐',
+            'A012': '薯條套餐',
+            'A013': '滷味三寶飯套餐',
+            'A014': '便當套餐',
+            'B001': '咖啡套餐',
+            'B002': '茶飲套餐',
+            'B003': '果汁套餐',
+            'C001': '甜點套餐',
+        }
+        
+        try:
+            # 調用現有的 get_transactional_data 方法
+            transactions = self.get_transactional_data(start_date, end_date, machine_id, limit)
+            
+            if not transactions:
+                api_logger.warning("No transactional data returned from API")
+                return []
+            
+            # 獲取菜單項目以便映射 meal_id 到 item_name
+            menu_items = []
+            try:
+                menu_items = self.get_menu_items()
+            except Exception as e:
+                api_logger.warning(f"Failed to fetch menu items: {str(e)}")
+            
+            # 建立映射表（支援多種映射方式）
+            menu_map = {}
+            product_code_map = {}
+            
+            for item in menu_items:
+                # ID 映射
+                item_id = str(item.get('id', ''))
+                if item_id:
+                    menu_map[item_id] = item.get('name', 'Unknown')
+                
+                # product_code 映射
+                product_code = str(item.get('product_code', ''))
+                if product_code:
+                    product_code_map[product_code] = item.get('name', 'Unknown')
+            
+            # 轉換為訂單格式
+            orders = []
+            for idx, tx in enumerate(transactions, 1):
+                tx_id = tx.get('transaction_id', f'TX-{idx}')
+                machine_id = tx.get('machine_id', 'Unknown')
+                timestamp = tx.get('purchase_timestamp', '')
+                context = tx.get('context', {})
+                
+                # 計算訂單總金額
+                total_amount = sum(
+                    detail.get('quantity_sold', 0) * detail.get('unit_price', 0)
+                    for detail in tx.get('transaction_details', [])
+                )
+                
+                # 轉換訂單項目
+                items = []
+                for detail in tx.get('transaction_details', []):
+                    meal_id = str(detail.get('meal_id', 'Unknown'))
+                    
+                    # 多層映射策略
+                    item_name = meal_id  # 預設使用 meal_id
+                    
+                    # 策略 1: 從 product_code 映射（優先）
+                    if meal_id in product_code_map:
+                        item_name = product_code_map[meal_id]
+                    # 策略 2: 從 ID 映射
+                    elif meal_id in menu_map:
+                        item_name = menu_map[meal_id]
+                    # 策略 3: 使用硬編碼映射表（備用）
+                    elif meal_id in FALLBACK_MEAL_ID_MAP:
+                        item_name = FALLBACK_MEAL_ID_MAP[meal_id]
+                    
+                    quantity = detail.get('quantity_sold', 1)
+                    unit_price = detail.get('unit_price', 0)
+                    
+                    items.append({
+                        'menu_item_id': meal_id,
+                        'meal_id': meal_id,
+                        'quantity': quantity,
+                        'unit_price': unit_price,
+                        'subtotal': quantity * unit_price,
+                        'item_name': item_name
+                    })
+                
+                # 構建訂單對象
+                order = {
+                    'id': idx,  # 使用序號作為 ID
+                    'order_number': tx_id,
+                    'transaction_id': tx_id,
+                    'machine_id': str(machine_id),
+                    'total_amount': total_amount,
+                    'status': 'completed',
+                    'payment_status': 'paid',
+                    'payment_method': 'unknown',
+                    'created_at': timestamp,
+                    'updated_at': timestamp,
+                    'items': items,
+                    'weather': context.get('weather', 'Unknown'),
+                    'temperature': context.get('temperature_celsius', 0),
+                    'humidity': context.get('humidity', 0),
+                    'is_holiday': context.get('is_holiday', False),
+                    'hour_of_day': context.get('hour_of_day', 0),
+                    'recommended_items': tx.get('recommended_items', [])
+                }
+                
+                orders.append(order)
+            
+            api_logger.info(f"Converted {len(orders)} orders for sales analytics")
+            return orders
+            
+        except Exception as e:
+            api_logger.error(f"Error converting transactional data for sales analytics: {str(e)}")
+            import streamlit as st
+            st.error(f"❌ 數據轉換錯誤：{str(e)}")
             return []
 
     def delete_ai_recommendation(self, recommendation_id: int) -> bool:

@@ -18,7 +18,7 @@ def sales_analytics_page():
         end_date = st.date_input("結束日期", datetime.now())
     # with col3:
     #     use_demo_data = st.checkbox("使用模擬數據", value=False, help="顯示14天的模擬銷售數據用於展示")
-    use_demo_data = True
+    use_demo_data = False  # 使用真實 API 數據
     
     # 獲取訂單資料
     try:
@@ -59,24 +59,47 @@ def get_orders_data(start_date, end_date):
     try:
         # 使用session state中的API客戶端
         if hasattr(st.session_state, 'api') and st.session_state.api:
-            # 嘗試使用API客戶端獲取訂單
-            orders = st.session_state.api.get_orders(skip=0, limit=1000)
+            # ✨ 新增：優先使用 transactional-data API
+            try:
+                start_date_str = start_date.strftime('%Y-%m-%d')
+                end_date_str = end_date.strftime('%Y-%m-%d')
+                
+                orders = st.session_state.api.get_transactional_data_for_sales_analytics(
+                    start_date_str,
+                    end_date_str,
+                    limit=1000  # API 最大限制為 1000
+                )
+                
+                if orders:
+                    from logger_config import api_logger
+                    api_logger.info(f"Successfully loaded {len(orders)} orders from transactional-data API")
+                    return orders
+                else:
+                    st.info(f"📊 在選定期間 ({start_date_str} 至 {end_date_str}) 沒有交易資料")
+                    return []
+                    
+            except AttributeError:
+                # 如果新方法不存在，嘗試使用舊的 orders API
+                st.warning("⚠️ 使用舊版 API，建議更新 utils.py")
+                orders = st.session_state.api.get_orders(skip=0, limit=1000)
+                
+                # 過濾日期範圍
+                filtered_orders = []
+                for order in orders:
+                    order_date = datetime.fromisoformat(order['created_at'].replace('Z', '+00:00')).date()
+                    if start_date <= order_date <= end_date:
+                        filtered_orders.append(order)
+                
+                return filtered_orders
         else:
             # 如果沒有API客戶端，返回空資料
             st.warning("API連線未建立，請先登入")
             return []
             
-        # 過濾日期範圍
-        filtered_orders = []
-        for order in orders:
-            order_date = datetime.fromisoformat(order['created_at'].replace('Z', '+00:00')).date()
-            if start_date <= order_date <= end_date:
-                filtered_orders.append(order)
-                
-        return filtered_orders
-        
     except Exception as e:
         st.error(f"獲取訂單資料失敗: {str(e)}")
+        from logger_config import api_logger
+        api_logger.error(f"Error fetching orders: {str(e)}")
         return []
 
 def process_orders_data(orders_data):

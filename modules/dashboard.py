@@ -17,7 +17,7 @@ def dashboard_page():
         end_date = st.date_input("結束日期", datetime.now())
     # with col3:
     #     use_demo_data = st.checkbox("使用模擬數據", value=False, help="顯示14天的模擬銷售數據用於展示")
-    use_demo_data = True
+    use_demo_data = False  # 使用真實 API 數據
     
     st.markdown("---")
     
@@ -35,27 +35,29 @@ def dashboard_page():
         demo_orders = generate_demo_sales_data(start_date, end_date)
         sales_data = convert_orders_to_sales_data(demo_orders)
     else:
-        # 從 API 獲取真實數據
+        # 使用真實 API 數據（新的轉換方法）
         try:
-            sales_data = st.session_state.api.get_sales_data(start_date_str, end_date_str)
+            with st.spinner("正在載入交易數據..."):
+                sales_data = st.session_state.api.get_transactional_data_for_dashboard(
+                    start_date_str, 
+                    end_date_str,
+                    limit=1000  # API 最大限制為 1000
+                )
+            
             if not sales_data:
-                # 嘗試使用交易數據作為備用
-                try:
-                    sales_data = st.session_state.api.get_transactional_data(start_date_str, end_date_str, limit=1000)
-                    if sales_data:
-                        st.info(f"📊 使用交易數據顯示銷售統計 ({start_date_str} 至 {end_date_str})")
-                    else:
-                        st.info(f"📊 在選定期間 ({start_date_str} 至 {end_date_str}) 沒有銷售或交易資料")
-                        if not use_demo_data:
-                            st.info("💡 提示：您可以勾選「使用模擬數據」查看功能展示")
-                except Exception:
-                    st.info("📊 目前沒有銷售資料，或相關 API 端點尚未配置")
-                    if not use_demo_data:
-                        st.info("💡 提示：您可以勾選「使用模擬數據」查看功能展示")
+                st.info(f"📊 在選定期間 ({start_date_str} 至 {end_date_str}) 沒有交易資料")
+            else:
+                st.success(f"✅ 成功載入 {len(sales_data)} 筆交易記錄 ({start_date_str} 至 {end_date_str})")
+        except AttributeError:
+            # 如果方法不存在，提示需要更新 utils.py
+            st.error("❌ API 客戶端需要更新。請確認 utils.py 中已添加 get_transactional_data_for_dashboard 方法。")
+            st.info("💡 提示：請參考 API整合方案.md 文件")
+            sales_data = []
         except Exception as e:
-            st.info("📊 目前沒有銷售資料，或相關 API 端點尚未配置")
-            if not use_demo_data:
-                st.info("💡 提示：您可以勾選「使用模擬數據」查看功能展示")
+            st.error(f"❌ 載入交易數據失敗：{str(e)}")
+            from logger_config import api_logger
+            api_logger.error(f"Error loading transactional data for dashboard: {str(e)}")
+            sales_data = []
     
     # 統計卡片
     col1, col2, col3, col4 = st.columns(4)

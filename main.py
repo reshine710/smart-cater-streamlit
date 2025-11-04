@@ -396,6 +396,10 @@ def main():
         # 閒置狀態顯示
         render_idle_status_widget()
         
+        # 版本號顯示
+        st.markdown("---")
+        st.caption("📦 版本：v0.3.0")
+        
     # 顯示頁面內容
     if page_key == "machine_status":
         machine_status_page()
