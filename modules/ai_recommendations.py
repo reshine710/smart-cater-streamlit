@@ -1274,25 +1274,47 @@ def batch_update_machine_menu(machine_code_or_id: str, menu_items: List[Dict]) -
         menu_item_ids = []
         display_orders = []
         
+        # 獲取菜單項目並建立 meal_id (product_code) 到數字ID的映射
+        menu_id_mapping = {}
+        try:
+            all_menu_items = st.session_state.api.get_menu_items()
+            if all_menu_items:
+                # 建立映射：product_code -> menu_item_id
+                for menu_item in all_menu_items:
+                    item_id = menu_item.get('id')
+                    product_code = menu_item.get('product_code', '')
+                    if item_id and product_code:
+                        menu_id_mapping[str(product_code)] = int(item_id)
+                
+                ui_logger.debug(f"Built menu ID mapping for batch update: {menu_id_mapping}")
+        except Exception as e:
+            ui_logger.error(f"Failed to build menu ID mapping in batch_update: {str(e)}")
+        
         for i, item in enumerate(menu_items, 1):
             # 從meal_id中提取數字ID，如果meal_id是字符串則嘗試轉換
             meal_id = item.get('meal_id', '')
-            try:
-                # 如果meal_id是純數字字符串，直接轉換
-                if meal_id.isdigit():
-                    menu_item_ids.append(int(meal_id))
-                else:
-                    # 如果是字母開頭（如A, B, C），轉換為數字
-                    if meal_id and meal_id[0].isalpha():
-                        menu_item_ids.append(ord(meal_id[0]) - ord('A') + 1)
-                    else:
-                        # 默認使用索引+1
-                        menu_item_ids.append(i)
-            except (ValueError, TypeError):
-                # 如果轉換失敗，使用索引+1
-                menu_item_ids.append(i)
+            menu_item_id = None
             
-            display_orders.append(i)
+            try:
+                # 策略1: 如果meal_id是純數字字符串，直接轉換
+                if isinstance(meal_id, str) and meal_id.isdigit():
+                    menu_item_id = int(meal_id)
+                # 策略2: 如果meal_id已經是數字，直接使用
+                elif isinstance(meal_id, (int, float)):
+                    menu_item_id = int(meal_id)
+                # 策略3: 如果meal_id是字母+數字格式（如 "A015"），通過映射查找
+                elif isinstance(meal_id, str) and meal_id in menu_id_mapping:
+                    menu_item_id = menu_id_mapping[meal_id]
+                    ui_logger.info(f"Batch update: Mapped meal_id '{meal_id}' to menu_item_id {menu_item_id}")
+                else:
+                    # 無法映射，記錄警告
+                    ui_logger.warning(f"Batch update: Cannot map meal_id '{meal_id}' to menu item ID. Available: {list(menu_id_mapping.keys())}")
+            except (ValueError, TypeError) as e:
+                ui_logger.error(f"Error converting meal_id '{meal_id}': {str(e)}")
+            
+            if menu_item_id:
+                menu_item_ids.append(menu_item_id)
+                display_orders.append(i)
         
         ui_logger.info(f"Batch updating machine {machine_code_or_id} (ID: {machine_id}) with menu items: {menu_item_ids}, display orders: {display_orders}")
         
@@ -1455,20 +1477,45 @@ def implement_selected_menu_items(rec: Dict, rec_id: int) -> bool:
                 menu_item_ids = []
                 display_orders = []
                 
+                # 獲取菜單項目並建立 meal_id (product_code) 到數字ID的映射
+                menu_id_mapping = {}
+                try:
+                    if hasattr(st.session_state, 'api') and st.session_state.api:
+                        menu_items = st.session_state.api.get_menu_items()
+                        if menu_items:
+                            # 建立映射：product_code -> menu_item_id
+                            for menu_item in menu_items:
+                                item_id = menu_item.get('id')
+                                product_code = menu_item.get('product_code', '')
+                                if item_id and product_code:
+                                    menu_id_mapping[str(product_code)] = int(item_id)
+                            
+                            ui_logger.debug(f"Built menu ID mapping: {menu_id_mapping}")
+                except Exception as e:
+                    ui_logger.error(f"Failed to build menu ID mapping: {str(e)}")
+                
                 for idx, item in enumerate(selected_menu_items):
                     meal_id = item['meal_id']
-                    # 處理meal_id可能是字符串或數字的情況
-                    if isinstance(meal_id, str) and meal_id.isdigit():
-                        menu_item_ids.append(int(meal_id))
-                    elif isinstance(meal_id, (int, float)):
-                        menu_item_ids.append(int(meal_id))
+                    menu_item_id = None
+                    
+                    # 策略1: 如果 meal_id 是純數字，直接使用
+                    if isinstance(meal_id, (int, float)):
+                        menu_item_id = int(meal_id)
+                    elif isinstance(meal_id, str) and meal_id.isdigit():
+                        menu_item_id = int(meal_id)
+                    # 策略2: 如果 meal_id 是字母+數字格式（如 "A015"），通過映射查找
+                    elif isinstance(meal_id, str) and meal_id in menu_id_mapping:
+                        menu_item_id = menu_id_mapping[meal_id]
+                        ui_logger.info(f"Mapped meal_id '{meal_id}' to menu_item_id {menu_item_id}")
                     else:
-                        # 如果是字符串且包含非數字字符，跳過
-                        ui_logger.warning(f"Skipping invalid meal_id: {meal_id}")
+                        # 無法映射的 meal_id
+                        ui_logger.warning(f"Cannot map meal_id '{meal_id}' to menu item ID. Available mappings: {list(menu_id_mapping.keys())}")
                         continue
                     
-                    # 顯示順序從1開始
-                    display_orders.append(idx + 1)
+                    if menu_item_id:
+                        menu_item_ids.append(menu_item_id)
+                        # 顯示順序從1開始
+                        display_orders.append(idx + 1)
                 
                 if menu_item_ids:
                     # 調用API更新機台菜單項目

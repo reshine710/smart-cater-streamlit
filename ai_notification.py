@@ -22,8 +22,8 @@ def init_notification_state():
 
 def get_pending_and_approved_recommendations() -> Tuple[List[Dict], List[Dict]]:
     """
-    獲取待審核(PENDING)和已通過(APPROVED)的推薦
-    返回: (pending_recommendations, approved_recommendations)
+    獲取待審核(PENDING)和已通過(APPROVED/IMPLEMENTED)的推薦
+    返回: (pending_recommendations, approved_and_implemented_recommendations)
     """
     try:
         if not hasattr(st.session_state, 'api') or not st.session_state.api:
@@ -37,6 +37,10 @@ def get_pending_and_approved_recommendations() -> Tuple[List[Dict], List[Dict]]:
         approved_recs = st.session_state.api.get_ai_recommendations(status_filter="APPROVED")
         ui_logger.debug(f"Notification: Retrieved {len(approved_recs)} approved recommendations from API")
         
+        # 獲取已實施的推薦（也要顯示在通知中）
+        implemented_recs = st.session_state.api.get_ai_recommendations(status_filter="IMPLEMENTED")
+        ui_logger.debug(f"Notification: Retrieved {len(implemented_recs)} implemented recommendations from API")
+        
         # 前端二次驗證：確保只返回正確狀態的推薦
         # 過濾出真正是 PENDING 狀態的推薦
         verified_pending = [rec for rec in pending_recs if rec.get('status') == 'PENDING']
@@ -44,24 +48,34 @@ def get_pending_and_approved_recommendations() -> Tuple[List[Dict], List[Dict]]:
         # 過濾出真正是 APPROVED 狀態的推薦
         verified_approved = [rec for rec in approved_recs if rec.get('status') == 'APPROVED']
         
+        # 過濾出真正是 IMPLEMENTED 狀態的推薦
+        verified_implemented = [rec for rec in implemented_recs if rec.get('status') == 'IMPLEMENTED']
+        
+        # 合併 APPROVED 和 IMPLEMENTED 狀態的推薦作為「已通過推薦」
+        approved_and_implemented = verified_approved + verified_implemented
+        
         # 記錄過濾後的結果
         if len(verified_pending) != len(pending_recs):
             ui_logger.warning(f"Filtered pending recommendations: {len(pending_recs)} -> {len(verified_pending)}")
-            # 記錄被過濾掉的推薦及其狀態
             filtered = [rec for rec in pending_recs if rec.get('status') != 'PENDING']
             for rec in filtered:
                 ui_logger.warning(f"Filtered out recommendation {rec.get('recommendation_id')} with status {rec.get('status')} from PENDING list")
         
         if len(verified_approved) != len(approved_recs):
             ui_logger.warning(f"Filtered approved recommendations: {len(approved_recs)} -> {len(verified_approved)}")
-            # 記錄被過濾掉的推薦及其狀態
             filtered = [rec for rec in approved_recs if rec.get('status') != 'APPROVED']
             for rec in filtered:
                 ui_logger.warning(f"Filtered out recommendation {rec.get('recommendation_id')} with status {rec.get('status')} from APPROVED list")
         
-        ui_logger.debug(f"Notification: After verification - {len(verified_pending)} pending, {len(verified_approved)} approved")
+        if len(verified_implemented) != len(implemented_recs):
+            ui_logger.warning(f"Filtered implemented recommendations: {len(implemented_recs)} -> {len(verified_implemented)}")
+            filtered = [rec for rec in implemented_recs if rec.get('status') != 'IMPLEMENTED']
+            for rec in filtered:
+                ui_logger.warning(f"Filtered out recommendation {rec.get('recommendation_id')} with status {rec.get('status')} from IMPLEMENTED list")
         
-        return verified_pending, verified_approved
+        ui_logger.debug(f"Notification: After verification - {len(verified_pending)} pending, {len(verified_approved)} approved, {len(verified_implemented)} implemented")
+        
+        return verified_pending, approved_and_implemented
         
     except Exception as e:
         ui_logger.error(f"Failed to get recommendations for notification: {str(e)}")
@@ -276,14 +290,16 @@ def render_ai_notification_widget():
                     
                     st.markdown("---")
                 
-                # 顯示已通過推薦
+                # 顯示已通過推薦（包含 APPROVED 和 IMPLEMENTED）
                 if unread_approved:
                     st.markdown(f"#### ✅ 已通過推薦 ({len(unread_approved)})")
+                    st.caption("💡 包含已通過待實施和已完成實施的推薦")
                     
                     for rec in unread_approved:
                         rec_id = rec.get('id')
                         rec_identifier = rec.get('recommendation_id', f"REC-{rec_id}")
                         rec_type = rec.get('recommendation_type', 'UNKNOWN')
+                        rec_status = rec.get('status', 'UNKNOWN')
                         target_machines = rec.get('target_machine_ids', [])
                         created_at = rec.get('created_at', 'Unknown')
                         confidence = rec.get('confidence_score')
@@ -309,12 +325,26 @@ def render_ai_notification_widget():
                         except:
                             time_str = created_at
                         
+                        # 根據狀態選擇不同的樣式和標記
+                        if rec_status == 'IMPLEMENTED':
+                            # 已實施：使用深綠色
+                            bg_color = "#c3e6cb"
+                            border_color = "#155724"
+                            status_badge = "🚀 已實施"
+                            button_text = "🔗 查看詳情"
+                        else:
+                            # 已通過（待實施）：使用淺綠色
+                            bg_color = "#d4edda"
+                            border_color = "#28a745"
+                            status_badge = "✅ 已通過"
+                            button_text = "🔗 前往實施"
+                        
                         # 顯示推薦卡片
                         with st.container():
                             st.markdown(f"""
-                            <div style='background-color: #d4edda; padding: 12px; border-radius: 8px; border-left: 4px solid #28a745; margin-bottom: 10px;'>
+                            <div style='background-color: {bg_color}; padding: 12px; border-radius: 8px; border-left: 4px solid {border_color}; margin-bottom: 10px;'>
                                 <div style='font-weight: bold; font-size: 14px; margin-bottom: 5px;'>
-                                    {type_icon} {type_text} - {rec_identifier}
+                                    {type_icon} {type_text} - {rec_identifier} <span style='background-color: {border_color}; color: white; padding: 2px 8px; border-radius: 12px; font-size: 11px; margin-left: 8px;'>{status_badge}</span>
                                 </div>
                                 <div style='font-size: 12px; color: #666;'>
                                     🏪 機台: {machine_codes}<br>
@@ -331,7 +361,7 @@ def render_ai_notification_widget():
                                     mark_as_read(rec_id)
                                     st.rerun()
                             with col2:
-                                if st.button(f"🔗 前往實施", key=f"goto_approved_{rec_id}", use_container_width=True):
+                                if st.button(button_text, key=f"goto_approved_{rec_id}", use_container_width=True):
                                     mark_as_read(rec_id)
                                     st.session_state.current_page = "🤖 AI智能推薦"
                                     st.rerun()
