@@ -62,6 +62,9 @@ def show_recommendations_list():
     """顯示AI推薦列表"""
     st.subheader("📋 AI推薦列表")
     
+    # 流程說明
+    st.info("ℹ️ **操作說明**：點擊「通過並實施」按鈕將立即執行 AI 推薦並更新機台配置。對於動態菜單推薦，系統會將選中的菜單項目直接推送至目標機台。")
+    
     # 篩選選項
     col1, col2, col3 = st.columns(3)
     with col1:
@@ -279,53 +282,58 @@ def show_recommendation_details(rec: Dict, index: int):
         
         if current_status == 'PENDING':
             # 待審核狀態：顯示接受/拒絕按鈕
+            # 提示：通過即實施
+            st.info("💡 提示：點擊「通過並實施」將立即執行推薦並更新機台配置")
+            
             col_btn1, col_btn2 = st.columns(2)
             with col_btn1:
-                if st.button("✅ 通過", key=f"approve_{rec_id}_{index}", width="stretch"):
-                    # 先更新狀態為APPROVED
-                    if update_recommendation_status(rec_id, "APPROVED"):
-                        if update_recommendation_status(rec_id, "IMPLEMENTED"):
-                                st.success("✅ 推薦已通過並實施")
-                        else:
-                            st.success("✅ 推薦已通過")
-
-                        # TODO: 實施選中的菜單項目，尚未完成
-                        # 檢查是否是動態菜單推薦且有選中的菜單項目
-                        if (rec['recommendation_type'] == 'DYNAMIC_MENU' and 
-                            f'selected_menu_items_{rec_id}' in st.session_state and 
-                            st.session_state[f'selected_menu_items_{rec_id}']):
-                            
-                            print(f"selected_menu_items_{rec_id}: {st.session_state[f'selected_menu_items_{rec_id}']}")
-                            # 實施選中的菜單項目
-                            if implement_selected_menu_items(rec, rec_id):
-                                # 更新推薦狀態為已實施
-                                if update_recommendation_status(rec_id, "IMPLEMENTED"):
-                                    st.success("✅ 推薦已通過並實施選中的菜單項目")
-                                else:
-                                    st.success("✅ 推薦已通過，菜單項目已實施")
-                            else:
-                                st.success("✅ 推薦已通過")
-                        else:
-                            # 非動態菜單推薦或沒有選中項目，只更新狀態
-                            if update_recommendation_status(rec_id, "IMPLEMENTED"):
-                                st.success("✅ 推薦已通過並實施")
-                            else:
-                                st.success("✅ 推薦已通過")
+                if st.button("✅ 通過並實施", key=f"approve_{rec_id}_{index}", width="stretch", type="primary"):
+                    implementation_success = False
+                    
+                    # 步驟1：檢查是否需要實際實施動作（在狀態更新之前）
+                    if (rec['recommendation_type'] == 'DYNAMIC_MENU' and 
+                        f'selected_menu_items_{rec_id}' in st.session_state and 
+                        st.session_state[f'selected_menu_items_{rec_id}']):
                         
-                        # 清除所有可能的緩存狀態
-                        cache_keys_to_clear = [
-                            'ai_recommendations_cache',
-                            'ai_recommendations_data',
-                            'recommendations_data'
-                        ]
-                        for key in cache_keys_to_clear:
-                            if key in st.session_state:
-                                del st.session_state[key]
-                        # 添加短暫延遲確保後端數據更新
-                        import time
-                        time.sleep(0.5)
-                        # 強制刷新頁面
-                        st.rerun()
+                        ui_logger.info(f"Implementing selected menu items for recommendation {rec_id}")
+                        # 實施選中的菜單項目
+                        implementation_success = implement_selected_menu_items(rec, rec_id)
+                        
+                        if implementation_success:
+                            ui_logger.info(f"Successfully implemented menu items for recommendation {rec_id}")
+                        else:
+                            ui_logger.error(f"Failed to implement menu items for recommendation {rec_id}")
+                            st.error("❌ 實施菜單項目失敗，請稍後重試")
+                    else:
+                        # 非動態菜單推薦或沒有選中項目，標記為成功（只更新狀態）
+                        implementation_success = True
+                        ui_logger.info(f"No implementation action required for recommendation {rec_id}")
+                    
+                    # 步驟2：只有在實施成功後才更新狀態
+                    if implementation_success:
+                        # 直接更新為 IMPLEMENTED 狀態
+                        if update_recommendation_status(rec_id, "IMPLEMENTED"):
+                            st.success("✅ 推薦已通過並實施成功！")
+                            ui_logger.info(f"Successfully updated recommendation {rec_id} status to IMPLEMENTED")
+                            
+                            # 清除所有可能的緩存狀態
+                            cache_keys_to_clear = [
+                                'ai_recommendations_cache',
+                                'ai_recommendations_data',
+                                'recommendations_data'
+                            ]
+                            for key in cache_keys_to_clear:
+                                if key in st.session_state:
+                                    del st.session_state[key]
+                            
+                            # 添加短暫延遲確保後端數據更新
+                            import time
+                            time.sleep(0.5)
+                            # 強制刷新頁面
+                            st.rerun()
+                        else:
+                            st.error("❌ 更新狀態失敗，但實施動作已完成")
+                            ui_logger.error(f"Failed to update status for recommendation {rec_id} to IMPLEMENTED")
             with col_btn2:
                 if st.button("❌ 拒絕", key=f"reject_{rec_id}_{index}", width="stretch"):
                     if update_recommendation_status(rec_id, "REJECTED"):
@@ -1239,12 +1247,28 @@ def show_transactional_data_analysis():
             st.error(f"❌ 查詢交易數據失敗: {str(e)}")
             api_logger.error(f"Failed to query transactional data: {str(e)}")
 
-def batch_update_machine_menu(machine_id: str, menu_items: List[Dict]) -> bool:
+def batch_update_machine_menu(machine_code_or_id: str, menu_items: List[Dict]) -> bool:
     """批量更新機台菜單"""
     try:
         if not hasattr(st.session_state, 'api') or not st.session_state.api:
             st.error("❌ API 客戶端不可用")
             return False
+        
+        # 將機台代碼或ID轉換為整數ID
+        machine_id = None
+        
+        # 檢查是否是純數字字符串
+        if machine_code_or_id.isdigit():
+            machine_id = int(machine_code_or_id)
+            ui_logger.debug(f"Converted numeric string to integer: {machine_id}")
+        else:
+            # 是機台代碼，需要轉換為ID
+            ui_logger.debug(f"Attempting to convert machine code '{machine_code_or_id}' to ID")
+            machine_id = get_machine_id_from_code(machine_code_or_id)
+            if machine_id is None:
+                st.error(f"❌ 無法找到機台代碼 '{machine_code_or_id}' 對應的機台ID")
+                ui_logger.error(f"Failed to find machine ID for code: {machine_code_or_id}")
+                return False
         
         # 提取菜單項目ID和顯示順序
         menu_item_ids = []
@@ -1270,11 +1294,11 @@ def batch_update_machine_menu(machine_id: str, menu_items: List[Dict]) -> bool:
             
             display_orders.append(i)
         
-        ui_logger.info(f"Batch updating machine {machine_id} with menu items: {menu_item_ids}, display orders: {display_orders}")
+        ui_logger.info(f"Batch updating machine {machine_code_or_id} (ID: {machine_id}) with menu items: {menu_item_ids}, display orders: {display_orders}")
         
         # 調用API更新機台菜單
         result = st.session_state.api.update_machine_menu_items(
-            machine_id=int(machine_id),
+            machine_id=machine_id,
             menu_item_ids=menu_item_ids,
             display_orders=display_orders
         )
@@ -1326,6 +1350,40 @@ def get_menu_item_names() -> Dict[str, str]:
         ui_logger.error(f"Error getting menu item names: {str(e)}")
         return {}
 
+def get_machine_id_from_code(machine_code: str) -> Optional[int]:
+    """
+    將機台代碼轉換為機台ID
+    參數:
+        machine_code: 機台代碼（如 'SC-TRS-001'）
+    返回:
+        機台ID（整數）或 None（如果找不到）
+    """
+    try:
+        if hasattr(st.session_state, 'api') and st.session_state.api:
+            machines = st.session_state.api.get_machines()
+            if machines:
+                for machine in machines:
+                    # 檢查機台代碼是否匹配
+                    if machine.get('machine_code') == machine_code:
+                        machine_id = machine.get('id')
+                        ui_logger.debug(f"Found machine ID {machine_id} for code {machine_code}")
+                        return machine_id
+                    # 也檢查字符串形式的ID是否匹配
+                    if str(machine.get('id')) == machine_code:
+                        machine_id = machine.get('id')
+                        ui_logger.debug(f"Found machine ID {machine_id} for code {machine_code}")
+                        return machine_id
+                
+                ui_logger.warning(f"No machine found for code: {machine_code}")
+                return None
+        else:
+            ui_logger.error("API client not available")
+            return None
+    except Exception as e:
+        ui_logger.error(f"Error getting machine ID for code {machine_code}: {str(e)}")
+        return None
+
+
 def implement_selected_menu_items(rec: Dict, rec_id: int) -> bool:
     """實施選中的菜單項目到目標機台"""
     try:
@@ -1341,7 +1399,7 @@ def implement_selected_menu_items(rec: Dict, rec_id: int) -> bool:
             ui_logger.warning(f"No suggested menu items for recommendation {rec_id}")
             return False
         
-        # 獲取目標機台ID
+        # 獲取目標機台ID（這些可能是機台代碼或ID）
         target_machine_ids = rec.get('target_machine_ids', [])
         if not target_machine_ids:
             ui_logger.warning(f"No target machine IDs for recommendation {rec_id}")
@@ -1368,8 +1426,31 @@ def implement_selected_menu_items(rec: Dict, rec_id: int) -> bool:
         
         # 為每個目標機台實施選中的菜單項目
         success_count = 0
-        for machine_id in target_machine_ids:
+        for machine_code_or_id in target_machine_ids:
             try:
+                # 將機台代碼或ID轉換為整數ID
+                machine_id = None
+                
+                # 先檢查是否已經是整數
+                if isinstance(machine_code_or_id, int):
+                    machine_id = machine_code_or_id
+                    ui_logger.debug(f"Machine identifier is already an integer: {machine_id}")
+                elif isinstance(machine_code_or_id, str):
+                    # 檢查是否是純數字字符串
+                    if machine_code_or_id.isdigit():
+                        machine_id = int(machine_code_or_id)
+                        ui_logger.debug(f"Converted numeric string to integer: {machine_id}")
+                    else:
+                        # 是機台代碼，需要轉換為ID
+                        ui_logger.debug(f"Attempting to convert machine code '{machine_code_or_id}' to ID")
+                        machine_id = get_machine_id_from_code(machine_code_or_id)
+                        if machine_id is None:
+                            ui_logger.error(f"❌ 無法找到機台代碼 '{machine_code_or_id}' 對應的機台ID，跳過此機台")
+                            continue
+                else:
+                    ui_logger.error(f"❌ 無效的機台識別符類型: {type(machine_code_or_id)}")
+                    continue
+                
                 # 提取菜單項目ID和顯示順序
                 menu_item_ids = []
                 display_orders = []
@@ -1393,29 +1474,29 @@ def implement_selected_menu_items(rec: Dict, rec_id: int) -> bool:
                     # 調用API更新機台菜單項目
                     if hasattr(st.session_state, 'api') and st.session_state.api:
                         # 記錄API調用詳情
-                        ui_logger.info(f"🚀 調用API更新機台 {machine_id} 菜單項目")
+                        ui_logger.info(f"🚀 調用API更新機台 {machine_code_or_id} (ID: {machine_id}) 菜單項目")
                         ui_logger.info(f"📡 POST {st.session_state.api.base_url}/machines/{machine_id}/update-menu-items")
                         ui_logger.info(f"📦 Request Body: {{'menu_item_ids': {menu_item_ids}, 'display_orders': {display_orders}}}")
                         
                         result = st.session_state.api.update_machine_menu_items(
-                            int(machine_id), menu_item_ids, display_orders
+                            machine_id, menu_item_ids, display_orders
                         )
                         
                         # 記錄API回應結果
                         if result:
                             success_count += 1
-                            ui_logger.info(f"✅ 成功更新機台 {machine_id} 菜單項目")
+                            ui_logger.info(f"✅ 成功更新機台 {machine_code_or_id} (ID: {machine_id}) 菜單項目")
                             ui_logger.info(f"📊 Response: {result}")
                         else:
-                            ui_logger.error(f"❌ 更新機台 {machine_id} 菜單項目失敗")
+                            ui_logger.error(f"❌ 更新機台 {machine_code_or_id} (ID: {machine_id}) 菜單項目失敗")
                             ui_logger.error(f"📊 Response: {result}")
                     else:
                         ui_logger.error("❌ API 客戶端不可用")
                 else:
-                    ui_logger.warning(f"No valid menu item IDs for machine {machine_id}")
+                    ui_logger.warning(f"No valid menu item IDs for machine {machine_code_or_id}")
                     
             except Exception as e:
-                ui_logger.error(f"Error updating machine {machine_id}: {str(e)}")
+                ui_logger.error(f"Error updating machine {machine_code_or_id}: {str(e)}")
                 continue
         
         # 返回是否至少有一個機台更新成功

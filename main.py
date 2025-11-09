@@ -5,6 +5,7 @@ from datetime import datetime
 from logger_config import auth_logger, ui_logger, system_logger
 from idle_logout import init_idle_tracking, check_idle_timeout, update_activity_time, render_idle_status_widget
 from idle_tracker_component import render_idle_tracker
+from ai_notification import render_ai_notification_widget, render_notification_auto_refresh
 from modules import (
     dashboard_page,
     machine_status_page, 
@@ -291,6 +292,10 @@ def main():
     
     # 側邊欄 - 使用者資訊和導航
     with st.sidebar:
+        # AI 推薦通知 - 顯示在最頂部
+        render_ai_notification_widget()
+        
+        st.markdown("---")
 
         placeholder = st.empty()
 
@@ -386,8 +391,8 @@ def main():
             
             ui_logger.info(f"User {username} current page: {st.session_state.current_page} ({page_key})")
             
-            # API 連接狀態
-            api_connected = check_api_connection()
+            # API 連接狀態和版本信息
+            api_connected, backend_version = check_api_connection()
             api_status = "🟢 正常" if api_connected else "🔴 離線"
             st.write(f"**API 連接狀態:** {api_status}")
             
@@ -396,9 +401,14 @@ def main():
         # 閒置狀態顯示
         render_idle_status_widget()
         
+        # AI 通知自動刷新
+        st.markdown("---")
+        render_notification_auto_refresh(refresh_interval=60)
+        
         # 版本號顯示
         st.markdown("---")
-        st.caption("📦 版本：v0.3.0")
+        st.caption("🖥️ 前端版本：v0.3.0")
+        st.caption(f"⚙️ 後端版本：{backend_version if api_connected else '未連接'}")
         
     # 顯示頁面內容
     if page_key == "machine_status":
@@ -419,23 +429,27 @@ def main():
         dashboard_page()
 
 
-def check_api_connection() -> bool:
-    """檢查 API 連接狀態"""
+def check_api_connection() -> tuple:
+    """檢查 API 連接狀態，返回 (是否連接, 後端版本)"""
     try:
         import requests
         # 使用健康檢查端點，從配置文件獲取 base URL
         base_url = API_BASE_URL.replace("/api/v1", "")  # 移除 /api/v1 後綴
         response = requests.get(f"{base_url}/health", timeout=5)
         is_connected = response.status_code == 200
+        backend_version = "Unknown"
+        
         if is_connected:
             health_data = response.json()
-            system_logger.info(f"API connection successful - Status: {health_data.get('status', 'unknown')}, Version: {health_data.get('version', 'unknown')}")
+            backend_version = health_data.get('version', 'Unknown')
+            system_logger.info(f"API connection successful - Status: {health_data.get('status', 'unknown')}, Version: {backend_version}")
         else:
             system_logger.warning(f"API connection check failed - Status: {response.status_code}")
-        return is_connected
+        
+        return is_connected, backend_version
     except Exception as e:
         system_logger.warning(f"API connection check failed: {str(e)}")
-        return False
+        return False, "Unknown"
 
 
 if __name__ == "__main__":
