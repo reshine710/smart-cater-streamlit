@@ -757,6 +757,158 @@ class VendingMachineAPI:
             st.error(f"🌐 無法連接到 API 伺服器: {str(e)}")
             return []
 
+    def get_orders_with_details(self, skip: int = 0, limit: int = 100, 
+                                machine_id: int = None, order_status: str = None) -> Dict:
+        """獲取訂單列表（帶詳細資訊和分頁）"""
+        api_logger.debug(f"Fetching orders with details (skip={skip}, limit={limit}, machine_id={machine_id}, status={order_status})")
+        try:
+            params = {"skip": skip, "limit": limit}
+            if machine_id:
+                params["machine_id"] = machine_id
+            if order_status:
+                params["order_status"] = order_status
+            
+            response = requests.get(
+                f"{self.base_url}/orders",
+                params=params,
+                headers=self._get_auth_headers(),
+                timeout=30
+            )
+            
+            if response.status_code == 200:
+                response_data = response.json()
+                api_logger.info(f"Successfully retrieved orders with details")
+                return response_data
+            elif response.status_code == 500:
+                api_logger.warning("Server error (500) getting orders with details")
+                import streamlit as st
+                st.error("⚠️ 伺服器資料庫未初始化")
+                return {"total": 0, "items": []}
+            else:
+                api_logger.warning(f"Failed to get orders - Status code: {response.status_code}")
+                return {"total": 0, "items": []}
+                
+        except requests.exceptions.RequestException as e:
+            api_logger.error(f"Network error getting orders with details: {str(e)}")
+            import streamlit as st
+            st.error(f"🌐 無法連接到 API 伺服器: {str(e)}")
+            return {"total": 0, "items": []}
+
+    def get_order_by_id(self, order_id: int) -> Dict:
+        """根據訂單ID查詢單筆訂單"""
+        api_logger.debug(f"Fetching order by ID: {order_id}")
+        try:
+            response = requests.get(
+                f"{self.base_url}/orders/{order_id}",
+                headers=self._get_auth_headers(),
+                timeout=30
+            )
+            
+            if response.status_code == 200:
+                order = response.json()
+                api_logger.info(f"Successfully retrieved order ID: {order_id}")
+                return order
+            elif response.status_code == 404:
+                api_logger.warning(f"Order not found: {order_id}")
+                return None
+            else:
+                api_logger.warning(f"Failed to get order - Status code: {response.status_code}")
+                return None
+                
+        except requests.exceptions.RequestException as e:
+            api_logger.error(f"Network error getting order by ID: {str(e)}")
+            return None
+
+    def get_order_by_number(self, order_number: str) -> Dict:
+        """根據訂單編號查詢訂單"""
+        api_logger.debug(f"Fetching order by number: {order_number}")
+        try:
+            response = requests.get(
+                f"{self.base_url}/orders/number/{order_number}",
+                headers=self._get_auth_headers(),
+                timeout=30
+            )
+            
+            if response.status_code == 200:
+                order = response.json()
+                api_logger.info(f"Successfully retrieved order number: {order_number}")
+                return order
+            elif response.status_code == 404:
+                api_logger.warning(f"Order not found: {order_number}")
+                return None
+            else:
+                api_logger.warning(f"Failed to get order - Status code: {response.status_code}")
+                return None
+                
+        except requests.exceptions.RequestException as e:
+            api_logger.error(f"Network error getting order by number: {str(e)}")
+            return None
+
+    def get_orders_by_machine_id(self, machine_id: int) -> List[Dict]:
+        """查詢特定機台的所有訂單"""
+        api_logger.debug(f"Fetching orders for machine ID: {machine_id}")
+        try:
+            response = requests.get(
+                f"{self.base_url}/orders/machine/{machine_id}",
+                headers=self._get_auth_headers(),
+                timeout=30
+            )
+            
+            if response.status_code == 200:
+                orders = response.json()
+                api_logger.info(f"Successfully retrieved {len(orders)} orders for machine {machine_id}")
+                return orders
+            elif response.status_code == 404:
+                api_logger.warning(f"Machine not found or no orders: {machine_id}")
+                return []
+            else:
+                api_logger.warning(f"Failed to get orders - Status code: {response.status_code}")
+                return []
+                
+        except requests.exceptions.RequestException as e:
+            api_logger.error(f"Network error getting orders by machine ID: {str(e)}")
+            return []
+
+    def get_orders_by_date_range(self, start_date: str, end_date: str, 
+                                 machine_id: str = None, limit: int = 100) -> Dict:
+        """按日期範圍查詢訂單（使用 AI API）"""
+        api_logger.debug(f"Fetching orders by date range: {start_date} to {end_date}")
+        try:
+            params = {
+                "start_date": start_date,
+                "end_date": end_date,
+                "page": 1,
+                "limit": limit
+            }
+            if machine_id:
+                params["machine_id"] = str(machine_id)
+            
+            response = requests.get(
+                f"{self.base_url}/ai/transactional-data",
+                headers=self._get_ai_auth_headers(),
+                params=params,
+                timeout=30
+            )
+            
+            if response.status_code == 200:
+                result = response.json()
+                api_logger.info(f"Successfully retrieved orders by date range")
+                return result
+            elif response.status_code == 400:
+                error_detail = response.json().get('detail', 'Invalid request')
+                api_logger.warning(f"Invalid date range request: {error_detail}")
+                import streamlit as st
+                st.error(f"❌ 查詢參數無效：{error_detail}")
+                return {"data": [], "pagination": {}}
+            else:
+                api_logger.warning(f"Failed to get orders by date - Status code: {response.status_code}")
+                return {"data": [], "pagination": {}}
+                
+        except requests.exceptions.RequestException as e:
+            api_logger.error(f"Network error getting orders by date range: {str(e)}")
+            import streamlit as st
+            st.error(f"🌐 無法連接到 API 伺服器: {str(e)}")
+            return {"data": [], "pagination": {}}
 
     def register(self, username: str, email: str, password: str, full_name: str, is_admin: bool = False) -> bool:
         """使用者註冊"""

@@ -7,7 +7,7 @@ from .recipe_settings import recipe_settings_page
 from .sales_analytics import sales_analytics_page
 from .ai_recommendations import ai_recommendations_page
 from .location_management import location_management_page
-from .order_upload import order_upload_page
+from .order_management import order_management_page
 
 __all__ = [
     'dashboard_page',
@@ -17,5 +17,5 @@ __all__ = [
     'sales_analytics_page',
     'ai_recommendations_page',
     'location_management_page',
-    'order_upload_page'
+    'order_management_page'
 ]

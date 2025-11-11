@@ -1,17 +1,19 @@
 """
-訂單數據上傳模組
-從 Excel 檔案上傳訂單資料到線上資料庫
+訂單管理模組
+包含訂單上傳和訂單查詢功能
 """
 
 import streamlit as st
 import pandas as pd
-from datetime import datetime
+import json
+from datetime import datetime, timedelta
 from typing import Dict, List, Tuple
 import os
 from dotenv import load_dotenv
 from sqlalchemy import create_engine, text
 from sqlalchemy.orm import sessionmaker
 from logger_config import system_logger, api_logger
+from utils import VendingMachineAPI
 
 # 載入環境變數
 load_dotenv()
@@ -276,20 +278,21 @@ def create_order_from_row(db, row) -> Tuple[int, str]:
             },
         )
 
-        # 如果有推薦項目，更新訂單的 recommended_items（支援新舊格式）
-        recommended_item = row.get("recommended_item", row.get("recommend"))
+        # 如果有推薦項目，更新訂單的 recommended_items（支援新舊格式及拼寫錯誤）
+        recommended_item = row.get("recommended_item", row.get("recommend", row.get("recommand"))) # codespell:ignore recommand
         if pd.notna(recommended_item):
-            recommended_items = {"items": [recommended_item]}
+            # 正確序列化 JSON 資料
+            recommended_items = {"items": [str(recommended_item)]}
             update_recommended = text("""
                 UPDATE orders
-                SET recommended_items = :recommended_items
+                SET recommended_items = CAST(:recommended_items AS jsonb)
                 WHERE id = :order_id
             """)
             db.execute(
                 update_recommended,
                 {
                     "order_id": order_id,
-                    "recommended_items": str(recommended_items).replace("'", '"'),
+                    "recommended_items": json.dumps(recommended_items),
                 },
             )
 
@@ -364,10 +367,9 @@ def upload_orders_from_dataframe(df: pd.DataFrame) -> Tuple[int, int, int, List[
         db.close()
 
 
-def order_upload_page():
-    """訂單上傳頁面"""
-    st.header("📤 訂單數據上傳")
-    st.markdown("---")
+def render_order_upload_tab():
+    """訂單上傳功能標籤頁"""
+    st.subheader("📤 訂單數據上傳")
     
     # 說明區域
     with st.expander("ℹ️ 使用說明", expanded=False):
@@ -390,7 +392,7 @@ def order_upload_page():
         - `humidity` - 濕度
         - `payment_method` - 付款方式（預設為 cash）
         - `payment_number` 或 `bill_number` - 金流編號
-        - `recommended_item` 或 `recommend` - 推薦項目
+        - `recommended_item` 或 `recommend` 或 `recommand` - 推薦項目
         
         ### 時間格式支援
         - `YYYY-MM-DD HH:MM:SS` (例: 2025-10-24 13:12:38)
@@ -542,4 +544,253 @@ def order_upload_page():
         
         example_df = pd.DataFrame(example_data)
         st.dataframe(example_df, use_container_width=True)
+
+
+def render_order_query_tab():
+    """訂單查詢功能標籤頁"""
+    st.subheader("🔍 訂單查詢")
+    
+    # 獲取 API 客戶端
+    api = st.session_state.api
+    
+    # 查詢方式選擇
+    query_method = st.radio(
+        "選擇查詢方式",
+        ["📋 列表查詢", "📝 訂單編號查詢", "🏪 機台查詢"],
+        horizontal=True
+    )
+    
+    st.markdown("---")
+    
+    # 根據選擇的查詢方式顯示對應的界面
+    if query_method == "📋 列表查詢":
+        render_list_query(api)
+    elif query_method == "📝 訂單編號查詢":
+        render_number_query(api)
+    elif query_method == "🏪 機台查詢":
+        render_machine_query(api)
+    # elif query_method == "📅 日期查詢":
+    #     render_date_query(api)
+
+
+def render_list_query(api: VendingMachineAPI):
+    """渲染列表查詢界面"""
+    st.markdown("### 📋 訂單列表查詢")
+    
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        skip = st.number_input("跳過筆數", min_value=0, value=0, step=10)
+        machine_id_filter = st.text_input("機台ID篩選（可選）", placeholder="留空表示所有機台")
+    
+    with col2:
+        limit = st.number_input("查詢筆數", min_value=1, max_value=500, value=100, step=10)
+        status_filter = st.selectbox(
+            "狀態篩選（可選）",
+            ["全部", "CREATED", "PENDING", "COMPLETED", "CANCELLED", "FAILED"]
+        )
+    
+    if st.button("🔍 開始查詢", type="primary", use_container_width=True):
+        with st.spinner("查詢中..."):
+            # 準備查詢參數
+            machine_id = int(machine_id_filter) if machine_id_filter else None
+            order_status = status_filter if status_filter != "全部" else None
+            
+            # 調用 API
+            result = api.get_orders_with_details(
+                skip=skip,
+                limit=limit,
+                machine_id=machine_id,
+                order_status=order_status
+            )
+            
+            if result:
+                # 顯示統計資訊
+                col1, col2, col3 = st.columns(3)
+                with col1:
+                    st.metric("總記錄數", result.get("total", 0))
+                with col2:
+                    st.metric("本頁筆數", len(result.get("items", [])))
+                with col3:
+                    current_page = (skip // limit) + 1
+                    total_pages = (result.get("total", 0) + limit - 1) // limit
+                    st.metric("頁數", f"{current_page}/{total_pages}")
+                
+                # 顯示訂單列表
+                items = result.get("items", [])
+                if items:
+                    st.markdown("---")
+                    st.markdown("### 📦 訂單詳情")
+                    
+                    for idx, order in enumerate(items, 1):
+                        with st.expander(f"訂單 #{idx} - {order.get('order_number', 'N/A')}", expanded=False):
+                            render_order_details(order)
+                else:
+                    st.info("查詢範圍內沒有找到訂單")
+
+
+# def render_id_query(api: VendingMachineAPI):
+#     """渲染ID查詢界面"""
+#     st.markdown("### 🆔 根據訂單ID查詢")
+    
+#     order_id = st.number_input("訂單ID", min_value=1, value=1, step=1)
+    
+#     if st.button("🔍 查詢", type="primary", use_container_width=True):
+#         with st.spinner("查詢中..."):
+#             order = api.get_order_by_id(order_id)
+            
+#             if order:
+#                 st.success("✅ 查詢成功！")
+#                 st.markdown("---")
+#                 render_order_details(order)
+#             else:
+#                 st.error(f"❌ 找不到訂單ID: {order_id}")
+
+
+def render_number_query(api: VendingMachineAPI):
+    """渲染訂單編號查詢界面"""
+    st.markdown("### 📝 根據訂單編號查詢")
+    
+    order_number = st.text_input(
+        "訂單編號",
+        placeholder="例如：600000031762416122"
+    )
+    
+    if st.button("🔍 查詢", type="primary", use_container_width=True):
+        if not order_number:
+            st.warning("請輸入訂單編號")
+            return
+        
+        with st.spinner("查詢中..."):
+            order = api.get_order_by_number(order_number)
+            
+            if order:
+                st.success("✅ 查詢成功！")
+                st.markdown("---")
+                render_order_details(order)
+            else:
+                st.error(f"❌ 找不到訂單編號: {order_number}")
+
+
+def render_machine_query(api: VendingMachineAPI):
+    """渲染機台查詢界面"""
+    st.markdown("### 🏪 根據機台ID查詢")
+    
+    machine_id = st.number_input("機台ID", min_value=1, value=1, step=1)
+    
+    if st.button("🔍 查詢", type="primary", use_container_width=True):
+        with st.spinner("查詢中..."):
+            orders = api.get_orders_by_machine_id(machine_id)
+            
+            if orders:
+                st.success(f"✅ 找到 {len(orders)} 筆訂單")
+                st.markdown("---")
+                
+                for idx, order in enumerate(orders, 1):
+                    with st.expander(f"訂單 #{idx} - {order.get('order_number', 'N/A')}", expanded=False):
+                        render_order_details(order)
+            else:
+                st.info(f"該機台沒有找到訂單")
+
+
+# def render_date_query(api: VendingMachineAPI):
+#     """渲染日期查詢界面"""
+#     st.markdown("### 📅 根據日期範圍查詢")
+    
+#     col1, col2 = st.columns(2)
+    
+#     with col1:
+#         start_date = st.date_input(
+#             "開始日期",
+#             value=datetime.now().date()
+#         )
+    
+#     with col2:
+#         end_date = st.date_input(
+#             "結束日期",
+#             value=datetime.now().date()
+#         )
+    
+#     machine_id_filter = st.text_input(
+#         "機台ID篩選（可選）",
+#         placeholder="留空表示所有機台"
+#     )
+    
+#     limit = st.number_input(
+#         "查詢筆數上限",
+#         min_value=1,
+#         max_value=1000,
+#         value=100,
+#         step=50
+#     )
+    
+#     if st.button("🔍 查詢", type="primary", use_container_width=True):
+#         with st.spinner("查詢中..."):
+#             # 格式化日期
+#             start_date_str = start_date.strftime("%Y-%m-%d")
+#             end_date_str = end_date.strftime("%Y-%m-%d")
+#             machine_id = machine_id_filter if machine_id_filter else None
+            
+#             # 調用 API（使用 AI API）
+#             result = api.get_orders_by_date_range(
+#                 start_date=start_date_str,
+#                 end_date=end_date_str,
+#                 machine_id=machine_id,
+#                 limit=limit
+#             )
+            
+#             if result and "data" in result:
+#                 data = result.get("data", [])
+#                 pagination = result.get("pagination", {})
+                
+#                 # 顯示統計資訊
+#                 col1, col2, col3, col4 = st.columns(4)
+#                 with col1:
+#                     st.metric("總記錄數", pagination.get("total_records", len(data)))
+#                 with col2:
+#                     st.metric("本頁筆數", len(data))
+#                 with col3:
+#                     st.metric("日期範圍", f"{start_date_str} 至 {end_date_str}")
+#                 with col4:
+#                     current_page = pagination.get("current_page", 1)
+#                     total_pages = pagination.get("total_pages", 1)
+#                     st.metric("頁數", f"{current_page}/{total_pages}")
+                
+#                 # 顯示訂單列表
+#                 if data:
+#                     st.markdown("---")
+#                     st.markdown("### 📦 訂單詳情")
+                    
+#                     for idx, order in enumerate(data, 1):
+#                         with st.expander(f"訂單 #{idx} - {order.get('order_number', 'N/A')}", expanded=False):
+#                             render_order_details_from_transactional_data(order)
+#                 else:
+#                     st.info("查詢範圍內沒有找到訂單")
+
+
+def render_order_details(order: Dict):
+    """渲染訂單詳情（從訂單API）- 顯示 JSON 格式"""
+    import json
+    st.json(order)
+
+
+def render_order_details_from_transactional_data(order: Dict):
+    """渲染訂單詳情（從交易數據API）- 顯示 JSON 格式"""
+    import json
+    st.json(order)
+
+
+def order_management_page():
+    """訂單管理主頁面"""
+    st.header("📦 訂單管理")
+    st.markdown("---")
+    
+    # 創建標籤頁
+    tab1, tab2 = st.tabs(["📤 訂單上傳", "🔍 訂單查詢"])
+    
+    with tab1:
+        render_order_upload_tab()
+    
+    with tab2:
+        render_order_query_tab()
 

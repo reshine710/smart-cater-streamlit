@@ -14,7 +14,7 @@ from modules import (
     sales_analytics_page,
     ai_recommendations_page,
     location_management_page,
-    order_upload_page
+    order_management_page
 )
 
 def show_main_app():
@@ -355,7 +355,7 @@ def main():
         if is_admin:
             pages["📍 地點管理"] = "location_management"
             pages["👥 使用者管理"] = "user_management"
-            pages["📤 訂單上傳"] = "order_upload"
+            pages["📦 訂單管理"] = "order_management"
             ui_logger.debug(f"Admin pages added for user {username}")
         
         # 初始化頁面狀態
@@ -427,8 +427,8 @@ def main():
         ai_recommendations_page()
     elif page_key == "location_management":
         location_management_page()
-    elif page_key == "order_upload":
-        order_upload_page()
+    elif page_key == "order_management":
+        order_management_page()
     elif page_key == "dashboard":
         dashboard_page()
 
