@@ -240,7 +240,7 @@ def create_order_from_row(db, row) -> Tuple[int, str]:
                 "machine_id": machine_id,
                 "env_context_id": env_context_id,
                 "total_amount": total_amount,
-                "status": "CREATED",
+                "status": "COMPLETED",
                 "payment_status": "COMPLETED",
                 "payment_method": payment_method,
                 "payment_number": payment_number,
