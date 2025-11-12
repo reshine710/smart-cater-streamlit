@@ -30,7 +30,7 @@ def ai_recommendations_page():
                 st.json(health_status)
     
     # 主要標籤頁
-    tab1, tab2, tab3, tab4, tab5 = st.tabs(["📋 推薦列表", "🎯 動態菜單", "📊 推播記錄", "➕ 創建推薦", "📈 交易數據"])
+    tab1, tab2, tab3, tab4 = st.tabs(["📋 推薦列表", "🎯 動態菜單", "➕ 創建推薦", "📈 交易數據"])
     
     with tab1:
         show_recommendations_list()
@@ -39,12 +39,9 @@ def ai_recommendations_page():
         show_dynamic_menu_display()
     
     with tab3:
-        show_push_notification_records()
-    
-    with tab4:
         show_create_recommendation_form()
     
-    with tab5:
+    with tab4:
         show_transactional_data_analysis()
 
 def check_ai_health() -> dict:

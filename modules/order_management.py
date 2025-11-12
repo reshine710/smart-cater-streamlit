@@ -560,7 +560,7 @@ def render_order_query_tab():
     # 查詢方式選擇
     query_method = st.radio(
         "選擇查詢方式",
-        ["📋 列表查詢", "📝 訂單編號查詢", "🏪 機台查詢"],
+        ["📋 列表查詢", "📝 訂單編號查詢", "🏪 機台查詢", "📅 日期查詢"],
         horizontal=True
     )
     
@@ -573,8 +573,8 @@ def render_order_query_tab():
         render_number_query(api)
     elif query_method == "🏪 機台查詢":
         render_machine_query(api)
-    # elif query_method == "📅 日期查詢":
-    #     render_date_query(api)
+    elif query_method == "📅 日期查詢":
+        render_date_query(api)
 
 
 def render_list_query(api: VendingMachineAPI):
@@ -787,79 +787,123 @@ def render_machine_query(api: VendingMachineAPI):
                     st.info(f"機台 {machine_code} 沒有找到符合查詢條件的訂單")
 
 
-# def render_date_query(api: VendingMachineAPI):
-#     """渲染日期查詢界面"""
-#     st.markdown("### 📅 根據日期範圍查詢")
-    
-#     col1, col2 = st.columns(2)
-    
-#     with col1:
-#         start_date = st.date_input(
-#             "開始日期",
-#             value=datetime.now().date()
-#         )
-    
-#     with col2:
-#         end_date = st.date_input(
-#             "結束日期",
-#             value=datetime.now().date()
-#         )
-    
-#     machine_id_filter = st.text_input(
-#         "機台ID篩選（可選）",
-#         placeholder="留空表示所有機台"
-#     )
-    
-#     limit = st.number_input(
-#         "查詢筆數上限",
-#         min_value=1,
-#         max_value=1000,
-#         value=100,
-#         step=50
-#     )
-    
-#     if st.button("🔍 查詢", type="primary", width='stretch'):
-#         with st.spinner("查詢中..."):
-#             # 格式化日期
-#             start_date_str = start_date.strftime("%Y-%m-%d")
-#             end_date_str = end_date.strftime("%Y-%m-%d")
-#             machine_id = machine_id_filter if machine_id_filter else None
-            
-#             # 調用 API（使用 AI API）
-#             result = api.get_orders_by_date_range(
-#                 start_date=start_date_str,
-#                 end_date=end_date_str,
-#                 machine_id=machine_id,
-#                 limit=limit
-#             )
-            
-#             if result and "data" in result:
-#                 data = result.get("data", [])
-#                 pagination = result.get("pagination", {})
-                
-#                 # 顯示統計資訊
-#                 col1, col2, col3, col4 = st.columns(4)
-#                 with col1:
-#                     st.metric("總記錄數", pagination.get("total_records", len(data)))
-#                 with col2:
-#                     st.metric("本頁筆數", len(data))
-#                 with col3:
-#                     st.metric("日期範圍", f"{start_date_str} 至 {end_date_str}")
-#                 with col4:
-#                     current_page = pagination.get("current_page", 1)
-#                     total_pages = pagination.get("total_pages", 1)
-#                     st.metric("頁數", f"{current_page}/{total_pages}")
-                
-#                 # 顯示訂單列表
-#                 if data:
-#                     st.markdown("---")
-#                     st.markdown("### 📦 訂單詳情")
-                    
-#                     for idx, order in enumerate(data, 1):
-#                         with st.expander(f"訂單 #{idx} - {order.get('order_number', 'N/A')}", expanded=False):
-#                             render_order_details_from_transactional_data(order)
-#                 else:
-#                     st.info("查詢範圍內沒有找到訂單")
+def render_date_query(api: VendingMachineAPI):
+    """渲染日期查詢界面"""
+    st.markdown("### 📅 依日期區間查詢訂單")
+
+    col1, col2 = st.columns(2)
+    with col1:
+        start_date = st.date_input(
+            "開始日期",
+            value=datetime.now().date() - timedelta(days=7),
+            help="查詢範圍起始日期（含當日）"
+        )
+    with col2:
+        end_date = st.date_input(
+            "結束日期",
+            value=datetime.now().date(),
+            help="查詢範圍結束日期（含當日）"
+        )
+
+    if start_date > end_date:
+        st.error("❌ 開始日期不得晚於結束日期")
+        return
+
+    with st.spinner("載入機台列表..."):
+        machines = api.get_machines()
+
+    machine_options = {"全部機台": None}
+    for machine in machines:
+        machine_id = machine.get('id')
+        machine_code = machine.get('machine_code', 'Unknown')
+        machine_name = machine.get('name', 'Unknown')
+        location_name = machine.get('location_name', '')
+        display_text = f"{machine_name} ({machine_code})" if not location_name else f"{machine_name} ({machine_code}) - {location_name}"
+        machine_options[display_text] = machine_id
+
+    col3, col4, col5 = st.columns([2, 1, 1])
+    with col3:
+        machine_display = st.selectbox(
+            "機台篩選",
+            options=list(machine_options.keys()),
+            help="選擇特定機台或查詢全部機台"
+        )
+    with col4:
+        status_filter = st.selectbox(
+            "訂單狀態",
+            options=["全部", "created", "completed", "cancelled", "failed", "pending"],
+            help="依訂單狀態篩選"
+        )
+    with col5:
+        limit = st.number_input(
+            "每頁筆數",
+            min_value=1,
+            max_value=1000,
+            value=100,
+            step=10,
+            help="單次查詢的筆數上限（最大1000）"
+        )
+
+    limit = int(limit)
+
+    skip = st.number_input(
+        "跳過筆數（分頁）",
+        min_value=0,
+        value=0,
+        step=int(limit),
+        help="用於分頁的跳過筆數，例如查詢第二頁可輸入上一頁的筆數"
+    )
+
+    skip = int(skip)
+
+    if st.button("🔍 查詢訂單", type="primary", width='stretch'):
+        with st.spinner("查詢中..."):
+            try:
+                start_date_str = start_date.strftime("%Y-%m-%d")
+                end_date_str = end_date.strftime("%Y-%m-%d")
+                machine_id = machine_options[machine_display]
+                order_status = status_filter if status_filter != "全部" else None
+
+                result = api.get_orders_with_details(
+                    skip=skip,
+                    limit=limit,
+                    machine_id=machine_id,
+                    order_status=order_status,
+                    start_date=start_date_str,
+                    end_date=end_date_str
+                )
+
+                items = result.get("items", []) if isinstance(result, dict) else []
+                total = result.get("total", len(items))
+
+                if items:
+                    st.success(f"✅ 找到 {len(items)} 筆訂單（總筆數：{total}，範圍：{start_date_str} 至 {end_date_str}）")
+
+                    col_a, col_b, col_c, col_d = st.columns(4)
+                    with col_a:
+                        st.metric("顯示筆數", len(items))
+                    with col_b:
+                        st.metric("總筆數", total)
+                    with col_c:
+                        st.metric("跳過筆數", skip)
+                    with col_d:
+                        st.metric("每頁筆數", limit)
+
+                    if total > skip + len(items):
+                        st.warning("⚠️ 尚有更多訂單未顯示，可調整跳過筆數或增加查詢筆數。")
+
+                    st.markdown("---")
+                    st.markdown("### 📦 訂單詳情")
+
+                    for idx, order in enumerate(items, 1):
+                        header = f"訂單 #{skip + idx} - {order.get('order_number', order.get('id', 'N/A'))}"
+                        with st.expander(header, expanded=False):
+                            render_order_details(order)
+                else:
+                    st.info(f"在 {start_date_str} 至 {end_date_str} 範圍內沒有找到符合條件的訂單")
+            except Exception as e:
+                st.error(f"❌ 查詢失敗：{str(e)}")
+                system_logger.error(f"Date range query failed: {e}")
 
 
 def render_order_details(order: Dict):

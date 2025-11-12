@@ -758,15 +758,23 @@ class VendingMachineAPI:
             return []
 
     def get_orders_with_details(self, skip: int = 0, limit: int = 100, 
-                                machine_id: int = None, order_status: str = None) -> Dict:
+                                machine_id: int = None, order_status: str = None,
+                                start_date: str = None, end_date: str = None) -> Dict:
         """獲取訂單列表（帶詳細資訊和分頁）"""
-        api_logger.debug(f"Fetching orders with details (skip={skip}, limit={limit}, machine_id={machine_id}, status={order_status})")
+        api_logger.debug(
+            f"Fetching orders with details (skip={skip}, limit={limit}, "
+            f"machine_id={machine_id}, status={order_status}, start_date={start_date}, end_date={end_date})"
+        )
         try:
             params = {"skip": skip, "limit": limit}
             if machine_id:
                 params["machine_id"] = machine_id
             if order_status:
                 params["order_status"] = order_status
+            if start_date:
+                params["start_date"] = start_date
+            if end_date:
+                params["end_date"] = end_date
             
             response = requests.get(
                 f"{self.base_url}/orders",

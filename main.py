@@ -346,11 +346,11 @@ def main():
         # 基本功能（所有使用者）
         pages = {
             "🗄️ 機台狀態": "machine_status",
-            "📊 營運儀表板": "dashboard",
-            "📈 銷售數據": "sales_data",
+            # "📊 營運儀表板": "dashboard",
+            # "📈 銷售數據": "sales_data",
             "🛒 商品管理": "inventory",
             "🤖 AI智能推薦": "ai_recommendations",
-            "🧾 配方設定": "settings"
+            # "🧾 配方設定": "settings"
         }
         
         ui_logger.debug(f"Available pages for user {username}: {list(pages.keys())}")
@@ -376,7 +376,7 @@ def main():
             st.markdown("### 📋 功能選單")
             
             # 當前頁面狀態
-            page_key = pages.get(st.session_state.current_page, "dashboard")
+            page_key = pages.get(st.session_state.current_page, "machine_status")
             
             # 顯示所有可用頁面的按鈕
             for page_name in available_pages:
@@ -419,8 +419,8 @@ def main():
     # 顯示頁面內容
     if page_key == "machine_status":
         machine_status_page()
-    elif page_key == "sales_data":
-        sales_analytics_page()
+    # elif page_key == "sales_data":
+    #     sales_analytics_page()
     elif page_key == "inventory":
         menu_management_page()
     elif page_key == "settings":
@@ -433,8 +433,8 @@ def main():
         location_management_page()
     elif page_key == "order_management":
         order_management_page()
-    elif page_key == "dashboard":
-        dashboard_page()
+    # elif page_key == "dashboard":
+    #     dashboard_page()
 
 
 def check_api_connection() -> tuple:
