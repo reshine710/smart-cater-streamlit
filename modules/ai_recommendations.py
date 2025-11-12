@@ -1180,15 +1180,21 @@ def show_transactional_data_analysis():
             end_date_str = end_date.strftime("%Y-%m-%d")
             machine_id = None if machine_filter == "全部" else machine_filter
             
-            # 獲取交易數據
+            # 獲取交易數據（將 skip 轉換為 page 參數）
             if hasattr(st.session_state, 'api') and st.session_state.api:
+                page = (skip // limit) + 1 if limit else 1
+                offset_within_page = skip % limit if limit else 0
+
                 transactional_data = st.session_state.api.get_transactional_data(
                     start_date=start_date_str,
                     end_date=end_date_str,
                     machine_id=machine_id,
                     limit=limit,
-                    skip=skip
+                    page=page
                 )
+
+                if offset_within_page and transactional_data:
+                    transactional_data = transactional_data[offset_within_page:]
             else:
                 st.error("❌ API 客戶端不可用")
                 transactional_data = []

@@ -53,7 +53,7 @@ Use config instead to specify Plotly configuration options.
 ```
 
 **修復**：
-- 將所有 `width="stretch"` 替換為 `use_container_width=True`
+- 將所有 `width="stretch"` 替換為 `width='stretch'`
 - 影響的函數：`st.dataframe()`
 
 **修復前**：
@@ -63,7 +63,7 @@ st.dataframe(menu_df, width="stretch")
 
 **修復後**：
 ```python
-st.dataframe(menu_df, use_container_width=True)
+st.dataframe(menu_df, width='stretch')
 ```
 
 ## 🚨 仍存在的問題

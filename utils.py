@@ -844,30 +844,40 @@ class VendingMachineAPI:
             api_logger.error(f"Network error getting order by number: {str(e)}")
             return None
 
-    def get_orders_by_machine_id(self, machine_id: int) -> List[Dict]:
-        """查詢特定機台的所有訂單"""
-        api_logger.debug(f"Fetching orders for machine ID: {machine_id}")
+    def get_orders_by_machine_id(self, machine_id: int, skip: int = 0, limit: int = 100) -> Dict:
+        """查詢特定機台的訂單（支援分頁）"""
+        api_logger.debug(f"Fetching orders for machine ID: {machine_id}, skip={skip}, limit={limit}")
         try:
+            params = {
+                "machine_id": machine_id,
+                "skip": skip,
+                "limit": limit
+            }
+
             response = requests.get(
-                f"{self.base_url}/orders/machine/{machine_id}",
+                f"{self.base_url}/orders",
                 headers=self._get_auth_headers(),
+                params=params,
                 timeout=30
             )
             
             if response.status_code == 200:
-                orders = response.json()
-                api_logger.info(f"Successfully retrieved {len(orders)} orders for machine {machine_id}")
-                return orders
+                response_data = response.json()
+                api_logger.info(
+                    f"Successfully retrieved orders for machine {machine_id}: "
+                    f"total={response_data.get('total', 'N/A')}, items={len(response_data.get('items', []))}"
+                )
+                return response_data
             elif response.status_code == 404:
                 api_logger.warning(f"Machine not found or no orders: {machine_id}")
-                return []
+                return {"total": 0, "items": []}
             else:
                 api_logger.warning(f"Failed to get orders - Status code: {response.status_code}")
-                return []
+                return {"total": 0, "items": []}
                 
         except requests.exceptions.RequestException as e:
             api_logger.error(f"Network error getting orders by machine ID: {str(e)}")
-            return []
+            return {"total": 0, "items": []}
 
     def get_orders_by_date_range(self, start_date: str, end_date: str, 
                                  machine_id: str = None, limit: int = 100) -> Dict:
@@ -1561,16 +1571,24 @@ class VendingMachineAPI:
             return False
 
     def get_transactional_data(self, start_date: str, end_date: str, machine_id: str = None, 
-                             limit: int = 100, skip: int = 0) -> List[Dict]:
+                             limit: int = 100, page: int = 1) -> List[Dict]:
         """獲取交易數據（AI分析用）"""
-        api_logger.debug(f"Fetching transactional data from {start_date} to {end_date}")
+        api_logger.debug(
+            f"Fetching transactional data from {start_date} to {end_date}, "
+            f"machine_id={machine_id}, page={page}, limit={limit}"
+        )
         try:
+            # API 要求 limit 最大 1000
+            if limit > 1000:
+                api_logger.warning(f"Transactional data limit {limit} exceeds 1000, using 1000 instead")
+                limit = 1000
+
             # 構建查詢參數
             params = {
                 "start_date": start_date,
                 "end_date": end_date,
                 "limit": limit,
-                "skip": skip
+                "page": page
             }
             if machine_id:
                 params["machine_id"] = machine_id
@@ -1583,9 +1601,25 @@ class VendingMachineAPI:
             )
             
             if response.status_code == 200:
-                data = response.json()
-                api_logger.info(f"Successfully fetched {len(data.get('data', []))} transactional records")
-                return data.get('data', [])
+                payload = response.json()
+                items = payload.get('items')
+
+                # 舊版 API 可能使用 data 欄位
+                if items is None and 'data' in payload:
+                    items = payload.get('data', [])
+
+                if items is None and isinstance(payload, list):
+                    items = payload
+
+                total = payload.get('total', len(items) if items else 0)
+                current_page = payload.get('page', page)
+                page_limit = payload.get('limit', limit)
+
+                api_logger.info(
+                    f"Successfully fetched transactional records "
+                    f"(total={total}, page={current_page}, limit={page_limit}, returned={len(items or [])})"
+                )
+                return items or []
             elif response.status_code == 400:
                 error_detail = response.json().get('detail', 'Invalid request')
                 api_logger.warning(f"Invalid transactional data request: {error_detail}")
@@ -1628,6 +1662,7 @@ class VendingMachineAPI:
             st.error(f"❌ 獲取交易數據時發生未預期的錯誤：{str(e)}")
             return []
 
+    # TODO: 有問題，無法正確取得訂單資訊，需要進行檢查修改
     def get_transactional_data_for_dashboard(self, start_date: str, end_date: str, 
                                              machine_id: str = None, limit: int = 1000) -> List[Dict]:
         """

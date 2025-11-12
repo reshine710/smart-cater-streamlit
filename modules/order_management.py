@@ -279,7 +279,11 @@ def create_order_from_row(db, row) -> Tuple[int, str]:
         )
 
         # 如果有推薦項目，更新訂單的 recommended_items（支援新舊格式及拼寫錯誤）
-        recommended_item = row.get("recommended_item", row.get("recommend", row.get("recommand"))) # codespell:ignore recommand
+        recommended_item = row.get(
+            "recommended_item", 
+            row.get("recommend", 
+            row.get("recommand"))   # codespell:ignore recommand
+        ) 
         if pd.notna(recommended_item):
             # 正確序列化 JSON 資料
             recommended_items = {"items": [str(recommended_item)]}
@@ -431,7 +435,7 @@ def render_order_upload_tab():
             preview_mode = st.checkbox("🔍 預覽模式（不實際上傳）", value=False)
         
         with col2:
-            if st.button("🚀 開始上傳", type="primary", use_container_width=True):
+            if st.button("🚀 開始上傳", type="primary", width='stretch'):
                 # 處理所有文件
                 total_success = 0
                 total_fail = 0
@@ -454,7 +458,7 @@ def render_order_upload_tab():
                             
                             # 顯示前幾筆資料預覽
                             st.markdown("##### 數據預覽（前 5 筆）")
-                            st.dataframe(df.head(), use_container_width=True)
+                            st.dataframe(df.head(), width='stretch')
                             
                             if not preview_mode:
                                 st.markdown("---")
@@ -543,7 +547,7 @@ def render_order_upload_tab():
         }
         
         example_df = pd.DataFrame(example_data)
-        st.dataframe(example_df, use_container_width=True)
+        st.dataframe(example_df, width='stretch')
 
 
 def render_order_query_tab():
@@ -590,7 +594,7 @@ def render_list_query(api: VendingMachineAPI):
             ["全部", "CREATED", "PENDING", "COMPLETED", "CANCELLED", "FAILED"]
         )
     
-    if st.button("🔍 開始查詢", type="primary", use_container_width=True):
+    if st.button("🔍 開始查詢", type="primary", width='stretch'):
         with st.spinner("查詢中..."):
             # 準備查詢參數
             machine_id = int(machine_id_filter) if machine_id_filter else None
@@ -635,7 +639,7 @@ def render_list_query(api: VendingMachineAPI):
     
 #     order_id = st.number_input("訂單ID", min_value=1, value=1, step=1)
     
-#     if st.button("🔍 查詢", type="primary", use_container_width=True):
+#     if st.button("🔍 查詢", type="primary", width='stretch'):
 #         with st.spinner("查詢中..."):
 #             order = api.get_order_by_id(order_id)
             
@@ -656,7 +660,7 @@ def render_number_query(api: VendingMachineAPI):
         placeholder="例如：600000031762416122"
     )
     
-    if st.button("🔍 查詢", type="primary", use_container_width=True):
+    if st.button("🔍 查詢", type="primary", width='stretch'):
         if not order_number:
             st.warning("請輸入訂單編號")
             return
@@ -674,23 +678,113 @@ def render_number_query(api: VendingMachineAPI):
 
 def render_machine_query(api: VendingMachineAPI):
     """渲染機台查詢界面"""
-    st.markdown("### 🏪 根據機台ID查詢")
+    st.markdown("### 🏪 根據機台查詢訂單")
     
-    machine_id = st.number_input("機台ID", min_value=1, value=1, step=1)
+    # 獲取所有機台列表
+    with st.spinner("載入機台列表..."):
+        machines = api.get_machines()
     
-    if st.button("🔍 查詢", type="primary", use_container_width=True):
-        with st.spinner("查詢中..."):
-            orders = api.get_orders_by_machine_id(machine_id)
+    if not machines:
+        st.error("❌ 無法獲取機台列表，請檢查 API 連接")
+        return
+    
+    # 準備下拉選單選項
+    machine_options = {}
+    for machine in machines:
+        machine_id = machine.get('id')
+        machine_code = machine.get('machine_code', 'Unknown')
+        machine_name = machine.get('name', 'Unknown')
+        location_name = machine.get('location_name', '')
+        
+        # 顯示格式：機台名稱 (機台編碼) - 地點
+        if location_name:
+            display_text = f"{machine_name} ({machine_code}) - {location_name}"
+        else:
+            display_text = f"{machine_name} ({machine_code})"
+        
+        machine_options[display_text] = {
+            'id': machine_id,
+            'code': machine_code,
+            'name': machine_name
+        }
+    
+    # 機台選擇和查詢筆數設定
+    col1, col2 = st.columns([3, 1])
+    
+    with col1:
+        # 下拉選單
+        selected_display = st.selectbox(
+            "選擇機台",
+            options=list(machine_options.keys()),
+            help="選擇要查詢訂單的機台"
+        )
+    
+    with col2:
+        # 查詢筆數設定
+        limit = st.number_input(
+            "查詢筆數",
+            min_value=1,
+            max_value=1000,
+            value=100,
+            step=10,
+            help="設定要查詢的訂單數量上限"
+        )
+    
+    # 顯示選中機台的資訊
+    if selected_display:
+        selected_machine = machine_options[selected_display]
+        st.info(f"📋 機台編碼: {selected_machine['code']} | 機台名稱: {selected_machine['name']} | 查詢筆數: {limit}")
+    
+    if st.button("🔍 查詢訂單", type="primary", width='stretch'):
+        if not selected_display:
+            st.warning("請選擇機台")
+            return
+        
+        selected_machine = machine_options[selected_display]
+        machine_id = selected_machine['id']
+        machine_code = selected_machine['code']
+        
+        with st.spinner(f"正在查詢機台 {machine_code} 的訂單（最多 {limit} 筆）..."):
+            system_logger.info(f"查詢機台 {machine_id} ({machine_code}) 的訂單，page=1, limit={limit}")
+            result = api.get_orders_by_machine_id(machine_id=machine_id, limit=limit)
+            
+            orders = result.get("items", []) if isinstance(result, dict) else []
+            total_orders = result.get("total", len(orders)) if isinstance(result, dict) else len(orders)
+            
+            system_logger.info(f"API 返回 total={total_orders}, items={len(orders)}（設定 limit={limit}）")
             
             if orders:
-                st.success(f"✅ 找到 {len(orders)} 筆訂單")
+                st.success(f"✅ 找到 {len(orders)} 筆訂單（總筆數：{total_orders}，查詢上限：{limit}）")
+                
+                # 如果總筆數大於查詢上限，提醒用戶
+                if total_orders > limit:
+                    st.warning(f"⚠️ 總共有 {total_orders} 筆訂單，目前僅顯示前 {limit} 筆。如需查看更多，請增加查詢筆數。")
+                elif total_orders == limit and len(orders) == limit:
+                    st.warning(f"⚠️ 已達到查詢筆數上限（{limit} 筆），可能還有更多訂單未顯示。如需查看更多，請增加查詢筆數。")
+                
+                st.markdown("---")
+                
+                # 顯示統計資訊
+                col1, col2, col3 = st.columns(3)
+                with col1:
+                    st.metric("顯示筆數", len(orders))
+                with col2:
+                    total_amount = sum(order.get('total_amount', 0) for order in orders)
+                    st.metric("總金額", f"${total_amount:.2f}")
+                with col3:
+                    avg_amount = total_amount / len(orders) if orders else 0
+                    st.metric("平均金額", f"${avg_amount:.2f}")
+                
                 st.markdown("---")
                 
                 for idx, order in enumerate(orders, 1):
                     with st.expander(f"訂單 #{idx} - {order.get('order_number', 'N/A')}", expanded=False):
                         render_order_details(order)
             else:
-                st.info(f"該機台沒有找到訂單")
+                if total_orders == 0:
+                    st.info(f"機台 {machine_code} 沒有找到訂單")
+                else:
+                    st.info(f"機台 {machine_code} 沒有找到符合查詢條件的訂單")
 
 
 # def render_date_query(api: VendingMachineAPI):
@@ -724,7 +818,7 @@ def render_machine_query(api: VendingMachineAPI):
 #         step=50
 #     )
     
-#     if st.button("🔍 查詢", type="primary", use_container_width=True):
+#     if st.button("🔍 查詢", type="primary", width='stretch'):
 #         with st.spinner("查詢中..."):
 #             # 格式化日期
 #             start_date_str = start_date.strftime("%Y-%m-%d")
@@ -780,17 +874,291 @@ def render_order_details_from_transactional_data(order: Dict):
     st.json(order)
 
 
+def delete_orders_by_date_range(start_date: datetime, end_date: datetime) -> Tuple[int, int]:
+    """
+    按日期範圍刪除訂單
+    
+    返回: (刪除前數量, 刪除成功數量)
+    """
+    try:
+        db = get_database_connection()
+        
+        # 設定時間範圍（開始日期的 00:00:00 到結束日期的 23:59:59）
+        start_dt = start_date.replace(hour=0, minute=0, second=0, microsecond=0)
+        end_dt = end_date.replace(hour=23, minute=59, second=59, microsecond=999999)
+        
+        # 查詢該日期區間的訂單
+        query = text("""
+            SELECT id, order_number, created_at
+            FROM orders
+            WHERE created_at >= :start_dt AND created_at <= :end_dt
+            ORDER BY id ASC
+        """)
+        
+        candidates = db.execute(
+            query,
+            {"start_dt": start_dt, "end_dt": end_dt}
+        ).fetchall()
+        
+        total_before = len(candidates)
+        system_logger.info(f"找到 {total_before} 筆訂單，日期區間: {start_dt} ~ {end_dt}")
+        
+        # 刪除訂單
+        deleted = 0
+        for order_row in candidates:
+            order_id = order_row[0]
+            try:
+                # 先刪除訂單項目
+                delete_items_query = text("""
+                    DELETE FROM order_items WHERE order_id = :order_id
+                """)
+                db.execute(delete_items_query, {"order_id": order_id})
+                
+                # 再刪除訂單
+                delete_order_query = text("""
+                    DELETE FROM orders WHERE id = :order_id
+                """)
+                db.execute(delete_order_query, {"order_id": order_id})
+                deleted += 1
+            except Exception as e:
+                system_logger.error(f"刪除訂單 {order_id} 失敗: {e}")
+        
+        db.commit()
+        system_logger.info(f"刪除完成，共刪除 {deleted} 筆訂單")
+        
+        return total_before, deleted
+        
+    except Exception as e:
+        db.rollback()
+        system_logger.error(f"批量刪除訂單失敗: {e}")
+        raise
+    finally:
+        db.close()
+
+
+def delete_order_by_number(order_number: str) -> bool:
+    """
+    按訂單編號刪除訂單
+    
+    返回: 是否刪除成功
+    """
+    try:
+        db = get_database_connection()
+        
+        # 查詢訂單
+        query = text("""
+            SELECT id, order_number
+            FROM orders
+            WHERE order_number = :order_number
+        """)
+        
+        result = db.execute(query, {"order_number": order_number}).fetchone()
+        
+        if not result:
+            system_logger.warning(f"找不到訂單編號: {order_number}")
+            return False
+        
+        order_id = result[0]
+        
+        # 刪除訂單項目
+        delete_items_query = text("""
+            DELETE FROM order_items WHERE order_id = :order_id
+        """)
+        db.execute(delete_items_query, {"order_id": order_id})
+        
+        # 刪除訂單
+        delete_order_query = text("""
+            DELETE FROM orders WHERE id = :order_id
+        """)
+        db.execute(delete_order_query, {"order_id": order_id})
+        
+        db.commit()
+        system_logger.info(f"成功刪除訂單: {order_number} (ID: {order_id})")
+        return True
+        
+    except Exception as e:
+        db.rollback()
+        system_logger.error(f"刪除訂單 {order_number} 失敗: {e}")
+        raise
+    finally:
+        db.close()
+
+
+def render_delete_by_date():
+    """渲染按日期刪除界面"""
+    st.markdown("### 📅 按日期範圍刪除訂單")
+    
+    st.warning("⚠️ **警告**：此操作不可逆，請謹慎使用！刪除後無法恢復訂單數據。")
+    
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        start_date = st.date_input(
+            "開始日期",
+            value=datetime.now().date(),
+            help="選擇要刪除訂單的起始日期"
+        )
+    
+    with col2:
+        end_date = st.date_input(
+            "結束日期",
+            value=datetime.now().date(),
+            help="選擇要刪除訂單的結束日期"
+        )
+    
+    # 日期驗證
+    if start_date > end_date:
+        st.error("❌ 開始日期不能晚於結束日期！")
+        return
+    
+    # 顯示將要刪除的日期範圍
+    st.info(f"📆 將刪除日期範圍：{start_date} 至 {end_date}")
+    
+    # 安全確認機制
+    st.markdown("---")
+    st.markdown("#### 🔒 安全確認")
+    
+    confirmation_text = st.text_input(
+        "請輸入 'DELETE' 以確認刪除",
+        placeholder="輸入 DELETE",
+        help="為防止誤操作，請輸入 DELETE 確認"
+    )
+    
+    col_btn1, col_btn2, col_btn3 = st.columns([1, 1, 2])
+    
+    with col_btn1:
+        if st.button("🗑️ 確認刪除", type="primary", width='stretch', disabled=(confirmation_text != "DELETE")):
+            if confirmation_text == "DELETE":
+                with st.spinner("正在刪除訂單..."):
+                    try:
+                        # 轉換為 datetime
+                        start_dt = datetime.combine(start_date, datetime.min.time())
+                        end_dt = datetime.combine(end_date, datetime.max.time())
+                        
+                        # 執行刪除
+                        total_before, deleted = delete_orders_by_date_range(start_dt, end_dt)
+                        
+                        # 顯示結果
+                        st.success(f"✅ 刪除完成！")
+                        
+                        col_stat1, col_stat2, col_stat3 = st.columns(3)
+                        with col_stat1:
+                            st.metric("刪除前數量", total_before)
+                        with col_stat2:
+                            st.metric("成功刪除", deleted)
+                        with col_stat3:
+                            remain = total_before - deleted
+                            st.metric("剩餘", remain)
+                        
+                        if deleted == total_before and total_before > 0:
+                            st.balloons()
+                            st.success(f"🎉 已成功刪除該日期範圍內的所有 {deleted} 筆訂單！")
+                        elif total_before == 0:
+                            st.info("ℹ️ 該日期範圍內沒有找到訂單")
+                        else:
+                            st.warning(f"⚠️ 部分訂單刪除失敗，剩餘 {total_before - deleted} 筆")
+                            
+                    except Exception as e:
+                        st.error(f"❌ 刪除失敗: {e}")
+                        system_logger.error(f"按日期刪除訂單失敗: {e}")
+            else:
+                st.warning("⚠️ 請輸入 'DELETE' 以確認刪除")
+    
+    with col_btn2:
+        if st.button("🔄 重置", width='stretch'):
+            st.rerun()
+
+
+def render_delete_by_number():
+    """渲染按訂單編號刪除界面"""
+    st.markdown("### 📝 按訂單編號刪除")
+    
+    st.warning("⚠️ **警告**：此操作不可逆，請謹慎使用！刪除後無法恢復訂單數據。")
+    
+    order_number = st.text_input(
+        "訂單編號",
+        placeholder="例如：600000031762416122",
+        help="輸入要刪除的訂單編號"
+    )
+    
+    if order_number:
+        st.info(f"📋 將刪除訂單編號：{order_number}")
+    
+    # 安全確認機制
+    st.markdown("---")
+    st.markdown("#### 🔒 安全確認")
+    
+    confirmation_text = st.text_input(
+        "請輸入訂單編號以確認刪除",
+        placeholder="再次輸入訂單編號",
+        help="為防止誤操作，請再次輸入訂單編號"
+    )
+    
+    col_btn1, col_btn2, col_btn3 = st.columns([1, 1, 2])
+    
+    with col_btn1:
+        if st.button("🗑️ 確認刪除", type="primary", width='stretch', disabled=(not order_number or confirmation_text != order_number)):
+            if not order_number:
+                st.warning("⚠️ 請輸入訂單編號")
+            elif confirmation_text != order_number:
+                st.warning("⚠️ 確認訂單編號不匹配，請重新輸入")
+            else:
+                with st.spinner("正在刪除訂單..."):
+                    try:
+                        success = delete_order_by_number(order_number)
+                        
+                        if success:
+                            st.success(f"✅ 訂單 {order_number} 已成功刪除！")
+                            st.balloons()
+                        else:
+                            st.error(f"❌ 找不到訂單編號: {order_number}")
+                            
+                    except Exception as e:
+                        st.error(f"❌ 刪除失敗: {e}")
+                        system_logger.error(f"按訂單編號刪除失敗: {e}")
+    
+    with col_btn2:
+        if st.button("🔄 重置", width='stretch'):
+            st.rerun()
+
+
+def render_order_delete_tab():
+    """訂單刪除功能標籤頁"""
+    st.subheader("🗑️ 訂單刪除")
+    
+    # 顯示重要警告
+    st.error("⚠️ **重要提示**：訂單刪除操作無法撤銷！請務必確認後再執行。建議在刪除前先備份數據。")
+    
+    # 刪除方式選擇
+    delete_method = st.radio(
+        "選擇刪除方式",
+        ["📅 按日期範圍刪除", "📝 按訂單編號刪除"],
+        horizontal=True
+    )
+    
+    st.markdown("---")
+    
+    # 根據選擇的刪除方式顯示對應的界面
+    if delete_method == "📅 按日期範圍刪除":
+        render_delete_by_date()
+    elif delete_method == "📝 按訂單編號刪除":
+        render_delete_by_number()
+
+
 def order_management_page():
     """訂單管理主頁面"""
     st.header("📦 訂單管理")
     st.markdown("---")
     
     # 創建標籤頁
-    tab1, tab2 = st.tabs(["📤 訂單上傳", "🔍 訂單查詢"])
+    tab1, tab2, tab3 = st.tabs(["📤 訂單上傳", "🔍 訂單查詢", "🗑️ 訂單刪除"])
     
     with tab1:
         render_order_upload_tab()
     
     with tab2:
         render_order_query_tab()
+    
+    with tab3:
+        render_order_delete_tab()
 

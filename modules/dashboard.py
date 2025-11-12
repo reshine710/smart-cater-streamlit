@@ -43,7 +43,7 @@ def dashboard_page():
                     end_date_str,
                     limit=1000  # API 最大限制為 1000
                 )
-            
+
             if not sales_data:
                 st.info(f"📊 在選定期間 ({start_date_str} 至 {end_date_str}) 沒有交易資料")
             else:
@@ -72,9 +72,26 @@ def dashboard_page():
             total_sales = 0
             for s in sales_data:
                 # 嘗試不同的價格和數量欄位名稱
-                price = s.get('price', s.get('amount', s.get('total_amount', 0)))
-                quantity = s.get('quantity', s.get('count', 1))
-                total_sales += price * quantity
+                price = (
+                    s.get('price')
+                    or s.get('amount')
+                    or s.get('total_amount')
+                    or s.get('unit_price')
+                    or s.get('unitPrice')
+                    or 0
+                )
+                quantity = (
+                    s.get('quantity')
+                    or s.get('count')
+                    or s.get('quantity_sold')
+                    or s.get('qty')
+                    or 1
+                )
+
+                subtotal = s.get('subtotal') or s.get('total') or s.get('total_amount')
+                if subtotal is None:
+                    subtotal = price * quantity
+                total_sales += subtotal
             
             # 根據日期範圍調整標籤
             days_diff = (end_date - start_date).days + 1
@@ -118,7 +135,7 @@ def dashboard_page():
             
             # 處理不同的時間戳欄位名稱
             timestamp_field = None
-            for field in ['timestamp', 'created_at', 'order_date', 'date', 'transaction_time', 'order_time']:
+            for field in ['timestamp', 'created_at', 'order_date', 'date', 'transaction_time', 'order_time', 'purchase_timestamp']:
                 if field in df_sales.columns:
                     timestamp_field = field
                     break
@@ -141,9 +158,25 @@ def dashboard_page():
                         # 計算每筆交易的總金額
                         df_sales['total_amount'] = 0
                         for idx, row in df_sales.iterrows():
-                            price = row.get('price', row.get('amount', row.get('total_amount', 0)))
-                            quantity = row.get('quantity', row.get('count', 1))
-                            df_sales.at[idx, 'total_amount'] = price * quantity
+                            price = (
+                                row.get('price')
+                                or row.get('amount')
+                                or row.get('total_amount')
+                                or row.get('unit_price')
+                                or row.get('unitPrice')
+                                or 0
+                            )
+                            quantity = (
+                                row.get('quantity')
+                                or row.get('count')
+                                or row.get('quantity_sold')
+                                or row.get('qty')
+                                or 1
+                            )
+                            subtotal = row.get('subtotal') or row.get('total') or row.get('total_amount')
+                            if subtotal is None:
+                                subtotal = price * quantity
+                            df_sales.at[idx, 'total_amount'] = subtotal
                         
                         daily_sales = df_sales.groupby('date').agg({
                             'total_amount': 'sum'
@@ -185,7 +218,7 @@ def dashboard_page():
             
             # 處理不同的商品名稱欄位
             item_field = None
-            for field in ['item_name', 'product_name', 'name', 'menu_item_name', 'product', 'item']:
+            for field in ['item_name', 'product_name', 'name', 'menu_item_name', 'product', 'item', 'meal_id', 'product_code']:
                 if field in df_sales.columns:
                     item_field = field
                     break
@@ -193,7 +226,7 @@ def dashboard_page():
             if item_field:
                 # 找到數量欄位
                 quantity_field = None
-                for field in ['quantity', 'count', 'amount']:
+                for field in ['quantity', 'count', 'amount', 'quantity_sold', 'qty']:
                     if field in df_sales.columns:
                         quantity_field = field
                         break

@@ -74,6 +74,10 @@ def login_function(username, password):
         else:
             auth_logger.warning(f"Login failed for username: {username}")
             st.error("❌ 登入失敗，請檢查帳號密碼")
+            st.warning(
+                "⚠️ 若後端服務目前無法連線，系統會改用離線模式。離線模式僅支援以下測試帳號：\n"
+                "請確認使用的帳號密碼是否正確，或稍後再嘗試登入。"
+            )
     else:
         st.warning("請輸入使用者名稱和密碼")
 
@@ -382,12 +386,12 @@ def main():
                 # 使用不同的樣式來區分當前頁面和其他頁面
                 if is_current_page:
                     # 當前頁面使用主要按鈕樣式
-                    if st.button(page_name, key=f"nav_{page_value}", type="primary", use_container_width=True):
+                    if st.button(page_name, key=f"nav_{page_value}", type="primary", width='stretch'):
                         st.session_state.current_page = page_name
                         st.rerun()
                 else:
                     # 其他頁面使用次要按鈕樣式
-                    if st.button(page_name, key=f"nav_{page_value}", use_container_width=True):
+                    if st.button(page_name, key=f"nav_{page_value}", width='stretch'):
                         st.session_state.current_page = page_name
                         st.rerun()
             

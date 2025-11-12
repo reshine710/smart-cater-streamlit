@@ -1241,10 +1241,10 @@ def show_edit_machine_dialog_content(machine: Dict):
         col_submit, col_cancel = st.columns(2)
         
         with col_submit:
-            submitted = st.form_submit_button("💾 儲存變更", type="primary", use_container_width=True)
+            submitted = st.form_submit_button("💾 儲存變更", type="primary", width='stretch')
         
         with col_cancel:
-            cancelled = st.form_submit_button("❌ 取消", use_container_width=True)
+            cancelled = st.form_submit_button("❌ 取消", width='stretch')
         
         if cancelled:
             st.rerun()
