@@ -64,6 +64,7 @@ def menu_management_page():
             
             with col1:
                 new_name = st.text_input("商品名稱 *", placeholder="例：拿鐵咖啡")
+                new_product_code = st.text_input("商品代碼", placeholder="例：A001", help="產品編號，用於訂單管理")
                 new_description = st.text_area("商品描述", placeholder="詳細描述商品特色...")
                 new_price = st.number_input("價格 (NT$) *", min_value=0.0, step=1.0, format="%.1f")
                 new_image_url = st.text_input("圖片網址", placeholder="https://example.com/image.jpg")
@@ -99,6 +100,7 @@ def menu_management_page():
                     # 構建菜單項目數據
                     menu_item_data = {
                         "name": new_name,
+                        "product_code": new_product_code.strip() if new_product_code else None,
                         "description": new_description or f"{new_name} - 美味可口",
                         "price": float(new_price),
                         "image_url": new_image_url or "https://via.placeholder.com/300x200?text=No+Image",
@@ -142,6 +144,7 @@ def show_menu_item_details(item: Dict, index: int):
     col1, col2, col3 = st.columns([2, 2, 1])
     
     with col1:
+        st.write(f"**商品代碼**: {item.get('product_code', '未設定')}")
         st.write(f"**描述**: {item.get('description', '無描述')}")
         st.write(f"**加熱方式**: {format_heating_method(item.get('heating_method', 'none'))}")
         if item.get('heating_time', 0) > 0:
@@ -284,6 +287,8 @@ def show_edit_menu_item_form(item: Dict):
         col1, col2 = st.columns(2)
         with col1:
             updated_name = st.text_input("商品名稱", value=item.get('name', ''))
+            updated_product_code = st.text_input("商品代碼", value=item.get('product_code', ''), 
+                                                placeholder="例：A001", help="產品編號，用於訂單管理")
             updated_description = st.text_area("商品描述", value=item.get('description', ''))
             updated_price = st.number_input("價格 (NT$)", value=float(item.get('price', 0)), min_value=0.0, step=1.0)
         
@@ -301,6 +306,7 @@ def show_edit_menu_item_form(item: Dict):
             if st.button("💾 儲存更改", width="stretch"):
                 update_data = {
                     "name": updated_name,
+                    "product_code": updated_product_code.strip() if updated_product_code else None,
                     "description": updated_description,
                     "price": float(updated_price),
                     "heating_method": updated_heating_method,
@@ -480,6 +486,7 @@ def show_menu_analytics(menu_items: List[Dict]):
         for item in menu_items:
             df_data.append({
                 'ID': item.get('id', 'N/A'),
+                '商品代碼': item.get('product_code', '未設定'),
                 '名稱': item.get('name', 'Unknown'),
                 '價格': f"NT$ {item.get('price', 0):.1f}",
                 '加熱方式': format_heating_method(item.get('heating_method', 'none')),
