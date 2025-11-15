@@ -154,10 +154,9 @@ def render_machine_card(machine: Dict, status_config: Dict):
     # 獲取其他資訊
     ip_address = machine.get('ip_address', 'N/A')
     firmware_version = machine.get('firmware_version', 'N/A')
-    last_heartbeat = machine.get('last_heartbeat', 'N/A')
     
-    # 計算最後心跳時間
-    heartbeat_status = get_heartbeat_status(last_heartbeat)
+    # 計算最後心跳時間（優先使用 last_online，否則使用 last_heartbeat）
+    heartbeat_status = get_heartbeat_status(machine)
     
     # 創建卡片容器
     with st.container():
@@ -231,10 +230,12 @@ def render_machine_card(machine: Dict, status_config: Dict):
                     if current_status == 'missing':
                         if st.button("✅ 恢復", key=f"overview_resume_{machine_id}"):
                             try:
-                                # API 仍使用 maintenance，但顯示為 missing
-                                success = st.session_state.api.update_machine_status(machine_id, "online")
-                                if success:
-                                    ui_logger.info(f"Machine {machine_id} status updated to online via API")
+                                # 使用新的狀態事件 API
+                                result = st.session_state.api.update_machine_status_by_code(
+                                    machine_code, "online", "機台恢復正常"
+                                )
+                                if result:
+                                    ui_logger.info(f"Machine {machine_code} status updated to online via status event API")
                                     st.success(f"✅ {machine_name} 已恢復正常")
                                     time.sleep(1)
                                     st.rerun()
@@ -246,10 +247,12 @@ def render_machine_card(machine: Dict, status_config: Dict):
                     else:
                         if st.button("🔧 設為未知錯誤", key=f"overview_missing_{machine_id}"):
                             try:
-                                # API 仍使用 maintenance，但顯示為 missing
-                                success = st.session_state.api.update_machine_status(machine_id, "maintenance")
-                                if success:
-                                    ui_logger.info(f"Machine {machine_id} status updated to maintenance (missing) via API")
+                                # 使用新的狀態事件 API，設為故障狀態
+                                result = st.session_state.api.update_machine_status_by_code(
+                                    machine_code, "missing", "機台未知錯誤，失去心跳"
+                                )
+                                if result:
+                                    ui_logger.info(f"Machine {machine_code} status updated to missing (fault) via status event API")
                                     st.success(f"✅ {machine_name} 已設為未知錯誤狀態")
                                     time.sleep(1)
                                     st.rerun()
@@ -291,17 +294,38 @@ def render_machine_card(machine: Dict, status_config: Dict):
             if st.button("📋 查看當前菜單", key=f"view_menu_{machine_id}"):
                 show_machine_menu_dialog(machine_id, machine_name)
 
-def get_heartbeat_status(last_heartbeat) -> str:
-    """獲取心跳狀態"""
-    if last_heartbeat == 'N/A' or not last_heartbeat:
+def get_heartbeat_status(machine_or_time) -> str:
+    """
+    獲取心跳狀態
+    
+    Args:
+        machine_or_time: 可以是機台字典物件或時間戳字串/物件
+                        如果是字典，會優先使用 'last_online'，否則使用 'last_heartbeat'
+                        如果是時間戳，直接使用該時間戳
+    
+    Returns:
+        str: 心跳狀態字串
+    """
+    # 如果是字典物件，優先使用 last_online，否則使用 last_heartbeat
+    if isinstance(machine_or_time, dict):
+        last_time = machine_or_time.get('last_online') or machine_or_time.get('last_heartbeat')
+    else:
+        last_time = machine_or_time
+    
+    if not last_time or last_time == 'N/A' or last_time == 'Unknown':
         return "🔴 無心跳"
     
     try:
         # 嘗試解析時間戳
-        if isinstance(last_heartbeat, str):
-            heartbeat_time = datetime.fromisoformat(last_heartbeat.replace('Z', '+00:00'))
+        if isinstance(last_time, str):
+            # 處理 ISO8601 格式的時間字串
+            heartbeat_time = datetime.fromisoformat(last_time.replace('Z', '+00:00'))
+        elif isinstance(last_time, datetime):
+            heartbeat_time = last_time
         else:
-            heartbeat_time = last_heartbeat
+            # 如果是其他類型，嘗試轉換
+            ui_logger.warning(f"Unexpected heartbeat time type: {type(last_time)}")
+            return "⚪ 未知"
         
         # 計算時間差
         now = datetime.now(heartbeat_time.tzinfo) if heartbeat_time.tzinfo else datetime.now()
@@ -321,6 +345,21 @@ def machine_status_page():
     """機台狀態監控頁面"""
     ui_logger.info(f"User {st.session_state.get('username', 'Unknown')} accessing machine status page")
     st.title("🖥️ 機台狀態監控")
+    
+    # 添加全部機台刷新按鈕
+    col_title, col_refresh = st.columns([4, 1])
+    with col_title:
+        pass  # 保留標題空間
+    with col_refresh:
+        if st.button("🔄 刷新全部機台", key="refresh_all_machines", type="primary", use_container_width=True):
+            # 清除可能的快取，強制重新獲取資料
+            if 'machines_cache' in st.session_state:
+                del st.session_state.machines_cache
+            ui_logger.info("User triggered refresh all machines")
+            st.success("✅ 正在刷新機台資料...")
+            time.sleep(0.5)  # 短暫延遲讓用戶看到提示
+            st.rerun()
+    
     st.markdown("---")
     
     ui_logger.debug("Machine status page accessed")
@@ -595,7 +634,11 @@ def machine_status_page():
                     st.write(f"**溫度**: {temperature}°C")
                 else:
                     st.write("**溫度**: N/A")
-                st.write(f"**最後心跳**: {machine.get('last_heartbeat', 'Unknown')}")
+                # 顯示最後心跳時間（優先使用 last_online，否則使用 last_heartbeat）
+                last_online = machine.get('last_online')
+                last_heartbeat = machine.get('last_heartbeat')
+                last_time_display = last_online or last_heartbeat or 'Unknown'
+                st.write(f"**最後心跳**: {last_time_display}")
             
             with col3:
                 # 機台操作按鈕 (使用 REST API)
@@ -615,9 +658,12 @@ def machine_status_page():
                         if st.button(f"✅ 恢復正常 {machine_id}", 
                                    key=f"detail_resume_{machine_id}"):
                             try:
-                                success = st.session_state.api.update_machine_status(machine_id, "online")
-                                if success:
-                                    ui_logger.info(f"Machine {machine_id} status updated to online via API")
+                                # 使用新的狀態事件 API
+                                result = st.session_state.api.update_machine_status_by_code(
+                                    machine_code, "online", "機台恢復正常"
+                                )
+                                if result:
+                                    ui_logger.info(f"Machine {machine_code} status updated to online via status event API")
                                     st.success(f"✅ 機台 {machine_name} 已恢復正常模式")
                                     time.sleep(1)
                                     st.rerun()
@@ -630,10 +676,12 @@ def machine_status_page():
                         if st.button(f"🔧 設為未知錯誤 {machine_id}", 
                                    key=f"detail_missing_{machine_id}"):
                             try:
-                                # API 仍使用 maintenance，但顯示為 missing
-                                success = st.session_state.api.update_machine_status(machine_id, "maintenance")
-                                if success:
-                                    ui_logger.info(f"Machine {machine_id} status updated to maintenance (missing) via API")
+                                # 使用新的狀態事件 API，設為故障狀態
+                                result = st.session_state.api.update_machine_status_by_code(
+                                    machine_code, "missing", "機台未知錯誤，失去心跳"
+                                )
+                                if result:
+                                    ui_logger.info(f"Machine {machine_code} status updated to missing (fault) via status event API")
                                     st.success(f"✅ 機台 {machine_name} 已設為未知錯誤狀態")
                                     time.sleep(1)
                                     st.rerun()
@@ -676,7 +724,7 @@ def machine_status_page():
                 else:
                     # 非管理員用戶顯示提示
                     st.caption("🔒 刪除機台功能僅限管理員使用")
-    
+                
     # ============================================================================
     # MQTT 即時監控區塊已隱藏，相關程式碼已移至檔案末尾
     # 如需啟用 MQTT 即時監控，請取消註解下方程式碼

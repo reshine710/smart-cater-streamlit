@@ -213,7 +213,7 @@ class VendingMachineAPI:
             return {}
     
     def update_machine_status(self, machine_id: int, status: str) -> bool:
-        """更新機台狀態"""
+        """更新機台狀態（使用舊的 API，保留向後相容性）"""
         api_logger.debug(f"Updating machine {machine_id} status to: {status}")
         try:
             response = requests.post(
@@ -241,6 +241,118 @@ class VendingMachineAPI:
         except requests.exceptions.RequestException as e:
             api_logger.error(f"Network error updating machine status: {str(e)}")
             return False
+    
+    def send_machine_status_event(self, machine_code: str, fault_code: int, 
+                                  message: str = None, timestamp: str = None, 
+                                  metadata: Dict = None) -> Dict:
+        """
+        發送機台狀態事件（使用新的 API）
+        
+        Args:
+            machine_code: 機台代碼，例如 "SC-NCU-001"
+            fault_code: 狀態事件碼
+                - 0: 機台 Alive 訊號
+                - 1: 機台上線
+                - 9: 機台下線
+                - 10-99: 機台故障
+            message: 補充訊息（可選）
+            timestamp: 事件發生時間，ISO8601 格式（可選）
+            metadata: 自訂資料（可選）
+        
+        Returns:
+            Dict: API 回應的機台資訊，失敗時返回空字典
+        """
+        api_logger.debug(f"Sending status event for machine {machine_code}: fault_code={fault_code}")
+        try:
+            from datetime import datetime
+            
+            payload = {
+                "fault_code": fault_code
+            }
+            
+            if message:
+                payload["message"] = message
+            
+            if timestamp:
+                payload["timestamp"] = timestamp
+            else:
+                # 如果未提供時間戳，使用當前 UTC 時間
+                payload["timestamp"] = datetime.utcnow().isoformat() + "Z"
+            
+            if metadata:
+                payload["metadata"] = metadata
+            
+            response = requests.post(
+                f"{self.base_url}/machines/{machine_code}/status-events",
+                headers=self._get_auth_headers(),
+                json=payload,
+                timeout=10
+            )
+            
+            if response.status_code == 200:
+                result = response.json()
+                api_logger.info(f"Successfully sent status event for machine {machine_code}: fault_code={fault_code}")
+                return result
+            elif response.status_code == 404:
+                api_logger.warning(f"Machine not found for code: {machine_code}")
+                return {}
+            elif response.status_code == 422:
+                api_logger.warning(f"Validation error for status event: {response.text}")
+                return {}
+            elif response.status_code == 401:
+                api_logger.warning("Unauthorized access to machine status event API")
+                import streamlit as st
+                st.error("❌ 未授權存取，請重新登入")
+                return {}
+            else:
+                api_logger.warning(f"Failed to send status event - Status code: {response.status_code}")
+                return {}
+                
+        except requests.exceptions.RequestException as e:
+            api_logger.error(f"Network error sending status event: {str(e)}")
+            return {}
+    
+    def update_machine_status_by_code(self, machine_code: str, status: str, message: str = None) -> Dict:
+        """
+        根據狀態字串更新機台狀態（使用新的狀態事件 API）
+        
+        Args:
+            machine_code: 機台代碼
+            status: 狀態字串 ("online", "offline", "fault", "maintenance")
+            message: 可選的補充訊息
+        
+        Returns:
+            Dict: API 回應的機台資訊，失敗時返回空字典
+        """
+        # 映射狀態字串到 fault_code
+        status_to_fault_code = {
+            "online": 1,      # 機台上線
+            "offline": 9,     # 機台下線
+            "fault": 10,      # 機台故障（預設故障碼）
+            "maintenance": 9, # 維護模式視為下線
+            "error": 10,      # 錯誤視為故障
+            "missing": 10     # 未知錯誤視為故障
+        }
+        
+        fault_code = status_to_fault_code.get(status.lower(), 10)
+        
+        # 設定預設訊息
+        if not message:
+            status_messages = {
+                "online": "機台上線",
+                "offline": "機台下線",
+                "fault": "機台故障",
+                "maintenance": "機台進入維護模式",
+                "error": "機台發生錯誤",
+                "missing": "機台未知錯誤，失去心跳"
+            }
+            message = status_messages.get(status.lower(), "機台狀態更新")
+        
+        return self.send_machine_status_event(
+            machine_code=machine_code,
+            fault_code=fault_code,
+            message=message
+        )
     
     def record_machine_heartbeat(self, machine_id: int) -> bool:
         """記錄機台心跳"""
