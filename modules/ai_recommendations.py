@@ -238,7 +238,19 @@ def show_recommendation_details(rec: Dict, index: int):
     
     with col1:
         st.write(f"**AI模型版本**: {rec.get('ai_model_version', 'Unknown')}")
-        st.write(f"**目標機台**: {', '.join(rec.get('target_machine_ids', []))}")
+        
+        # 獲取機台資訊映射，顯示機台名稱（machine_code）
+        machine_mapping = get_machine_info_mapping()
+        target_machines = rec.get('target_machine_ids', [])
+        machine_display_list = []
+        for machine_code in target_machines:
+            machine_name = machine_mapping.get(machine_code, '')
+            if machine_name:
+                machine_display_list.append(f"{machine_name}（{machine_code}）")
+            else:
+                machine_display_list.append(machine_code)
+        st.write(f"**目標機台**: {', '.join(machine_display_list)}")
+        
         confidence_score = rec.get('confidence_score')
         if confidence_score is not None:
             st.write(f"**信心分數**: {confidence_score:.2%}")
@@ -441,7 +453,16 @@ def show_recommendation_details(rec: Dict, index: int):
             st.markdown("**🍽️ 推薦菜單項目**")
             for i, item in enumerate(suggested_menu):
                 meal_id = item.get('meal_id', '')
-                meal_name = menu_name_mapping.get(str(meal_id), f"餐點 {meal_id}")
+                meal_name = menu_name_mapping.get(str(meal_id), '')
+                
+                # 如果找不到名稱，使用預設格式
+                if not meal_name:
+                    meal_name = f"餐點 {meal_id}"
+                    meal_display = meal_name
+                else:
+                    # 格式：餐點名稱（meal_id/product_code）
+                    meal_display = f"{meal_name}（{meal_id}）"
+                
                 suggested_price = item.get('suggested_price', 0)
                 priority = item.get('priority', 1)
                 restock_quantity = item.get('restock_quantity', 0)
@@ -466,7 +487,7 @@ def show_recommendation_details(rec: Dict, index: int):
                 
                 with col_content:
                     # 顯示菜單項目資訊
-                    st.markdown(f"**🍽️ {meal_name}**")
+                    st.markdown(f"**🍽️ {meal_display}**")
                     
                     # 顯示詳細資訊
                     col_info1, col_info2, col_info3 = st.columns(3)
@@ -497,8 +518,13 @@ def show_recommendation_details(rec: Dict, index: int):
                     if i < len(suggested_menu):
                         item = suggested_menu[i]
                         meal_id = item.get('meal_id', '')
-                        meal_name = menu_name_mapping.get(str(meal_id), f"餐點 {meal_id}")
-                        selected_items.append(meal_name)
+                        meal_name = menu_name_mapping.get(str(meal_id), '')
+                        
+                        # 格式：餐點名稱（meal_id）
+                        if meal_name:
+                            selected_items.append(f"{meal_name}（{meal_id}）")
+                        else:
+                            selected_items.append(f"餐點 {meal_id}")
                 
                 if selected_items:
                     st.markdown("**已選擇的項目**: " + ", ".join(selected_items))
@@ -607,7 +633,16 @@ def show_dynamic_menu_display():
                 st.write(f"**創建時間**: {rec.get('created_at', 'N/A')[:19] if rec.get('created_at') else 'N/A'}")
             with col_machines:
                 target_machines = rec.get('target_machine_ids', [])
-                st.write(f"**目標機台**: {', '.join(map(str, target_machines)) if target_machines else 'N/A'}")
+                # 獲取機台資訊映射，顯示機台名稱（machine_code）
+                machine_mapping = get_machine_info_mapping()
+                machine_display_list = []
+                for machine_code in target_machines:
+                    machine_name = machine_mapping.get(machine_code, '')
+                    if machine_name:
+                        machine_display_list.append(f"{machine_name}（{machine_code}）")
+                    else:
+                        machine_display_list.append(str(machine_code))
+                st.write(f"**目標機台**: {', '.join(machine_display_list) if machine_display_list else 'N/A'}")
             
             col1, col2 = st.columns([3, 1])
             
@@ -618,13 +653,24 @@ def show_dynamic_menu_display():
                 if suggested_menu:
                     st.markdown("**推薦菜單配置**")
                     
+                    # 獲取菜單項目名稱映射
+                    menu_name_mapping = get_menu_item_names()
+                    
                     # 創建美化的菜單顯示
                     for item in suggested_menu:
                         with st.container():
                             item_col1, item_col2, item_col3 = st.columns([2, 1, 1])
                             
                             with item_col1:
-                                st.markdown(f"**🍽️ 餐點 {item['meal_id']}**")
+                                meal_id = item.get('meal_id', '')
+                                meal_name = menu_name_mapping.get(str(meal_id), '')
+                                
+                                # 格式：餐點名稱（meal_id/product_code）
+                                if meal_name:
+                                    meal_display = f"{meal_name}（{meal_id}）"
+                                else:
+                                    meal_display = f"餐點 {meal_id}"
+                                st.markdown(f"**🍽️ {meal_display}**")
                                 # 顯示補貨資訊（如果有）
                                 if 'restock_quantity' in item and 'restock_date' in item:
                                     st.caption(f"📦 補貨: {item['restock_quantity']} 份 @ {item['restock_date']}")
@@ -1349,7 +1395,7 @@ def batch_update_machine_menu(machine_code_or_id: str, menu_items: List[Dict]) -
         return False
 
 def get_menu_item_names() -> Dict[str, str]:
-    """獲取菜單項目ID到名稱的映射"""
+    """獲取菜單項目ID到名稱的映射（同時支援數字ID和product_code）"""
     try:
         if hasattr(st.session_state, 'api') and st.session_state.api:
             menu_data = st.session_state.api.get_menu_items()
@@ -1360,12 +1406,20 @@ def get_menu_item_names() -> Dict[str, str]:
             else:
                 menu_items = []
             
-            # 創建ID到名稱的映射
+            # 創建ID到名稱的映射（同時支援數字ID和product_code）
             name_mapping = {}
             for item in menu_items:
-                item_id = str(item.get('id', ''))
-                item_name = item.get('name', f"餐點 {item_id}")
-                name_mapping[item_id] = item_name
+                item_id = item.get('id')
+                item_name = item.get('name', '')
+                product_code = item.get('product_code', '')
+                
+                # 使用數字ID作為key
+                if item_id is not None:
+                    name_mapping[str(item_id)] = item_name
+                
+                # 同時使用product_code作為key（如果存在）
+                if product_code:
+                    name_mapping[str(product_code)] = item_name
             
             return name_mapping
         else:
@@ -1373,6 +1427,29 @@ def get_menu_item_names() -> Dict[str, str]:
             return {}
     except Exception as e:
         ui_logger.error(f"Error getting menu item names: {str(e)}")
+        return {}
+
+def get_machine_info_mapping() -> Dict[str, str]:
+    """獲取機台代碼到機台名稱的映射"""
+    try:
+        if hasattr(st.session_state, 'api') and st.session_state.api:
+            machines = st.session_state.api.get_machines()
+            if machines:
+                # 處理分頁格式
+                if isinstance(machines, dict) and 'items' in machines:
+                    machines = machines['items']
+                
+                mapping = {}
+                for machine in machines:
+                    machine_code = machine.get('machine_code', '')
+                    machine_name = machine.get('name', '')
+                    if machine_code:
+                        mapping[machine_code] = machine_name
+                
+                return mapping
+        return {}
+    except Exception as e:
+        ui_logger.error(f"Error getting machine info mapping: {str(e)}")
         return {}
 
 def get_machine_id_from_code(machine_code: str) -> Optional[int]:

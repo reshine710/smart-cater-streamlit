@@ -54,24 +54,24 @@ def get_pending_and_approved_recommendations() -> Tuple[List[Dict], List[Dict]]:
         # 合併 APPROVED 和 IMPLEMENTED 狀態的推薦作為「已通過推薦」
         approved_and_implemented = verified_approved + verified_implemented
         
-        # 記錄過濾後的結果
+        # 記錄過濾後的結果（使用DEBUG級別以減少日誌噪音）
         if len(verified_pending) != len(pending_recs):
-            ui_logger.warning(f"Filtered pending recommendations: {len(pending_recs)} -> {len(verified_pending)}")
+            ui_logger.debug(f"Filtered pending recommendations: {len(pending_recs)} -> {len(verified_pending)}")
             filtered = [rec for rec in pending_recs if rec.get('status') != 'PENDING']
             for rec in filtered:
-                ui_logger.warning(f"Filtered out recommendation {rec.get('recommendation_id')} with status {rec.get('status')} from PENDING list")
+                ui_logger.debug(f"Filtered out recommendation {rec.get('recommendation_id')} with status {rec.get('status')} from PENDING list")
         
         if len(verified_approved) != len(approved_recs):
-            ui_logger.warning(f"Filtered approved recommendations: {len(approved_recs)} -> {len(verified_approved)}")
+            ui_logger.debug(f"Filtered approved recommendations: {len(approved_recs)} -> {len(verified_approved)}")
             filtered = [rec for rec in approved_recs if rec.get('status') != 'APPROVED']
             for rec in filtered:
-                ui_logger.warning(f"Filtered out recommendation {rec.get('recommendation_id')} with status {rec.get('status')} from APPROVED list")
+                ui_logger.debug(f"Filtered out recommendation {rec.get('recommendation_id')} with status {rec.get('status')} from APPROVED list")
         
         if len(verified_implemented) != len(implemented_recs):
-            ui_logger.warning(f"Filtered implemented recommendations: {len(implemented_recs)} -> {len(verified_implemented)}")
+            ui_logger.debug(f"Filtered implemented recommendations: {len(implemented_recs)} -> {len(verified_implemented)}")
             filtered = [rec for rec in implemented_recs if rec.get('status') != 'IMPLEMENTED']
             for rec in filtered:
-                ui_logger.warning(f"Filtered out recommendation {rec.get('recommendation_id')} with status {rec.get('status')} from IMPLEMENTED list")
+                ui_logger.debug(f"Filtered out recommendation {rec.get('recommendation_id')} with status {rec.get('status')} from IMPLEMENTED list")
         
         ui_logger.debug(f"Notification: After verification - {len(verified_pending)} pending, {len(verified_approved)} approved, {len(verified_implemented)} implemented")
         
