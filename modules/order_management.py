@@ -286,7 +286,7 @@ def create_order_from_row(db, row) -> Tuple[int, str]:
         ) 
         if pd.notna(recommended_item):
             # 正確序列化 JSON 資料
-            recommended_items = {"items": [str(recommended_item)]}
+            recommended_items = str(recommended_item)
             update_recommended = text("""
                 UPDATE orders
                 SET recommended_items = CAST(:recommended_items AS jsonb)

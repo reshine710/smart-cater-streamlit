@@ -25,6 +25,13 @@ services:
       # API 配置：透過 Nginx 訪問後端 API（推薦）
       # Streamlit 是服務器端應用，需要完整 URL
       - DYNACONF_API_URL=http://api:8000/api/v1
+      - DYNACONF_DB_HOST=host.docker.internal
+      - DB_HOST=host.docker.internal
+      - DB_PORT=5432
+      - POSTGRES_USER=smartcater_prod
+      - POSTGRES_DB=smartcater_prod_db
+    env_file:
+      - .env.production
       
       # MQTT 配置：連接到後端的 EMQX
       - MQTT_BROKER_HOST=smartcater_emqx
@@ -35,6 +42,8 @@ services:
       # 日誌配置
       - LOG_LEVEL=${LOG_LEVEL:-INFO}
       
+    extra_hosts:
+      - "host.docker.internal:host-gateway"  
     volumes:
       # 持久化日誌文件
       - ./logs:/app/logs
@@ -75,9 +84,9 @@ services:
 networks:
   smartcater_network:
     # 使用後端已創建的外部網路
-    # 注意：實際網路名稱為 v023_smartcater_network
+    # 注意：實際網路名稱為 v031_smartcater_network
     external: true
-    name: v023_smartcater_network
+    name: v031_smartcater_network
 
 # 注意事項：
 # 1. 此配置不包含 Nginx 和 Certbot，因為後端已經有了
