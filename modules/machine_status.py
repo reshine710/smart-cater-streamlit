@@ -192,16 +192,56 @@ def render_machine_card(machine: Dict, status_config: Dict):
                 op_col1, op_col2, op_col3 = st.columns(3)
                 
                 with op_col1:
-                    if st.button("🔄 重啟", key=f"overview_restart_{machine_id}"):
-                        show_mqtt_command_dialog(machine_code, machine_name, "restart", "重啟")
+                    # 維護模式切換 (使用 REST API)
+                    current_status = machine.get('status', 'offline')
+                    if current_status == 'maintenance':
+                        if st.button("✅ 恢復", key=f"overview_resume_{machine_id}"):
+                            try:
+                                success = st.session_state.api.update_machine_status(machine_id, "online")
+                                if success:
+                                    ui_logger.info(f"Machine {machine_id} status updated to online via API")
+                                    st.success(f"✅ {machine_name} 已恢復正常")
+                                    time.sleep(1)
+                                    st.rerun()
+                                else:
+                                    st.error(f"❌ 更新失敗")
+                            except Exception as e:
+                                ui_logger.error(f"Failed to update machine status: {str(e)}")
+                                st.error(f"❌ 操作失敗: {str(e)}")
+                    else:
+                        if st.button("🔧 維護", key=f"overview_maintenance_{machine_id}"):
+                            try:
+                                success = st.session_state.api.update_machine_status(machine_id, "maintenance")
+                                if success:
+                                    ui_logger.info(f"Machine {machine_id} status updated to maintenance via API")
+                                    st.success(f"✅ {machine_name} 已進入維護模式")
+                                    time.sleep(1)
+                                    st.rerun()
+                                else:
+                                    st.error(f"❌ 更新失敗")
+                            except Exception as e:
+                                ui_logger.error(f"Failed to update machine status: {str(e)}")
+                                st.error(f"❌ 操作失敗: {str(e)}")
                 
                 with op_col2:
-                    if st.button("🔧 維護", key=f"overview_maintenance_{machine_id}"):
-                        show_mqtt_command_dialog(machine_code, machine_name, "maintenance_mode", "維護模式", {"enabled": True})
+                    # 刷新狀態 (使用 REST API)
+                    if st.button("📊 刷新", key=f"overview_refresh_{machine_id}"):
+                        try:
+                            machine_detail = st.session_state.api.get_machine_detail(machine_id)
+                            if machine_detail:
+                                ui_logger.info(f"Refreshed machine {machine_id} status from API")
+                                st.success(f"✅ {machine_name} 狀態已更新")
+                                time.sleep(1)
+                                st.rerun()
+                            else:
+                                st.error(f"❌ 無法獲取機台資訊")
+                        except Exception as e:
+                            ui_logger.error(f"Failed to refresh machine status: {str(e)}")
+                            st.error(f"❌ 刷新失敗: {str(e)}")
                 
                 with op_col3:
-                    if st.button("📊 狀態", key=f"overview_status_{machine_id}"):
-                        show_mqtt_command_dialog(machine_code, machine_name, "status_request", "狀態請求")
+                    # 預留第三個操作按鈕位置
+                    pass
             
             
             # 编辑机台按钮（仅管理员）
@@ -249,85 +289,12 @@ def machine_status_page():
     
     ui_logger.debug("Machine status page accessed")
     
-    # Initialize MQTT client if available
-    if MQTT_AVAILABLE and 'mqtt_client' not in st.session_state:
-        try:
-            st.session_state.mqtt_client = MQTTClient()
-            mqtt_logger.info("MQTT client initialized in Streamlit session")
-        except Exception as e:
-            st.error(f"Failed to initialize MQTT client: {e}")
-            mqtt_logger.error(f"Failed to initialize MQTT client: {e}")
-            st.session_state.mqtt_client = None
-    elif not MQTT_AVAILABLE:
-        st.session_state.mqtt_client = None
-    
-    # MQTT connection status and controls
-    if MQTT_AVAILABLE and 'mqtt_client' in st.session_state and st.session_state.mqtt_client:
-        mqtt_client = st.session_state.mqtt_client
-        
-        # Get detailed connection status
-        status = mqtt_client.get_connection_status()
-        mqtt_connected = status.get('connected', False)
-        
-        # Display connection status
-        status_icon = "🟢" if mqtt_connected else "🔴"
-        status_text = "Connected" if mqtt_connected else "Disconnected"
-        st.sidebar.write(f"**MQTT Status**: {status_icon} {status_text}")
-        st.sidebar.write(f"**Broker**: {status.get('broker', 'Unknown')}:{status.get('port', 'Unknown')}")
-        
-        # Connection control buttons
-        col1, col2 = st.sidebar.columns(2)
-        
-        with col1:
-            if st.button("🔌 Connect" if not mqtt_connected else "🔌 Connected", 
-                        disabled=mqtt_connected, 
-                        key="mqtt_connect"):
-                try:
-                    import asyncio
-                    asyncio.run(mqtt_client.connect())
-                    st.success("MQTT connected successfully!")
-                    mqtt_logger.info("MQTT connection established from Streamlit")
-                    st.rerun()
-                except Exception as e:
-                    st.error(f"Connection failed: {e}")
-                    mqtt_logger.error(f"MQTT connection failed: {e}")
-        
-        with col2:
-            if st.button("🔌 Disconnect" if mqtt_connected else "🔌 Disconnected", 
-                        disabled=not mqtt_connected,
-                        key="mqtt_disconnect"):
-                try:
-                    import asyncio
-                    asyncio.run(mqtt_client.disconnect())
-                    st.info("MQTT disconnected")
-                    mqtt_logger.info("MQTT disconnected from Streamlit")
-                    st.rerun()
-                except Exception as e:
-                    st.error(f"Disconnection failed: {e}")
-                    mqtt_logger.error(f"MQTT disconnection failed: {e}")
-        
-        # Subscribe to machine topics if connected
-        if mqtt_connected:
-            # Subscribe to all machine topics for real-time updates
-            machine_topics = [
-                "machine/+/heartbeat",
-                "machine/+/alert", 
-                "machine/+/inventory/update",
-                "machine/+/order/status"
-            ]
-            
-            for topic in machine_topics:
-                if topic not in mqtt_client.get_subscribed_topics():
-                    try:
-                        mqtt_client.subscribe(topic, lambda t, p: mqtt_logger.debug(f"Received: {t}"))
-                        mqtt_logger.info(f"Subscribed to {topic}")
-                    except Exception as e:
-                        mqtt_logger.error(f"Failed to subscribe to {topic}: {e}")
-    else:
-        if MQTT_AVAILABLE:
-            st.sidebar.write("**MQTT Status**: 🟡 Initializing...")
-        else:
-            st.sidebar.write("**MQTT Status**: ❌ Not Available")
+    # ============================================================================
+    # MQTT 相關程式碼已移至檔案末尾的 _setup_mqtt_for_future_use() 函數
+    # 目前使用 REST API 進行機台狀態管理
+    # 如需啟用 MQTT，請取消註解下方程式碼並註解掉 REST API 相關部分
+    # ============================================================================
+    # _setup_mqtt_connection()  # 未來可用的 MQTT 設置函數
     
     # Get machine data from API
     machines = st.session_state.api.get_machines()
@@ -563,66 +530,62 @@ def machine_status_page():
                 st.write(f"**最後心跳**: {machine.get('last_heartbeat', 'Unknown')}")
             
             with col3:
-                # MQTT-enabled commands
-                mqtt_client = st.session_state.get('mqtt_client')
-                mqtt_available = (mqtt_client and 
-                                mqtt_client.get_connection_status().get('connected', False))
-                
-                if st.button(f"🔄 重啟機台 {machine_id}", 
-                           key=f"detail_restart_{machine_id}",
-                           disabled=not mqtt_available):
-                    if mqtt_available:
-                        # 發送 MQTT 命令
-                        try:
-                            success = mqtt_client.publish_command(machine_code, "restart")
-                            if success:
-                                mqtt_logger.info(f"Restart command sent to machine {machine_code}")
-                                st.success(f"✅ 重啟命令已發送到機台 {machine_name}")
-                            else:
-                                st.error(f"❌ 發送重啟命令失敗")
-                        except Exception as e:
-                            mqtt_logger.error(f"Failed to send restart command to machine {machine_code}: {str(e)}")
-                            st.error(f"❌ 發送命令失敗: {str(e)}")
+                # 機台操作按鈕 (使用 REST API)
+                is_admin = st.session_state.get('is_admin', False)
+                if is_admin:
+                    # 維護模式切換
+                    current_status = machine.get('status', 'offline')
+                    if current_status == 'maintenance':
+                        if st.button(f"✅ 恢復正常 {machine_id}", 
+                                   key=f"detail_resume_{machine_id}"):
+                            try:
+                                success = st.session_state.api.update_machine_status(machine_id, "online")
+                                if success:
+                                    ui_logger.info(f"Machine {machine_id} status updated to online via API")
+                                    st.success(f"✅ 機台 {machine_name} 已恢復正常模式")
+                                    time.sleep(1)
+                                    st.rerun()
+                                else:
+                                    st.error(f"❌ 更新機台狀態失敗")
+                            except Exception as e:
+                                ui_logger.error(f"Failed to update machine status via API: {str(e)}")
+                                st.error(f"❌ 更新狀態失敗: {str(e)}")
                     else:
-                        st.error("❌ MQTT 連接不可用，無法發送命令")
-                
-                if st.button(f"🔧 維護模式 {machine_id}", 
-                           key=f"detail_maintenance_{machine_id}",
-                           disabled=not mqtt_available):
-                    if mqtt_available:
-                        # 發送 MQTT 命令
+                        if st.button(f"🔧 維護模式 {machine_id}", 
+                                   key=f"detail_maintenance_{machine_id}"):
+                            try:
+                                success = st.session_state.api.update_machine_status(machine_id, "maintenance")
+                                if success:
+                                    ui_logger.info(f"Machine {machine_id} status updated to maintenance via API")
+                                    st.success(f"✅ 機台 {machine_name} 已進入維護模式")
+                                    time.sleep(1)
+                                    st.rerun()
+                                else:
+                                    st.error(f"❌ 更新機台狀態失敗")
+                            except Exception as e:
+                                ui_logger.error(f"Failed to update machine status via API: {str(e)}")
+                                st.error(f"❌ 更新狀態失敗: {str(e)}")
+                    
+                    # 更新狀態（從後端獲取最新狀態）
+                    if st.button(f"📊 刷新狀態 {machine_id}", 
+                               key=f"detail_refresh_{machine_id}"):
                         try:
-                            success = mqtt_client.publish_command(machine_code, "maintenance_mode")
-                            if success:
-                                mqtt_logger.info(f"Maintenance mode command sent to machine {machine_code}")
-                                st.success(f"✅ 維護模式命令已發送到機台 {machine_name}")
+                            # 重新獲取機台資料
+                            machine_detail = st.session_state.api.get_machine_detail(machine_id)
+                            if machine_detail:
+                                ui_logger.info(f"Refreshed machine {machine_id} status from API")
+                                st.success(f"✅ 已更新 {machine_name} 的狀態資訊")
+                                time.sleep(1)
+                                st.rerun()
                             else:
-                                st.error(f"❌ 發送維護模式命令失敗")
+                                st.error(f"❌ 無法獲取機台資訊")
                         except Exception as e:
-                            mqtt_logger.error(f"Failed to send maintenance command to machine {machine_code}: {str(e)}")
-                            st.error(f"❌ 發送命令失敗: {str(e)}")
-                    else:
-                        st.error("❌ MQTT 連接不可用，無法發送命令")
-                
-                if st.button(f"📊 更新狀態 {machine_id}", 
-                           key=f"detail_status_{machine_id}",
-                           disabled=not mqtt_available):
-                    if mqtt_available:
-                        try:
-                            success = mqtt_client.publish_command(machine_code, "get_status")
-                            if success:
-                                mqtt_logger.info(f"Status update command sent to machine {machine_code}")
-                                st.info(f"📊 已透過MQTT請求 {machine_name} 狀態更新")
-                            else:
-                                st.error(f"❌ 發送狀態更新命令失敗")
-                        except Exception as e:
-                            mqtt_logger.error(f"Failed to send status command to machine {machine_code}: {str(e)}")
-                            st.error(f"❌ 發送命令失敗: {str(e)}")
-                    else:
-                        st.error("❌ MQTT 連接不可用，無法發送命令")
+                            ui_logger.error(f"Failed to refresh machine status: {str(e)}")
+                            st.error(f"❌ 刷新狀態失敗: {str(e)}")
+                else:
+                    st.caption("🔒 機台操作功能僅限管理員使用")
                 
                 # 刪除機台功能 (僅管理員可用)
-                is_admin = st.session_state.get('is_admin', False)
                 if is_admin:
                     st.markdown("---")
                     st.write("**⚠️ 危險操作區域**")
@@ -636,195 +599,18 @@ def machine_status_page():
                 else:
                     # 非管理員用戶顯示提示
                     st.caption("🔒 刪除機台功能僅限管理員使用")
-                
-                # 顯示MQTT連接狀態提示
-                if not mqtt_available:
-                    st.caption("⚠️ 需要MQTT連接才能發送命令")
     
-    # Real-time updates section
-    st.markdown("---")
-    st.subheader("📡 即時監控")
-    
-    col1, col2 = st.columns(2)
-    
-    with col1:
-        st.write("**MQTT 主題訂閱狀態**")
-        mqtt_client = st.session_state.get('mqtt_client')
-        if mqtt_client and mqtt_client.get_connection_status().get('connected', False):
-            subscribed_topics = mqtt_client.get_subscribed_topics()
-            if subscribed_topics:
-                for topic in subscribed_topics:
-                    st.write(f"✅ {topic}")
-            else:
-                st.write("📡 已連接，但未訂閱任何主題")
-            
-            # 顯示建議的機台主題
-            st.write("**建議訂閱主題**")
-            suggested_topics = [
-                "machine/+/heartbeat",
-                "machine/+/alert", 
-                "machine/+/inventory/update",
-                "machine/+/order/status"
-            ]
-            for topic in suggested_topics:
-                if topic not in subscribed_topics:
-                    st.write(f"⚪ {topic}")
-        else:
-            st.write("🔴 MQTT 客戶端未連接")
-    
-    with col2:
-        st.write("**即時 MQTT 訊息**")
-        if 'mqtt_messages' not in st.session_state:
-            st.session_state.mqtt_messages = []
-        
-        # 顯示訊息統計
-        total_messages = len(st.session_state.mqtt_messages)
-        st.caption(f"總計收到 {total_messages} 條訊息")
-        
-        # 顯示最近訊息 (最多10條)
-        recent_messages = st.session_state.mqtt_messages[-10:] if st.session_state.mqtt_messages else []
-        
-        if recent_messages:
-            # 創建一個容器來顯示訊息，最新的在上面
-            message_container = st.container()
-            with message_container:
-                for msg in reversed(recent_messages):
-                    # 根據主題類型設置不同的圖標
-                    topic_icons = {
-                        'heartbeat': '💓',
-                        'alert': '🚨',
-                        'inventory': '📦',
-                        'order': '🛒',
-                        'status': '📊'
-                    }
-                    
-                    # 找到合適的圖標
-                    icon = '📡'
-                    for key, emoji in topic_icons.items():
-                        if key in msg['topic']:
-                            icon = emoji
-                            break
-                    
-                    # 顯示訊息
-                    with st.expander(f"{icon} {msg['timestamp']} - {msg['summary']}", expanded=False):
-                        st.write(f"**主題**: `{msg['topic']}`")
-                        st.write(f"**時間**: {msg['timestamp']}")
-                        if isinstance(msg['payload'], dict):
-                            st.json(msg['payload'])
-                        else:
-                            st.code(str(msg['payload']))
-        else:
-            st.write("📭 暫無訊息")
-            if mqtt_client and mqtt_client.get_connection_status().get('connected', False):
-                st.caption("已連接MQTT，等待訊息...")
-        
-        # 控制按鈕
-        col_clear, col_refresh = st.columns(2)
-        with col_clear:
-            if st.button("🗑️ 清除記錄", key="clear_mqtt_messages"):
-                st.session_state.mqtt_messages = []
-                st.rerun()
-        
-        with col_refresh:
-            if st.button("🔄 刷新", key="refresh_mqtt_display"):
-                st.rerun()
+    # ============================================================================
+    # MQTT 即時監控區塊已隱藏，相關程式碼已移至檔案末尾
+    # 如需啟用 MQTT 即時監控，請取消註解下方程式碼
+    # ============================================================================
+    # _show_mqtt_realtime_monitoring()  # 未來可用的 MQTT 即時監控函數
 
 
-def send_mqtt_command(machine_code: str, command: str, parameters: Optional[dict] = None) -> bool:
-    """發送 MQTT 命令到指定機台
-    
-    Args:
-        machine_code: 機台代碼
-        command: 命令名稱
-        parameters: 命令參數（可選）
-    
-    Returns:
-        bool: 是否成功發送
-    """
-    if not MQTTClient or 'mqtt_client' not in st.session_state or not st.session_state.mqtt_client:
-        return False
-    
-    try:
-        mqtt_client = st.session_state.mqtt_client
-        if not getattr(mqtt_client, '_connected', False):
-            st.warning("MQTT 客戶端未連接，無法發送命令")
-            return False
-        
-        # Use the MQTT client's publish_command method
-        mqtt_client.publish_command(machine_code, command, parameters or {})
-        
-        # Log the command
-        if 'mqtt_messages' not in st.session_state:
-            st.session_state.mqtt_messages = []
-        
-        st.session_state.mqtt_messages.append({
-            'timestamp': datetime.now().strftime('%H:%M:%S'),
-            'topic': f'machine/{machine_code}/command',
-            'summary': f'發送命令: {command}'
-        })
-        
-        return True
-        
-    except Exception as e:
-        st.error(f"發送 MQTT 命令失敗: {e}")
-        return False
-
-
-def setup_mqtt_callbacks():
-    """設置 MQTT 回調函數以處理即時更新"""
-    if not MQTTClient or 'mqtt_client' not in st.session_state or not st.session_state.mqtt_client:
-        return
-    
-    mqtt_client = st.session_state.mqtt_client
-    
-    def on_heartbeat(topic: str, payload: dict):
-        """處理機台心跳訊息"""
-        try:
-            machine_code = topic.split('/')[1]
-            if 'mqtt_messages' not in st.session_state:
-                st.session_state.mqtt_messages = []
-            
-            st.session_state.mqtt_messages.append({
-                'timestamp': datetime.now().strftime('%H:%M:%S'),
-                'topic': topic,
-                'summary': f'{machine_code} 心跳正常'
-            })
-        except Exception as e:
-            st.error(f"處理心跳訊息錯誤: {e}")
-    
-    def on_alert(topic: str, payload: dict):
-        """處理機台告警訊息"""
-        try:
-            machine_code = topic.split('/')[1]
-            alert_level = payload.get('level', 'info')
-            message = payload.get('message', '未知告警')
-            
-            if 'mqtt_messages' not in st.session_state:
-                st.session_state.mqtt_messages = []
-            
-            st.session_state.mqtt_messages.append({
-                'timestamp': datetime.now().strftime('%H:%M:%S'),
-                'topic': topic,
-                'summary': f'{machine_code} 告警: {message}'
-            })
-            
-            # Show alert in Streamlit
-            if alert_level == 'error':
-                st.error(f"🚨 {machine_code}: {message}")
-            elif alert_level == 'warning':
-                st.warning(f"⚠️ {machine_code}: {message}")
-            else:
-                st.info(f"ℹ️ {machine_code}: {message}")
-                
-        except Exception as e:
-            st.error(f"處理告警訊息錯誤: {e}")
-    
-    # Subscribe to topics with callbacks
-    try:
-        mqtt_client.subscribe("machine/+/heartbeat", on_heartbeat)
-        mqtt_client.subscribe("machine/+/alert", on_alert)
-    except Exception as e:
-        st.error(f"設置 MQTT 回調失敗: {e}")
+# ============================================================================
+# MQTT 相關函數已移至檔案末尾的 "MQTT 功能保留區塊"
+# 目前使用 REST API 進行機台狀態管理，MQTT 相關函數已註解保留供未來使用
+# ============================================================================
 
 
 def show_delete_machine_confirmation_dialog(machine: dict):
@@ -1015,93 +801,10 @@ def show_machine_menu_dialog(machine_id: int, machine_name: str):
     # 調用對話框函數
     show_machine_menu_dialog_content(machine_id, machine_name)
 
-# 定義MQTT命令對話框函數
-@st.dialog("🔧 MQTT命令執行")
-def show_mqtt_command_dialog_content(machine_code: str, machine_name: str, command: str, command_name: str, parameters: dict = None):
-    """MQTT命令對話框內容函數"""
-    try:
-        ui_logger.info(f"Executing MQTT command '{command}' for machine {machine_code} ({machine_name})")
-        
-        # 顯示命令資訊
-        st.markdown(f"### 🔧 執行MQTT命令")
-        st.markdown(f"**機台**: {machine_name} ({machine_code})")
-        st.markdown(f"**命令**: {command_name}")
-        st.markdown(f"**命令類型**: {command}")
-        
-        if parameters:
-            st.markdown(f"**參數**: {parameters}")
-        
-        # 執行MQTT命令
-        with st.spinner("正在發送MQTT命令..."):
-            result = send_mqtt_command(machine_code, command, parameters)
-        
-        # 顯示執行結果
-        st.markdown("### 📊 執行結果")
-        
-        if result:
-            st.success("✅ MQTT命令發送成功！")
-            
-            # 顯示詳細資訊
-            col1, col2 = st.columns(2)
-            
-            with col1:
-                st.metric("發送狀態", "成功")
-                st.metric("機台代碼", machine_code)
-            
-            with col2:
-                st.metric("命令類型", command_name)
-                st.metric("執行時間", "即時")
-            
-            # 顯示命令詳情
-            st.markdown("### 📋 命令詳情")
-            command_details = {
-                "機台名稱": machine_name,
-                "機台代碼": machine_code,
-                "命令": command,
-                "命令描述": command_name,
-                "參數": parameters if parameters else "無",
-                "發送時間": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-                "狀態": "已發送"
-            }
-            
-            for key, value in command_details.items():
-                st.write(f"**{key}**: {value}")
-            
-            # 顯示注意事項
-            st.markdown("### ⚠️ 注意事項")
-            if command == "restart":
-                st.warning("🔄 重啟命令已發送，機台將在幾秒內重新啟動。請等待機台重新上線。")
-            elif command == "maintenance_mode":
-                st.info("🔧 維護模式已啟用，機台將進入維護狀態，暫停正常服務。")
-            elif command == "status_request":
-                st.info("📊 狀態請求已發送，機台將回傳最新的狀態資訊。")
-        
-        else:
-            st.error("❌ MQTT命令發送失敗！")
-            
-            # 顯示錯誤資訊
-            st.markdown("### ❌ 錯誤詳情")
-            st.write("**可能的原因**:")
-            st.write("- MQTT連接未建立")
-            st.write("- 機台離線或無回應")
-            st.write("- 網路連接問題")
-            st.write("- 命令格式錯誤")
-            
-            # 顯示建議操作
-            st.markdown("### 💡 建議操作")
-            st.write("1. 檢查MQTT連接狀態")
-            st.write("2. 確認機台是否在線")
-            st.write("3. 檢查網路連接")
-            st.write("4. 稍後重試")
-            
-    except Exception as e:
-        ui_logger.error(f"Error in MQTT command dialog: {str(e)}")
-        st.error(f"❌ 執行MQTT命令時發生錯誤: {str(e)}")
-
-def show_mqtt_command_dialog(machine_code: str, machine_name: str, command: str, command_name: str, parameters: dict = None):
-    """顯示MQTT命令執行對話框"""
-    # 調用對話框函數
-    show_mqtt_command_dialog_content(machine_code, machine_name, command, command_name, parameters)
+# ============================================================================
+# MQTT 命令對話框函數已移至檔案末尾的 "MQTT 功能保留區塊"
+# 如需使用 MQTT 功能，請取消註解相關函數
+# ============================================================================
 
 @st.dialog("✏️ 編輯機台資訊")
 def show_edit_machine_dialog_content(machine: Dict):
@@ -1299,5 +1002,374 @@ def show_edit_machine_dialog_content(machine: Dict):
 def show_edit_machine_dialog(machine: Dict):
     """顯示編輯機台資訊對話框"""
     show_edit_machine_dialog_content(machine)
+
+
+# ============================================================================
+# MQTT 功能保留區塊 - 未來可能使用的 MQTT 相關程式碼
+# ============================================================================
+# 以下程式碼已註解保留，供未來需要時使用
+# 目前機台狀態管理已改用 REST API 進行
+# 如需啟用 MQTT 功能，請取消註解以下函數並在主函數中調用
+# ============================================================================
+
+"""
+def _setup_mqtt_connection():
+    \"\"\"設置 MQTT 連接（未來可用）\"\"\"
+    # Initialize MQTT client if available
+    if MQTT_AVAILABLE and 'mqtt_client' not in st.session_state:
+        try:
+            st.session_state.mqtt_client = MQTTClient()
+            mqtt_logger.info("MQTT client initialized in Streamlit session")
+        except Exception as e:
+            st.error(f"Failed to initialize MQTT client: {e}")
+            mqtt_logger.error(f"Failed to initialize MQTT client: {e}")
+            st.session_state.mqtt_client = None
+    elif not MQTT_AVAILABLE:
+        st.session_state.mqtt_client = None
+    
+    # MQTT connection status and controls
+    if MQTT_AVAILABLE and 'mqtt_client' in st.session_state and st.session_state.mqtt_client:
+        mqtt_client = st.session_state.mqtt_client
+        
+        # Get detailed connection status
+        status = mqtt_client.get_connection_status()
+        mqtt_connected = status.get('connected', False)
+        
+        # Display connection status
+        status_icon = "🟢" if mqtt_connected else "🔴"
+        status_text = "Connected" if mqtt_connected else "Disconnected"
+        st.sidebar.write(f"**MQTT Status**: {status_icon} {status_text}")
+        st.sidebar.write(f"**Broker**: {status.get('broker', 'Unknown')}:{status.get('port', 'Unknown')}")
+        
+        # Connection control buttons
+        col1, col2 = st.sidebar.columns(2)
+        
+        with col1:
+            if st.button("🔌 Connect" if not mqtt_connected else "🔌 Connected", 
+                        disabled=mqtt_connected, 
+                        key="mqtt_connect"):
+                try:
+                    import asyncio
+                    asyncio.run(mqtt_client.connect())
+                    st.success("MQTT connected successfully!")
+                    mqtt_logger.info("MQTT connection established from Streamlit")
+                    st.rerun()
+                except Exception as e:
+                    st.error(f"Connection failed: {e}")
+                    mqtt_logger.error(f"MQTT connection failed: {e}")
+        
+        with col2:
+            if st.button("🔌 Disconnect" if mqtt_connected else "🔌 Disconnected", 
+                        disabled=not mqtt_connected,
+                        key="mqtt_disconnect"):
+                try:
+                    import asyncio
+                    asyncio.run(mqtt_client.disconnect())
+                    st.info("MQTT disconnected")
+                    mqtt_logger.info("MQTT disconnected from Streamlit")
+                    st.rerun()
+                except Exception as e:
+                    st.error(f"Disconnection failed: {e}")
+                    mqtt_logger.error(f"MQTT disconnection failed: {e}")
+        
+        # Subscribe to machine topics if connected
+        if mqtt_connected:
+            # Subscribe to all machine topics for real-time updates
+            machine_topics = [
+                "machine/+/heartbeat",
+                "machine/+/alert", 
+                "machine/+/inventory/update",
+                "machine/+/order/status"
+            ]
+            
+            for topic in machine_topics:
+                if topic not in mqtt_client.get_subscribed_topics():
+                    try:
+                        mqtt_client.subscribe(topic, lambda t, p: mqtt_logger.debug(f"Received: {t}"))
+                        mqtt_logger.info(f"Subscribed to {topic}")
+                    except Exception as e:
+                        mqtt_logger.error(f"Failed to subscribe to {topic}: {e}")
+    else:
+        if MQTT_AVAILABLE:
+            st.sidebar.write("**MQTT Status**: 🟡 Initializing...")
+        else:
+            st.sidebar.write("**MQTT Status**: ❌ Not Available")
+
+
+def _show_mqtt_realtime_monitoring():
+    \"\"\"顯示 MQTT 即時監控區塊（未來可用）\"\"\"
+    st.markdown("---")
+    st.subheader("📡 即時監控")
+    
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        st.write("**MQTT 主題訂閱狀態**")
+        mqtt_client = st.session_state.get('mqtt_client')
+        if mqtt_client and mqtt_client.get_connection_status().get('connected', False):
+            subscribed_topics = mqtt_client.get_subscribed_topics()
+            if subscribed_topics:
+                for topic in subscribed_topics:
+                    st.write(f"✅ {topic}")
+            else:
+                st.write("📡 已連接，但未訂閱任何主題")
+            
+            # 顯示建議的機台主題
+            st.write("**建議訂閱主題**")
+            suggested_topics = [
+                "machine/+/heartbeat",
+                "machine/+/alert", 
+                "machine/+/inventory/update",
+                "machine/+/order/status"
+            ]
+            for topic in suggested_topics:
+                if topic not in subscribed_topics:
+                    st.write(f"⚪ {topic}")
+        else:
+            st.write("🔴 MQTT 客戶端未連接")
+    
+    with col2:
+        st.write("**即時 MQTT 訊息**")
+        if 'mqtt_messages' not in st.session_state:
+            st.session_state.mqtt_messages = []
+        
+        # 顯示訊息統計
+        total_messages = len(st.session_state.mqtt_messages)
+        st.caption(f"總計收到 {total_messages} 條訊息")
+        
+        # 顯示最近訊息 (最多10條)
+        recent_messages = st.session_state.mqtt_messages[-10:] if st.session_state.mqtt_messages else []
+        
+        if recent_messages:
+            # 創建一個容器來顯示訊息，最新的在上面
+            message_container = st.container()
+            with message_container:
+                for msg in reversed(recent_messages):
+                    # 根據主題類型設置不同的圖標
+                    topic_icons = {
+                        'heartbeat': '💓',
+                        'alert': '🚨',
+                        'inventory': '📦',
+                        'order': '🛒',
+                        'status': '📊'
+                    }
+                    
+                    # 找到合適的圖標
+                    icon = '📡'
+                    for key, emoji in topic_icons.items():
+                        if key in msg['topic']:
+                            icon = emoji
+                            break
+                    
+                    # 顯示訊息
+                    with st.expander(f"{icon} {msg['timestamp']} - {msg['summary']}", expanded=False):
+                        st.write(f"**主題**: `{msg['topic']}`")
+                        st.write(f"**時間**: {msg['timestamp']}")
+                        if isinstance(msg['payload'], dict):
+                            st.json(msg['payload'])
+                        else:
+                            st.code(str(msg['payload']))
+        else:
+            st.write("📭 暫無訊息")
+            if mqtt_client and mqtt_client.get_connection_status().get('connected', False):
+                st.caption("已連接MQTT，等待訊息...")
+        
+        # 控制按鈕
+        col_clear, col_refresh = st.columns(2)
+        with col_clear:
+            if st.button("🗑️ 清除記錄", key="clear_mqtt_messages"):
+                st.session_state.mqtt_messages = []
+                st.rerun()
+        
+        with col_refresh:
+            if st.button("🔄 刷新", key="refresh_mqtt_display"):
+                st.rerun()
+
+
+def send_mqtt_command(machine_code: str, command: str, parameters: Optional[dict] = None) -> bool:
+    \"\"\"發送 MQTT 命令到指定機台（未來可用）
+    
+    Args:
+        machine_code: 機台代碼
+        command: 命令名稱
+        parameters: 命令參數（可選）
+    
+    Returns:
+        bool: 是否成功發送
+    \"\"\"
+    if not MQTTClient or 'mqtt_client' not in st.session_state or not st.session_state.mqtt_client:
+        return False
+    
+    try:
+        mqtt_client = st.session_state.mqtt_client
+        if not getattr(mqtt_client, '_connected', False):
+            st.warning("MQTT 客戶端未連接，無法發送命令")
+            return False
+        
+        # Use the MQTT client's publish_command method
+        mqtt_client.publish_command(machine_code, command, parameters or {})
+        
+        # Log the command
+        if 'mqtt_messages' not in st.session_state:
+            st.session_state.mqtt_messages = []
+        
+        st.session_state.mqtt_messages.append({
+            'timestamp': datetime.now().strftime('%H:%M:%S'),
+            'topic': f'machine/{machine_code}/command',
+            'summary': f'發送命令: {command}'
+        })
+        
+        return True
+        
+    except Exception as e:
+        st.error(f"發送 MQTT 命令失敗: {e}")
+        return False
+
+
+def setup_mqtt_callbacks():
+    \"\"\"設置 MQTT 回調函數以處理即時更新（未來可用）\"\"\"
+    if not MQTTClient or 'mqtt_client' not in st.session_state or not st.session_state.mqtt_client:
+        return
+    
+    mqtt_client = st.session_state.mqtt_client
+    
+    def on_heartbeat(topic: str, payload: dict):
+        \"\"\"處理機台心跳訊息\"\"\"
+        try:
+            machine_code = topic.split('/')[1]
+            if 'mqtt_messages' not in st.session_state:
+                st.session_state.mqtt_messages = []
+            
+            st.session_state.mqtt_messages.append({
+                'timestamp': datetime.now().strftime('%H:%M:%S'),
+                'topic': topic,
+                'summary': f'{machine_code} 心跳正常'
+            })
+        except Exception as e:
+            st.error(f"處理心跳訊息錯誤: {e}")
+    
+    def on_alert(topic: str, payload: dict):
+        \"\"\"處理機台告警訊息\"\"\"
+        try:
+            machine_code = topic.split('/')[1]
+            alert_level = payload.get('level', 'info')
+            message = payload.get('message', '未知告警')
+            
+            if 'mqtt_messages' not in st.session_state:
+                st.session_state.mqtt_messages = []
+            
+            st.session_state.mqtt_messages.append({
+                'timestamp': datetime.now().strftime('%H:%M:%S'),
+                'topic': topic,
+                'summary': f'{machine_code} 告警: {message}'
+            })
+            
+            # Show alert in Streamlit
+            if alert_level == 'error':
+                st.error(f"🚨 {machine_code}: {message}")
+            elif alert_level == 'warning':
+                st.warning(f"⚠️ {machine_code}: {message}")
+            else:
+                st.info(f"ℹ️ {machine_code}: {message}")
+                
+        except Exception as e:
+            st.error(f"處理告警訊息錯誤: {e}")
+    
+    # Subscribe to topics with callbacks
+    try:
+        mqtt_client.subscribe("machine/+/heartbeat", on_heartbeat)
+        mqtt_client.subscribe("machine/+/alert", on_alert)
+    except Exception as e:
+        st.error(f"設置 MQTT 回調失敗: {e}")
+
+
+@st.dialog("🔧 MQTT命令執行")
+def show_mqtt_command_dialog_content(machine_code: str, machine_name: str, command: str, command_name: str, parameters: dict = None):
+    \"\"\"MQTT命令對話框內容函數（未來可用）\"\"\"
+    try:
+        ui_logger.info(f"Executing MQTT command '{command}' for machine {machine_code} ({machine_name})")
+        
+        # 顯示命令資訊
+        st.markdown(f"### 🔧 執行MQTT命令")
+        st.markdown(f"**機台**: {machine_name} ({machine_code})")
+        st.markdown(f"**命令**: {command_name}")
+        st.markdown(f"**命令類型**: {command}")
+        
+        if parameters:
+            st.markdown(f"**參數**: {parameters}")
+        
+        # 執行MQTT命令
+        with st.spinner("正在發送MQTT命令..."):
+            result = send_mqtt_command(machine_code, command, parameters)
+        
+        # 顯示執行結果
+        st.markdown("### 📊 執行結果")
+        
+        if result:
+            st.success("✅ MQTT命令發送成功！")
+            
+            # 顯示詳細資訊
+            col1, col2 = st.columns(2)
+            
+            with col1:
+                st.metric("發送狀態", "成功")
+                st.metric("機台代碼", machine_code)
+            
+            with col2:
+                st.metric("命令類型", command_name)
+                st.metric("執行時間", "即時")
+            
+            # 顯示命令詳情
+            st.markdown("### 📋 命令詳情")
+            command_details = {
+                "機台名稱": machine_name,
+                "機台代碼": machine_code,
+                "命令": command,
+                "命令描述": command_name,
+                "參數": parameters if parameters else "無",
+                "發送時間": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                "狀態": "已發送"
+            }
+            
+            for key, value in command_details.items():
+                st.write(f"**{key}**: {value}")
+            
+            # 顯示注意事項
+            st.markdown("### ⚠️ 注意事項")
+            if command == "restart":
+                st.warning("🔄 重啟命令已發送，機台將在幾秒內重新啟動。請等待機台重新上線。")
+            elif command == "maintenance_mode":
+                st.info("🔧 維護模式已啟用，機台將進入維護狀態，暫停正常服務。")
+            elif command == "status_request":
+                st.info("📊 狀態請求已發送，機台將回傳最新的狀態資訊。")
+        
+        else:
+            st.error("❌ MQTT命令發送失敗！")
+            
+            # 顯示錯誤資訊
+            st.markdown("### ❌ 錯誤詳情")
+            st.write("**可能的原因**:")
+            st.write("- MQTT連接未建立")
+            st.write("- 機台離線或無回應")
+            st.write("- 網路連接問題")
+            st.write("- 命令格式錯誤")
+            
+            # 顯示建議操作
+            st.markdown("### 💡 建議操作")
+            st.write("1. 檢查MQTT連接狀態")
+            st.write("2. 確認機台是否在線")
+            st.write("3. 檢查網路連接")
+            st.write("4. 稍後重試")
+            
+    except Exception as e:
+        ui_logger.error(f"Error in MQTT command dialog: {str(e)}")
+        st.error(f"❌ 執行MQTT命令時發生錯誤: {str(e)}")
+
+
+def show_mqtt_command_dialog(machine_code: str, machine_name: str, command: str, command_name: str, parameters: dict = None):
+    \"\"\"顯示MQTT命令執行對話框（未來可用）\"\"\"
+    # 調用對話框函數
+    show_mqtt_command_dialog_content(machine_code, machine_name, command, command_name, parameters)
+"""
 
 
