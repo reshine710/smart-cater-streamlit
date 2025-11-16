@@ -346,7 +346,7 @@ def main():
         # 基本功能（所有使用者）
         pages = {
             "🗄️ 機台狀態": "machine_status",
-            # "📊 營運儀表板": "dashboard",
+            "📊 營運儀表板": "dashboard",
             # "📈 銷售數據": "sales_data",
             "🛒 商品管理": "inventory",
             "🤖 AI智能推薦": "ai_recommendations",
@@ -420,7 +420,7 @@ def main():
     if page_key == "machine_status":
         machine_status_page()
     # elif page_key == "sales_data":
-    #     sales_analytics_page()
+        # sales_analytics_page()
     elif page_key == "inventory":
         menu_management_page()
     elif page_key == "settings":
@@ -433,8 +433,8 @@ def main():
         location_management_page()
     elif page_key == "order_management":
         order_management_page()
-    # elif page_key == "dashboard":
-    #     dashboard_page()
+    elif page_key == "dashboard":
+        dashboard_page()
 
 
 def check_api_connection() -> tuple:

@@ -5,16 +5,39 @@ import plotly.express as px
 from datetime import datetime, timedelta
 import random
 
+DAY_THRESHOLD = 3
+
 def dashboard_page():
     """儀表板頁面"""
     st.title("📊 營運儀表板")
     
     # 日期選擇器和模擬數據選項
+    # 預設壓在今天，並提供「今日」快速按鈕
+    today = datetime.now().date()
+    if 'dashboard_start_date' not in st.session_state:
+        st.session_state['dashboard_start_date'] = today
+    if 'dashboard_end_date' not in st.session_state:
+        st.session_state['dashboard_end_date'] = today
+    
     col1, col2, col3 = st.columns(3)
     with col1:
-        start_date = st.date_input("開始日期", datetime.now() - timedelta(days=13))
+        st.session_state['dashboard_start_date'] = st.date_input(
+            "開始日期", 
+            value=st.session_state['dashboard_start_date'],
+            key="dashboard_start_date_input"
+        )
     with col2:
-        end_date = st.date_input("結束日期", datetime.now())
+        st.session_state['dashboard_end_date'] = st.date_input(
+            "結束日期", 
+            value=st.session_state['dashboard_end_date'],
+            key="dashboard_end_date_input"
+        )
+    with col3:
+        if st.button("今日", use_container_width=True):
+            st.session_state['dashboard_start_date'] = today
+            st.session_state['dashboard_end_date'] = today
+    start_date = st.session_state['dashboard_start_date']
+    end_date = st.session_state['dashboard_end_date']
     # with col3:
     #     use_demo_data = st.checkbox("使用模擬數據", value=False, help="顯示14天的模擬銷售數據用於展示")
     use_demo_data = False  # 使用真實 API 數據
@@ -143,8 +166,24 @@ def dashboard_page():
             if timestamp_field:
                 try:
                     # 嘗試解析時間戳
-                    df_sales['timestamp'] = pd.to_datetime(df_sales[timestamp_field])
+                    # 先移除小數秒與尾端 Z，避免混合格式解析失敗
+                    df_sales[timestamp_field] = (
+                        df_sales[timestamp_field]
+                        .astype(str)
+                        .str.replace(r'\.\d+', '', regex=True)
+                        .str.replace('Z', '', regex=False)
+                    )
+                    df_sales['timestamp'] = pd.to_datetime(
+                        df_sales[timestamp_field],
+                        format='mixed',
+                        errors='coerce'
+                    )
                     df_sales['date'] = df_sales['timestamp'].dt.date
+                    
+                    # 確保數值欄位為數值型別
+                    for col in ['price', 'unit_price', 'amount', 'total_amount', 'quantity', 'qty', 'count', 'quantity_sold', 'subtotal', 'total']:
+                        if col in df_sales.columns:
+                            df_sales[col] = pd.to_numeric(df_sales[col], errors='coerce')
                     
                     # 根據選擇的日期範圍過濾數據
                     df_sales = df_sales[
@@ -155,48 +194,93 @@ def dashboard_page():
                     if len(df_sales) == 0:
                         st.info(f"📊 在選定期間 ({start_date_str} 至 {end_date_str}) 沒有銷售資料")
                     else:
-                        # 計算每筆交易的總金額
-                        df_sales['total_amount'] = 0
+                        # 計算每筆交易的總金額（保留原始 total_amount，避免被覆蓋成 0）
+                        if 'total_amount' in df_sales.columns:
+                            orig_total_amount = df_sales['total_amount'].copy()
+                        else:
+                            orig_total_amount = pd.Series([np.nan] * len(df_sales), index=df_sales.index)
+                        
+                        computed_totals = []
                         for idx, row in df_sales.iterrows():
-                            price = (
-                                row.get('price')
-                                or row.get('amount')
-                                or row.get('total_amount')
-                                or row.get('unit_price')
-                                or row.get('unitPrice')
-                                or 0
-                            )
-                            quantity = (
-                                row.get('quantity')
-                                or row.get('count')
-                                or row.get('quantity_sold')
-                                or row.get('qty')
-                                or 1
-                            )
-                            subtotal = row.get('subtotal') or row.get('total') or row.get('total_amount')
+                            # 先嘗試已存在的小計/總額欄位
+                            candidates_primary = [
+                                row.get('subtotal'),
+                                row.get('total'),
+                                orig_total_amount.iloc[idx],   # 使用原始 total_amount
+                                row.get('amount')
+                            ]
+                            subtotal = next((v for v in candidates_primary if pd.notna(v) and float(v) != 0.0), None)
+                            
                             if subtotal is None:
-                                subtotal = price * quantity
-                            df_sales.at[idx, 'total_amount'] = subtotal
+                                # 回退用單價 * 數量
+                                price = next((v for v in [
+                                    row.get('price'),
+                                    row.get('unit_price'),
+                                    row.get('unitPrice')
+                                ] if pd.notna(v)), 0.0)
+                                quantity = next((v for v in [
+                                    row.get('quantity'),
+                                    row.get('count'),
+                                    row.get('quantity_sold'),
+                                    row.get('qty')
+                                ] if pd.notna(v)), 1.0)
+                                subtotal = float(price or 0.0) * float(quantity or 0.0)
+                            
+                            computed_totals.append(float(subtotal or 0.0))
                         
-                        daily_sales = df_sales.groupby('date').agg({
-                            'total_amount': 'sum'
-                        }).reset_index()
+                        df_sales['total_amount'] = pd.to_numeric(pd.Series(computed_totals, index=df_sales.index), errors='coerce').fillna(0.0)
                         
-                        # 確保日期格式正確
-                        daily_sales['date'] = pd.to_datetime(daily_sales['date'])
+                        # 保險：轉為數值並填空
+                        df_sales['total_amount'] = pd.to_numeric(df_sales['total_amount'], errors='coerce').fillna(0.0)
                         
-                        fig = px.line(daily_sales, x='date', y='total_amount', 
-                                     title=f'每日營收趨勢 ({start_date_str} 至 {end_date_str})',
-                                     labels={'total_amount': '營收 (NT$)', 'date': '日期'})
+                        # Debug 區塊（預設隱藏）
+                        if False:
+                            with st.expander("🔧 調試：查看原始列與加總", expanded=False):
+                                cols = [c for c in ['timestamp', 'date', 'item_name', 'quantity', 'unit_price', 'subtotal', 'total', 'amount', 'total_amount'] if c in df_sales.columns]
+                                st.write("關鍵欄位（前 10 筆）")
+                                st.dataframe(df_sales[cols].head(10))
+                                st.write("total_amount 加總：", float(df_sales['total_amount'].sum()))
+                                st.caption("提示：若加總為 0，請檢查 quantity/unit_price 是否為非數值或皆為空。")
+                        
+                        # 依日期範圍動態決定顯示粒度：<DAY_THRESHOLD 天 -> 小時；>=DAY_THRESHOLD 天 -> 日
+                        range_days = (end_date - start_date).days + 1
+                        if range_days < DAY_THRESHOLD:
+                            # 以小時聚合（使用 resample 更穩定）
+                            hourly_sales = (
+                                df_sales
+                                .set_index('timestamp')
+                                .resample('h')  # 注意：'H' 將棄用，改用小寫 'h'
+                                ['total_amount']
+                                .sum()
+                                .reset_index()
+                            )
+                            hourly_sales['timestamp'] = pd.to_datetime(hourly_sales['timestamp'])
+                            fig = px.line(
+                                hourly_sales, x='timestamp', y='total_amount',
+                                title=f'每小時營收趨勢 ({start_date_str})',
+                                labels={'total_amount': '營收 (NT$)', 'timestamp': '時間'}
+                            )
+                        else:
+                            daily_sales = df_sales.groupby('date').agg({
+                                'total_amount': 'sum'
+                            }).reset_index()
+                            # 確保日期格式正確
+                            daily_sales['date'] = pd.to_datetime(daily_sales['date'])
+                            fig = px.line(daily_sales, x='date', y='total_amount', 
+                                          title=f'每日營收趨勢 ({start_date_str} 至 {end_date_str})',
+                                          labels={'total_amount': '營收 (NT$)', 'date': '日期'})
                         
                         # 格式化圖表
                         fig.update_layout(
-                            xaxis_title='日期',
+                            xaxis_title='時間' if range_days < DAY_THRESHOLD else '日期',
                             yaxis_title='營收 (NT$)',
                             xaxis=dict(
-                                tickformat='%Y-%m-%d',
+                                tickformat='%Y-%m-%d %H:%M' if range_days < DAY_THRESHOLD else '%Y-%m-%d',
                                 tickmode='auto',
-                                range=[start_date, end_date]
+                                range=[
+                                    (hourly_sales['timestamp'].min() if range_days < DAY_THRESHOLD else daily_sales['date'].min()),
+                                    (hourly_sales['timestamp'].max() if range_days < DAY_THRESHOLD else daily_sales['date'].max())
+                                ]
                             )
                         )
                         
@@ -224,6 +308,33 @@ def dashboard_page():
                     break
             
             if item_field:
+                # 建立顯示標籤：餐點中文名稱(product_code)，參考 ai_recommendations 的作法
+                code_field = 'product_code' if 'product_code' in df_sales.columns else ('meal_id' if 'meal_id' in df_sales.columns else None)
+                
+                # 從 API 取菜單，建立 product_code/id -> 中文名稱 的映射
+                menu_name_mapping = {}
+                try:
+                    if hasattr(st.session_state, 'api') and st.session_state.api:
+                        menu_items = st.session_state.api.get_menu_items()
+                        for m in (menu_items or []):
+                            if 'product_code' in m and m.get('product_code'):
+                                menu_name_mapping[str(m['product_code'])] = m.get('name') or ''
+                            if 'id' in m and m.get('id') is not None:
+                                menu_name_mapping[str(m['id'])] = m.get('name') or ''
+                except Exception:
+                    pass
+                
+                if code_field:
+                    # 以 row 為單位生成「中文名(product_code)」，若查不到中文名則用現有 item_field 或代碼
+                    def _compose_label(row):
+                        code = str(row.get(code_field) or '')
+                        name = menu_name_mapping.get(code) or row.get(item_field) or code
+                        return f"{name}({code})"
+                    df_sales['display_label'] = df_sales.apply(_compose_label, axis=1)
+                else:
+                    df_sales['display_label'] = df_sales[item_field].astype(str)
+                label_field = 'display_label'
+                
                 # 找到數量欄位
                 quantity_field = None
                 for field in ['quantity', 'count', 'amount', 'quantity_sold', 'qty']:
@@ -232,13 +343,13 @@ def dashboard_page():
                         break
                 
                 if quantity_field:
-                    item_sales = df_sales.groupby(item_field)[quantity_field].sum().reset_index()
-                    fig = px.pie(item_sales, values=quantity_field, names=item_field, title='商品銷量分布')
+                    item_sales = df_sales.groupby(label_field)[quantity_field].sum().reset_index()
+                    fig = px.pie(item_sales, values=quantity_field, names=label_field, title='商品銷量分布')
                     st.plotly_chart(fig)
                 else:
                     # 如果沒有數量欄位，按交易次數統計
-                    item_sales = df_sales.groupby(item_field).size().reset_index(name='count')
-                    fig = px.pie(item_sales, values='count', names=item_field, title='商品交易次數分布')
+                    item_sales = df_sales.groupby(label_field).size().reset_index(name='count')
+                    fig = px.pie(item_sales, values='count', names=label_field, title='商品交易次數分布')
                     st.plotly_chart(fig)
             else:
                 st.info("📊 無法找到商品名稱欄位，無法顯示銷量圖")

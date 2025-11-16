@@ -119,9 +119,22 @@ def process_orders_data(orders_data):
                 'payment_method': order['payment_method'],
                 'weather': order.get('weather', '未知'),
                 'temperature': order.get('temperature', 0),
-                'created_at': pd.to_datetime(order['created_at']),
-                'date': pd.to_datetime(order['created_at']).date(),
-                'hour': pd.to_datetime(order['created_at']).hour
+                # 寬鬆解析 created_at：先去除小數秒/Z，再以 mixed/coerce 解析
+                'created_at': pd.to_datetime(
+                    str(order['created_at']).replace('Z', '').split('.')[0],
+                    format='mixed',
+                    errors='coerce'
+                ),
+                'date': pd.to_datetime(
+                    str(order['created_at']).replace('Z', '').split('.')[0],
+                    format='mixed',
+                    errors='coerce'
+                ).date(),
+                'hour': pd.to_datetime(
+                    str(order['created_at']).replace('Z', '').split('.')[0],
+                    format='mixed',
+                    errors='coerce'
+                ).hour
             }
             
             # 處理訂單項目
