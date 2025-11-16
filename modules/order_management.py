@@ -907,15 +907,236 @@ def render_date_query(api: VendingMachineAPI):
 
 
 def render_order_details(order: Dict):
-    """渲染訂單詳情（從訂單API）- 顯示 JSON 格式"""
-    import json
-    st.json(order)
+    """渲染訂單詳情（從訂單API）- 美化版卡片呈現"""
+
+    # 不顯示的欄位（包含巢狀結構）
+    HIDDEN_FIELDS = {
+        "unit_price",
+        "humidity",
+        "status",
+        "payment_status",
+        "payment_detail",
+        "item",
+        "machine",
+    }
+
+    def _filter_hidden_fields(data):
+        """遞迴移除不需要顯示的欄位"""
+        if isinstance(data, dict):
+            return {
+                k: _filter_hidden_fields(v)
+                for k, v in data.items()
+                if k not in HIDDEN_FIELDS
+            }
+        if isinstance(data, list):
+            return [_filter_hidden_fields(v) for v in data]
+        return data
+
+    # ===== 基本欄位整理 =====
+    order_id = order.get("id")
+    order_number = order.get("order_number") or order.get("transaction_id") or "N/A"
+    created_at = order.get("created_at") or order.get("purchase_timestamp")
+    total_amount = order.get("total_amount")
+    payment_method = order.get("payment_method")
+    payment_number = order.get("payment_number") or order.get("bill_number")
+
+    weather = order.get("weather")
+    temperature = order.get("temperature") or order.get("temperature_celsius")
+
+    # 嘗試取得機台資訊（只顯示簡單識別，不顯示完整 machine 物件）
+    machine_code = None
+    machine_name = None
+    location_name = None
+
+    # 可能存在 machine 物件，但使用者要求不顯示整個 machine，因此只取必要文字
+    machine_obj = order.get("machine") or {}
+    if isinstance(machine_obj, dict):
+        machine_code = machine_obj.get("machine_code") or machine_obj.get("code")
+        machine_name = machine_obj.get("name")
+        location_name = machine_obj.get("location_name") or machine_obj.get("location")
+
+    # 後端有些版本只回傳 machine_id / machine_code 在訂單本身
+    machine_id = order.get("machine_id")
+    # 若訂單本身就有 machine_code，先記下來（例如 "SC-TRS-001"）
+    if not machine_code:
+        machine_code = order.get("machine_code") or order.get("machineCode")
+
+    # 如果只有 machine_id，嘗試透過 API 映射出機台資訊
+    if machine_id and not (machine_code or machine_name):
+        try:
+            # 快取所有機台列表，避免重複呼叫 API
+            if "order_machines_cache" not in st.session_state:
+                api = st.session_state.get("api")
+                machines = api.get_machines() if api else []
+                by_id = {}
+                for m in machines or []:
+                    mid = m.get("id")
+                    if mid is not None:
+                        by_id[mid] = m
+                st.session_state["order_machines_cache"] = by_id
+
+            machines_cache = st.session_state.get("order_machines_cache", {})
+            m = machines_cache.get(machine_id)
+            if isinstance(m, dict):
+                machine_code = (
+                    m.get("machine_code") or m.get("code") or machine_code
+                )
+                machine_name = m.get("name") or machine_name
+                location_name = (
+                    m.get("location_name") or m.get("location") or location_name
+                )
+        except Exception:
+            # 若查詢失敗，不影響整體畫面
+            pass
+
+    # ===== 訂單明細（items）處理 =====
+    items = (
+        order.get("items")
+        or order.get("order_items")
+        or order.get("order_details")
+        or []
+    )
+
+    items_table = []
+    total_quantity_from_items = 0
+
+    if isinstance(items, list):
+        for item in items:
+            if not isinstance(item, dict):
+                continue
+
+            # 商品名稱：優先 item_name，其次 name，再來 meal_id / product_code
+            item_name = (
+                item.get("item_name")
+                or item.get("name")
+                or item.get("meal_id")
+                or item.get("product_code")
+                or "-"
+            )
+
+            # 商品代碼
+            item_code = (
+                item.get("meal_id")
+                or item.get("product_code")
+                or item.get("menu_item_id")
+            )
+
+            # 商品數量（轉成整數，避免型別問題）
+            raw_qty = item.get("quantity", item.get("qty", 0))
+            try:
+                quantity = int(raw_qty) if raw_qty not in (None, "") else 0
+            except (ValueError, TypeError):
+                quantity = 0
+
+            # 小計（如果有的話）
+            raw_subtotal = item.get("subtotal") or item.get("total") or item.get("amount")
+            try:
+                subtotal = float(raw_subtotal) if raw_subtotal not in (None, "") else None
+            except (ValueError, TypeError):
+                subtotal = None
+
+            total_quantity_from_items += quantity
+
+            row = {
+                "商品/餐點": item_name,
+                "代碼": item_code,
+                "數量": quantity,
+            }
+            if subtotal is not None:
+                row["小計"] = subtotal
+
+            items_table.append(row)
+
+    # ===== 總數量處理：優先使用訂單本身的 quantity，其次才用明細加總 =====
+    raw_order_qty = order.get("quantity")
+    try:
+        order_quantity = int(raw_order_qty) if raw_order_qty not in (None, "") else None
+    except (ValueError, TypeError):
+        order_quantity = None
+
+    total_quantity = order_quantity if order_quantity is not None else total_quantity_from_items
+
+    # ===== 版面呈現 =====
+    # 上方概要：訂單編號與時間各自一列，避免被截斷
+    st.markdown("#### 📌 訂單概要")
+    st.write(f"**訂單編號：** {order_number}")
+    if order_id is not None:
+        st.caption(f"ID：{order_id}")
+
+    if created_at:
+        st.write(f"**建立時間：** {created_at}")
+    else:
+        st.write("**建立時間：** -")
+
+    col_summary1, col_summary2 = st.columns(2)
+    with col_summary1:
+        if total_amount is not None:
+            st.metric("總金額", f"${total_amount:,.0f}")
+        else:
+            st.metric("總金額", "-")
+    with col_summary2:
+        if total_quantity:
+            st.metric("總數量", f"{total_quantity}")
+        else:
+            st.metric("總數量", "-")
+
+    # 機台 / 付款資訊
+    st.markdown("---")
+    st.markdown("#### 🏪 機台與付款資訊")
+    col4, col5 = st.columns(2)
+    with col4:
+        st.markdown("**機台資訊**")
+        if machine_code or machine_name or location_name:
+            if machine_name:
+                st.write(f"- 名稱：{machine_name}")
+            if machine_code:
+                st.write(f"- 編碼：{machine_code}")
+            if machine_id:
+                st.write(f"- ID：{machine_id}")
+            if location_name:
+                st.write(f"- 地點：{location_name}")
+        elif machine_id:
+            st.write(f"- 機台 ID：{machine_id}")
+        else:
+            st.write("（無機台資訊）")
+
+    with col5:
+        st.markdown("**付款資訊**")
+        st.write(f"- 付款方式：{payment_method or '-'}")
+        st.write(f"- 金流編號：{payment_number or '-'}")
+
+    # 環境資訊（不顯示濕度）
+    if weather or temperature is not None:
+        st.markdown("---")
+        st.markdown("#### 🌦️ 環境資訊")
+        col6, col7 = st.columns(2)
+        with col6:
+            st.write(f"- 天氣：{weather or '-'}")
+        with col7:
+            if temperature is not None:
+                st.write(f"- 溫度：{temperature}°C")
+            else:
+                st.write("- 溫度：-")
+
+    # 訂單明細表格（不顯示單價）
+    if items_table:
+        st.markdown("---")
+        st.markdown("#### 🧾 訂單明細")
+        df_items = pd.DataFrame(items_table)
+        st.dataframe(df_items, use_container_width=True)
+
+    # 進階：顯示已過濾的原始 JSON（方便除錯）
+    with st.expander("🧩 查看原始資料（已隱藏部份欄位）", expanded=False):
+        filtered = _filter_hidden_fields(order)
+        st.json(filtered)
 
 
 def render_order_details_from_transactional_data(order: Dict):
-    """渲染訂單詳情（從交易數據API）- 顯示 JSON 格式"""
-    import json
-    st.json(order)
+    """渲染訂單詳情（從交易數據API）
+
+    目前交易數據的結構與訂單列表相近，直接共用同一套美化呈現邏輯。
+    """
+    render_order_details(order)
 
 
 def delete_orders_by_date_range(start_date: datetime, end_date: datetime) -> Tuple[int, int]:
