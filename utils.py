@@ -33,6 +33,194 @@ class VendingMachineAPI:
         
         api_logger.info(f"VendingMachineAPI initialized with base_url: {base_url}, has_token: {bool(token)}")
     
+    # ===== AI 通知收件者管理 =====
+    def get_ai_notification_recipients(self, is_active: Optional[bool] = None, page: int = 1, limit: int = 50) -> Dict:
+        """取得 AI 通知收件者列表（支援分頁與狀態過濾）"""
+        try:
+            params = {"page": page, "limit": limit}
+            if is_active is not None:
+                params["is_active"] = str(is_active).lower()
+            response = requests.get(
+                f"{self.base_url}/notifications/ai/recipients",
+                headers=self._get_auth_headers(),
+                params=params,
+                timeout=10
+            )
+            if response.status_code == 200:
+                return response.json()
+            elif response.status_code in [401, 403]:
+                import streamlit as st
+                st.error("❌ 權限不足：僅管理員可管理通知收件者")
+                return {"items": [], "total": 0, "skip": 0, "limit": limit}
+            else:
+                api_logger.warning(f"Failed to get AI recipients - Status: {response.status_code}")
+                return {"items": [], "total": 0, "skip": 0, "limit": limit}
+        except requests.exceptions.RequestException as e:
+            api_logger.error(f"Network error getting AI recipients: {str(e)}")
+            import streamlit as st
+            st.error(f"🌐 無法連接到 API 伺服器: {str(e)}")
+            return {"items": [], "total": 0, "skip": 0, "limit": limit}
+    
+    def create_ai_notification_recipient(self, email: str, note: Optional[str] = None) -> Optional[Dict]:
+        """新增 AI 通知收件者"""
+        try:
+            payload = {"email": (email or "").strip().lower()}
+            if note:
+                payload["note"] = note.strip()
+            response = requests.post(
+                f"{self.base_url}/notifications/ai/recipients",
+                headers=self._get_auth_headers(),
+                json=payload,
+                timeout=10
+            )
+            if response.status_code in [200, 201]:
+                import streamlit as st
+                st.success("✅ 收件者已建立")
+                return response.json()
+            elif response.status_code == 409:
+                import streamlit as st
+                try:
+                    detail = response.json().get("detail", "Email 已存在")
+                except:
+                    detail = "Email 已存在"
+                st.warning(f"⚠️ {detail}")
+                return None
+            elif response.status_code == 400:
+                import streamlit as st
+                try:
+                    detail = response.json().get("detail", "資料格式不正確")
+                except:
+                    detail = "資料格式不正確"
+                st.error(f"❌ 建立失敗：{detail}")
+                return None
+            elif response.status_code in [401, 403]:
+                import streamlit as st
+                st.error("❌ 權限不足：僅管理員可新增")
+                return None
+            else:
+                api_logger.warning(f"Failed to create AI recipient - Status: {response.status_code}")
+                return None
+        except requests.exceptions.RequestException as e:
+            api_logger.error(f"Network error creating AI recipient: {str(e)}")
+            import streamlit as st
+            st.error(f"🌐 無法連接到 API 伺服器: {str(e)}")
+            return None
+    
+    def update_ai_notification_recipient(self, recipient_id: int, email: Optional[str] = None,
+                                         note: Optional[str] = None, is_active: Optional[bool] = None) -> Optional[Dict]:
+        """更新 AI 通知收件者"""
+        try:
+            payload: Dict[str, object] = {}
+            if email is not None:
+                payload["email"] = email.strip().lower()
+            if note is not None:
+                payload["note"] = note.strip()
+            if is_active is not None:
+                payload["is_active"] = bool(is_active)
+            response = requests.put(
+                f"{self.base_url}/notifications/ai/recipients/{recipient_id}",
+                headers=self._get_auth_headers(),
+                json=payload,
+                timeout=10
+            )
+            if response.status_code == 200:
+                import streamlit as st
+                st.success("✅ 已儲存變更")
+                return response.json()
+            elif response.status_code == 404:
+                import streamlit as st
+                st.error("❌ 找不到指定的收件者")
+                return None
+            elif response.status_code == 409:
+                import streamlit as st
+                try:
+                    detail = response.json().get("detail", "Email 衝突")
+                except:
+                    detail = "Email 衝突"
+                st.error(f"❌ 無法儲存：{detail}")
+                return None
+            elif response.status_code == 400:
+                import streamlit as st
+                try:
+                    detail = response.json().get("detail", "資料格式不正確")
+                except:
+                    detail = "資料格式不正確"
+                st.error(f"❌ 更新失敗：{detail}")
+                return None
+            else:
+                api_logger.warning(f"Failed to update AI recipient - Status: {response.status_code}")
+                return None
+        except requests.exceptions.RequestException as e:
+            api_logger.error(f"Network error updating AI recipient: {str(e)}")
+            import streamlit as st
+            st.error(f"🌐 無法連接到 API 伺服器: {str(e)}")
+            return None
+    
+    def delete_ai_notification_recipient(self, recipient_id: int) -> bool:
+        """停用（軟刪除） AI 通知收件者"""
+        try:
+            response = requests.delete(
+                f"{self.base_url}/notifications/ai/recipients/{recipient_id}",
+                headers=self._get_auth_headers(),
+                timeout=10
+            )
+            if response.status_code in [200, 204]:
+                import streamlit as st
+                st.success("✅ 已停用收件者")
+                return True
+            elif response.status_code == 404:
+                import streamlit as st
+                st.error("❌ 找不到指定的收件者")
+                return False
+            else:
+                api_logger.warning(f"Failed to delete AI recipient - Status: {response.status_code}")
+                return False
+        except requests.exceptions.RequestException as e:
+            api_logger.error(f"Network error deleting AI recipient: {str(e)}")
+            import streamlit as st
+            st.error(f"🌐 無法連接到 API 伺服器: {str(e)}")
+            return False
+    
+    def send_ai_notification_test(self, subject: Optional[str] = None, body: Optional[str] = None) -> Optional[Dict]:
+        """呼叫測試寄送端點，驗證 SMTP 與收件者設定"""
+        try:
+            payload: Dict[str, str] = {}
+            if subject:
+                payload["subject"] = subject
+            if body:
+                payload["body"] = body
+            response = requests.post(
+                f"{self.base_url}/notifications/ai/recipients/test",
+                headers=self._get_auth_headers(),
+                json=payload if payload else {},
+                timeout=15
+            )
+            if response.status_code == 200:
+                result = response.json()
+                import streamlit as st
+                st.success(f"✅ 測試郵件已送出（收件者：{', '.join(result.get('sent_to', []))}）")
+                return result
+            elif response.status_code == 400:
+                import streamlit as st
+                try:
+                    detail = response.json().get("detail", "寄件設定錯誤或缺少環境變數")
+                except:
+                    detail = "寄件設定錯誤或缺少環境變數"
+                st.error(f"❌ 無法寄送：{detail}")
+                return None
+            elif response.status_code in [401, 403]:
+                import streamlit as st
+                st.error("❌ 權限不足：僅管理員可執行測試寄送")
+                return None
+            else:
+                api_logger.warning(f"Failed to send test email - Status: {response.status_code}")
+                return None
+        except requests.exceptions.RequestException as e:
+            api_logger.error(f"Network error sending test email: {str(e)}")
+            import streamlit as st
+            st.error(f"🌐 無法連接到 API 伺服器: {str(e)}")
+            return None
+    
     @staticmethod
     def _normalize_iso_datetime(dt_value) -> Optional[str]:
         """

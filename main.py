@@ -180,91 +180,192 @@ def show_user_management():
     ui_logger.info(f"Admin {st.session_state.get('username', 'Unknown')} accessing user management")
     st.header("👥 使用者管理")
     st.markdown("---")
+    # 分頁：使用者管理 / AI 通知收件者
+    tab_users, tab_ai_recipients = st.tabs(["📋 使用者列表", "🔔 AI 通知收件者"])
     
-    # 使用者列表
-    st.subheader("📋 使用者列表")
-    
-    # 分頁控制
-    col1, col2, col3 = st.columns([1, 1, 2])
-    with col1:
-        page_size = st.selectbox("每頁顯示", [10, 20, 50], index=1)
-    with col2:
-        page_number = st.number_input("頁數", min_value=1, value=1)
-    
-    skip = (page_number - 1) * page_size
-    
-    # 獲取使用者列表和總數
-    api = st.session_state.api
-    users = api.get_users(skip=skip, limit=page_size)
-    total_users = api.get_users_count()
-    
-    ui_logger.debug(f"Retrieved {len(users)} users for management display (page {page_number})")
-    
-    with col3:
-        st.metric("總使用者數", total_users)
-    
-    if users:
-        # 建立使用者資料表
-        user_data = []
-        for user in users:
-            user_data.append({
-                "ID": user.get("id", "N/A"),
-                "使用者名稱": user.get("username", "N/A"),
-                "姓名": user.get("full_name", "N/A"),
-                "電子郵件": user.get("email", "N/A"),
-                "角色": "管理員" if user.get("is_admin", False) else "一般使用者",
-                "狀態": "啟用" if user.get("is_active", False) else "停用",
-                "建立時間": user.get("created_at", "N/A")
-            })
-        
-        df = pd.DataFrame(user_data)
-        st.dataframe(df, width="stretch")
-        
-        # 統計資訊
-        col1, col2, col3, col4 = st.columns(4)
+    with tab_users:
+        st.subheader("📋 使用者列表")
+        col1, col2, col3 = st.columns([1, 1, 2])
         with col1:
-            current_page_users = len(users)
-            st.metric("當前頁使用者", current_page_users)
+            page_size = st.selectbox("每頁顯示", [10, 20, 50], index=1, key="users_page_size")
         with col2:
-            admin_count = sum(1 for user in users if user.get("is_admin", False))
-            st.metric("管理員數量", admin_count)
+            page_number = st.number_input("頁數", min_value=1, value=1, key="users_page_number")
+        skip = (page_number - 1) * page_size
+        api = st.session_state.api
+        users = api.get_users(skip=skip, limit=page_size)
+        total_users = api.get_users_count()
+        ui_logger.debug(f"Retrieved {len(users)} users for management display (page {page_number})")
         with col3:
-            active_count = sum(1 for user in users if user.get("is_active", False))
-            st.metric("啟用使用者", active_count)
-        with col4:
-            total_pages = (total_users + page_size - 1) // page_size
-            st.metric("總頁數", total_pages)
-    else:
-        st.info("目前沒有使用者資料")
+            st.metric("總使用者數", total_users)
+        if users:
+            user_data = []
+            for user in users:
+                user_data.append({
+                    "ID": user.get("id", "N/A"),
+                    "使用者名稱": user.get("username", "N/A"),
+                    "姓名": user.get("full_name", "N/A"),
+                    "電子郵件": user.get("email", "N/A"),
+                    "角色": "管理員" if user.get("is_admin", False) else "一般使用者",
+                    "狀態": "啟用" if user.get("is_active", False) else "停用",
+                    "建立時間": user.get("created_at", "N/A")
+                })
+            df = pd.DataFrame(user_data)
+            st.dataframe(df, width="stretch")
+            col1, col2, col3, col4 = st.columns(4)
+            with col1:
+                current_page_users = len(users)
+                st.metric("當前頁使用者", current_page_users)
+            with col2:
+                admin_count = sum(1 for user in users if user.get("is_admin", False))
+                st.metric("管理員數量", admin_count)
+            with col3:
+                active_count = sum(1 for user in users if user.get("is_active", False))
+                st.metric("啟用使用者", active_count)
+            with col4:
+                total_pages = (total_users + page_size - 1) // page_size
+                st.metric("總頁數", total_pages)
+        else:
+            st.info("目前沒有使用者資料")
+        st.markdown("---")
+        st.subheader("🚀 快速建立測試使用者")
+        col1, col2 = st.columns(2)
+        with col1:
+            if st.button("建立測試管理員", width="stretch"):
+                ui_logger.info("Admin attempting to create test admin user")
+                if st.session_state.api.register("testadmin", "testadmin@example.com", "testpassword", "Test Admin", True):
+                    auth_logger.info("Test admin user created successfully via UI")
+                    st.success("✅ 測試管理員建立成功！")
+                    st.rerun()
+                else:
+                    auth_logger.warning("Failed to create test admin user via UI")
+                    st.error("❌ 建立失敗，可能已存在")
+        with col2:
+            if st.button("👤 建立測試使用者", key="create_user"):
+                ui_logger.info("Admin attempting to create test regular user")
+                if st.session_state.api.register("testuser2", "testuser2@example.com", "testpassword", "Test User 2", False):
+                    auth_logger.info("Test regular user created successfully via UI")
+                    st.success("✅ 測試使用者建立成功！")
+                    st.rerun()
+                else:
+                    auth_logger.warning("Failed to create test regular user via UI")
+                    st.error("❌ 建立失敗")
     
-    st.markdown("---")
-    
-    # 快速建立測試使用者
-    st.subheader("🚀 快速建立測試使用者")
-    
-    col1, col2 = st.columns(2)
-    
-    with col1:
-        if st.button("建立測試管理員", width="stretch"):
-            ui_logger.info("Admin attempting to create test admin user")
-            if st.session_state.api.register("testadmin", "testadmin@example.com", "testpassword", "Test Admin", True):
-                auth_logger.info("Test admin user created successfully via UI")
-                st.success("✅ 測試管理員建立成功！")
-                st.rerun()
-            else:
-                auth_logger.warning("Failed to create test admin user via UI")
-                st.error("❌ 建立失敗，可能已存在")
-    
-    with col2:
-        if st.button("👤 建立測試使用者", key="create_user"):
-            ui_logger.info("Admin attempting to create test regular user")
-            if st.session_state.api.register("testuser2", "testuser2@example.com", "testpassword", "Test User 2", False):
-                auth_logger.info("Test regular user created successfully via UI")
-                st.success("✅ 測試使用者建立成功！")
-                st.rerun()
-            else:
-                auth_logger.warning("Failed to create test regular user via UI")
-                st.error("❌ 建立失敗")
+    with tab_ai_recipients:
+        st.subheader("🔔 AI 通知收件者管理")
+        # 權限保護（雙重保護）
+        if not st.session_state.get('is_admin', False):
+            st.error("❌ 權限不足：此功能僅限管理員使用")
+            return
+        
+        # 上方操作列：狀態篩選、分頁、測試寄送
+        colf1, colf2, colf3, colf4 = st.columns([1.2, 1, 1, 2])
+        with colf1:
+            status_filter = st.selectbox("狀態篩選", ["全部", "啟用", "停用"], index=1, key="ai_rec_status_filter")
+        with colf2:
+            rec_limit = st.selectbox("每頁顯示", [20, 50, 100], index=1, key="ai_rec_limit")
+        with colf3:
+            rec_page = st.number_input("頁數", min_value=1, value=1, key="ai_rec_page")
+        with colf4:
+            with st.expander("✉️ 測試寄送", expanded=False):
+                test_subject = st.text_input("主旨（選填）", value="AI 通知收件者測試郵件")
+                test_body = st.text_area("內文（選填）", value="這是一封測試郵件，用以驗證 SMTP 與收件者設定。")
+                if st.button("發送測試郵件", key="btn_send_test_email"):
+                    st.session_state.api.send_ai_notification_test(subject=test_subject, body=test_body)
+        
+        # 取得列表
+        is_active_param = None
+        if status_filter == "啟用":
+            is_active_param = True
+        elif status_filter == "停用":
+            is_active_param = False
+        rec_result = st.session_state.api.get_ai_notification_recipients(
+            is_active=is_active_param, page=rec_page, limit=rec_limit
+        ) or {"items": [], "total": 0, "skip": 0, "limit": rec_limit}
+        rec_items = rec_result.get("items", [])
+        rec_total = rec_result.get("total", 0)
+        
+        # 上方工具列：新增
+        st.markdown("---")
+        with st.expander("➕ 新增收件者", expanded=(len(rec_items) == 0)):
+            with st.form("form_create_ai_recipient"):
+                new_email = st.text_input("Email（必填）", placeholder="ops@yourco.com").strip().lower()
+                new_note = st.text_input("備註（選填，≤255）", placeholder="AI 團隊群組")
+                submitted = st.form_submit_button("新增", type="primary")
+                if submitted:
+                    # 簡易前端驗證
+                    if not new_email:
+                        st.error("請輸入 Email")
+                    elif "@" not in new_email or "." not in new_email.split("@")[-1]:
+                        st.error("Email 格式不正確")
+                    elif len(new_note) > 255:
+                        st.error("備註長度不可超過 255 字元")
+                    else:
+                        created = st.session_state.api.create_ai_notification_recipient(email=new_email, note=new_note)
+                        if created:
+                            st.experimental_rerun()
+        
+        # 列表顯示
+        st.markdown("#### 📋 收件者列表")
+        if rec_items:
+            # Dataframe 基本顯示
+            table_data = []
+            for r in rec_items:
+                table_data.append({
+                    "ID": r.get("id"),
+                    "Email": r.get("email"),
+                    "狀態": "啟用" if r.get("is_active", True) else "停用",
+                    "備註": r.get("note", ""),
+                    "建立時間": r.get("created_at", ""),
+                    "更新時間": r.get("updated_at", "")
+                })
+            st.dataframe(pd.DataFrame(table_data), use_container_width=True)
+            
+            # 行內操作（編輯 / 停用）
+            st.markdown("##### 行內操作")
+            for r in rec_items:
+                rid = r.get("id")
+                r_email = r.get("email", "")
+                r_note = r.get("note", "")
+                r_active = r.get("is_active", True)
+                with st.expander(f"✏️ 編輯 - {r_email}", expanded=False):
+                    with st.form(f"form_edit_recipient_{rid}"):
+                        upd_email = st.text_input("Email", value=r_email, key=f"edit_email_{rid}").strip().lower()
+                        upd_note = st.text_input("備註（≤255）", value=r_note or "", key=f"edit_note_{rid}")
+                        upd_active = st.checkbox("啟用", value=bool(r_active), key=f"edit_active_{rid}")
+                        save_btn = st.form_submit_button("儲存", type="primary")
+                        if save_btn:
+                            if not upd_email:
+                                st.error("請輸入 Email")
+                            elif "@" not in upd_email or "." not in upd_email.split("@")[-1]:
+                                st.error("Email 格式不正確")
+                            elif len(upd_note) > 255:
+                                st.error("備註長度不可超過 255 字元")
+                            else:
+                                updated = st.session_state.api.update_ai_notification_recipient(
+                                    recipient_id=rid, email=upd_email, note=upd_note, is_active=upd_active
+                                )
+                                if updated:
+                                    st.experimental_rerun()
+                cols = st.columns([1, 1, 6])
+                with cols[0]:
+                    # 停用按鈕（對應 DELETE 軟刪）
+                    if r_active and st.button("停用", key=f"btn_disable_{rid}"):
+                        ok = st.session_state.api.delete_ai_notification_recipient(rid)
+                        if ok:
+                            st.experimental_rerun()
+                with cols[1]:
+                    if (not r_active) and st.button("啟用", key=f"btn_enable_{rid}"):
+                        updated = st.session_state.api.update_ai_notification_recipient(
+                            recipient_id=rid, is_active=True
+                        )
+                        if updated:
+                            st.experimental_rerun()
+            
+            # 分頁資訊
+            total_pages = (rec_total + rec_limit - 1) // rec_limit if rec_limit else 1
+            st.caption(f"總數：{rec_total}，頁數：{rec_page}/{max(total_pages, 1)}")
+        else:
+            st.info("目前沒有收件者資料，請點擊上方「新增收件者」。")
 
 
 def main():
