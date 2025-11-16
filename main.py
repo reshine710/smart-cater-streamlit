@@ -259,16 +259,20 @@ def show_user_management():
         
         # 上方操作列：狀態篩選、分頁、測試寄送
         colf1, colf2, colf3, colf4 = st.columns([1.2, 1, 1, 2])
+        # 若上一輪操作要求強制切換為「全部」，需在 selectbox 建立前處理
+        if st.session_state.get("ai_rec_force_all", False):
+            st.session_state["ai_rec_status_filter"] = "全部"
+            st.session_state["ai_rec_force_all"] = False
         with colf1:
-            status_filter = st.selectbox("狀態篩選", ["全部", "啟用", "停用"], index=1, key="ai_rec_status_filter")
+            status_filter = st.selectbox("狀態篩選", ["全部", "啟用", "停用"], index=0, key="ai_rec_status_filter")
         with colf2:
             rec_limit = st.selectbox("每頁顯示", [20, 50, 100], index=1, key="ai_rec_limit")
         with colf3:
             rec_page = st.number_input("頁數", min_value=1, value=1, key="ai_rec_page")
         with colf4:
             with st.expander("✉️ 測試寄送", expanded=False):
-                test_subject = st.text_input("主旨（選填）", value="AI 通知收件者測試郵件")
-                test_body = st.text_area("內文（選填）", value="這是一封測試郵件，用以驗證 SMTP 與收件者設定。")
+                test_subject = st.text_input("主旨（選填）", value="AI 通知收件者測試郵件", disabled=True)
+                test_body = st.text_area("內文（選填）", value="這是一封測試郵件，用以驗證 SMTP 與收件者設定。", disabled=True)
                 if st.button("發送測試郵件", key="btn_send_test_email"):
                     st.session_state.api.send_ai_notification_test(subject=test_subject, body=test_body)
         
@@ -283,6 +287,10 @@ def show_user_management():
         ) or {"items": [], "total": 0, "skip": 0, "limit": rec_limit}
         rec_items = rec_result.get("items", [])
         rec_total = rec_result.get("total", 0)
+        # 前端樂觀過濾：剛刪除的項目先從當前列表隱藏
+        removed_ids = st.session_state.get("ai_rec_removed_ids", set())
+        if removed_ids:
+            rec_items = [r for r in rec_items if r.get("id") not in removed_ids]
         
         # 上方工具列：新增
         st.markdown("---")
@@ -302,7 +310,7 @@ def show_user_management():
                     else:
                         created = st.session_state.api.create_ai_notification_recipient(email=new_email, note=new_note)
                         if created:
-                            st.experimental_rerun()
+                            st.rerun()
         
         # 列表顯示
         st.markdown("#### 📋 收件者列表")
@@ -318,48 +326,75 @@ def show_user_management():
                     "建立時間": r.get("created_at", ""),
                     "更新時間": r.get("updated_at", "")
                 })
-            st.dataframe(pd.DataFrame(table_data), use_container_width=True)
+            st.dataframe(pd.DataFrame(table_data), width='stretch')
             
-            # 行內操作（編輯 / 停用）
-            st.markdown("##### 行內操作")
+            # 收件者管理操作（編輯 / 停用/啟用、刪除）
+            st.markdown("##### 收件者管理操作")
             for r in rec_items:
                 rid = r.get("id")
                 r_email = r.get("email", "")
                 r_note = r.get("note", "")
                 r_active = r.get("is_active", True)
-                with st.expander(f"✏️ 編輯 - {r_email}", expanded=False):
-                    with st.form(f"form_edit_recipient_{rid}"):
-                        upd_email = st.text_input("Email", value=r_email, key=f"edit_email_{rid}").strip().lower()
-                        upd_note = st.text_input("備註（≤255）", value=r_note or "", key=f"edit_note_{rid}")
-                        upd_active = st.checkbox("啟用", value=bool(r_active), key=f"edit_active_{rid}")
-                        save_btn = st.form_submit_button("儲存", type="primary")
-                        if save_btn:
-                            if not upd_email:
-                                st.error("請輸入 Email")
-                            elif "@" not in upd_email or "." not in upd_email.split("@")[-1]:
-                                st.error("Email 格式不正確")
-                            elif len(upd_note) > 255:
-                                st.error("備註長度不可超過 255 字元")
-                            else:
-                                updated = st.session_state.api.update_ai_notification_recipient(
-                                    recipient_id=rid, email=upd_email, note=upd_note, is_active=upd_active
-                                )
-                                if updated:
-                                    st.experimental_rerun()
-                cols = st.columns([1, 1, 6])
-                with cols[0]:
-                    # 停用按鈕（對應 DELETE 軟刪）
-                    if r_active and st.button("停用", key=f"btn_disable_{rid}"):
+                row_cols = st.columns([7, 1, 1])
+                with row_cols[0]:
+                    with st.expander(f"✏️ 編輯 - {r_email}", expanded=False):
+                        with st.form(f"form_edit_recipient_{rid}"):
+                            upd_email = st.text_input("Email", value=r_email, key=f"edit_email_{rid}").strip().lower()
+                            upd_note = st.text_input("備註（≤255）", value=r_note or "", key=f"edit_note_{rid}")
+                            upd_active = st.checkbox("啟用", value=bool(r_active), key=f"edit_active_{rid}")
+                            save_btn = st.form_submit_button("儲存", type="primary")
+                            if save_btn:
+                                if not upd_email:
+                                    st.error("請輸入 Email")
+                                elif "@" not in upd_email or "." not in upd_email.split("@")[-1]:
+                                    st.error("Email 格式不正確")
+                                elif len(upd_note) > 255:
+                                    st.error("備註長度不可超過 255 字元")
+                                else:
+                                    updated = st.session_state.api.update_ai_notification_recipient(
+                                        recipient_id=rid, email=upd_email, note=upd_note, is_active=upd_active
+                                    )
+                                    if updated:
+                                        # 若狀態變更可能導致在「啟用/停用」篩選下消失，下一輪強制顯示「全部」
+                                        if upd_active != r_active:
+                                            st.session_state["ai_rec_force_all"] = True
+                                        st.rerun()
+                with row_cols[1]:
+                    # 啟用/停用開關（軟刪）
+                    toggle_key = f"row_active_{rid}"
+                    current_val = st.session_state.get(toggle_key, r_active)
+                    new_val = st.checkbox("啟用", value=current_val, key=toggle_key)
+                    if new_val != r_active:
+                        # 使用 PATCH /status 切換狀態
+                        result = st.session_state.api.set_ai_notification_recipient_status(rid, new_val)
+                        if result is not None:
+                            # 下一輪切換篩選為「全部」，避免項目因篩選而消失
+                            st.session_state["ai_rec_force_all"] = True
+                            st.rerun()
+                with row_cols[2]:
+                    # 硬刪：不可回復
+                    if st.button("刪除", key=f"btn_delete_{rid}", use_container_width=True):
                         ok = st.session_state.api.delete_ai_notification_recipient(rid)
                         if ok:
-                            st.experimental_rerun()
-                with cols[1]:
-                    if (not r_active) and st.button("啟用", key=f"btn_enable_{rid}"):
-                        updated = st.session_state.api.update_ai_notification_recipient(
-                            recipient_id=rid, is_active=True
-                        )
-                        if updated:
-                            st.experimental_rerun()
+                            # 二次驗證：立即向後端取一次資料確認是否仍存在
+                            try:
+                                verify_result = st.session_state.api.get_ai_notification_recipients(
+                                    is_active=None, page=rec_page, limit=rec_limit
+                                )
+                                still_exists = False
+                                for _r in (verify_result or {}).get("items", []):
+                                    if _r.get("id") == rid:
+                                        still_exists = True
+                                        break
+                                if still_exists:
+                                    st.warning("⚠️ 後端仍回傳此收件者，可能由種子/環境變數重新建立，或刪除未生效。")
+                            except Exception:
+                                pass
+                            # 樂觀更新：先在前端列表隱藏
+                            removed_set = set(st.session_state.get("ai_rec_removed_ids", set()))
+                            removed_set.add(rid)
+                            st.session_state["ai_rec_removed_ids"] = removed_set
+                            st.rerun()
             
             # 分頁資訊
             total_pages = (rec_total + rec_limit - 1) // rec_limit if rec_limit else 1

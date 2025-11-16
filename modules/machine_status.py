@@ -351,7 +351,7 @@ def machine_status_page():
     with col_title:
         pass  # 保留標題空間
     with col_refresh:
-        if st.button("🔄 刷新全部機台", key="refresh_all_machines", type="primary", use_container_width=True):
+        if st.button("🔄 刷新全部機台", key="refresh_all_machines", type="primary", width='stretch'):
             # 清除可能的快取，強制重新獲取資料
             if 'machines_cache' in st.session_state:
                 del st.session_state.machines_cache

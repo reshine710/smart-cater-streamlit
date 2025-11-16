@@ -279,11 +279,11 @@ def render_ai_notification_widget():
                             # 標記為已讀按鈕
                             col1, col2 = st.columns(2)
                             with col1:
-                                if st.button(f"👁️ 標記已讀", key=f"mark_read_pending_{rec_id}", use_container_width=True):
+                                if st.button(f"👁️ 標記已讀", key=f"mark_read_pending_{rec_id}", width='stretch'):
                                     mark_as_read(rec_id)
                                     st.rerun()
                             with col2:
-                                if st.button(f"🔗 前往實施", key=f"goto_pending_{rec_id}", use_container_width=True):
+                                if st.button(f"🔗 前往實施", key=f"goto_pending_{rec_id}", width='stretch'):
                                     mark_as_read(rec_id)
                                     st.session_state.current_page = "🤖 AI智能推薦"
                                     st.rerun()
@@ -357,11 +357,11 @@ def render_ai_notification_widget():
                             # 標記為已讀按鈕
                             col1, col2 = st.columns(2)
                             with col1:
-                                if st.button(f"👁️ 標記已讀", key=f"mark_read_approved_{rec_id}", use_container_width=True):
+                                if st.button(f"👁️ 標記已讀", key=f"mark_read_approved_{rec_id}", width='stretch'):
                                     mark_as_read(rec_id)
                                     st.rerun()
                             with col2:
-                                if st.button(button_text, key=f"goto_approved_{rec_id}", use_container_width=True):
+                                if st.button(button_text, key=f"goto_approved_{rec_id}", width='stretch'):
                                     mark_as_read(rec_id)
                                     st.session_state.current_page = "🤖 AI智能推薦"
                                     st.rerun()
@@ -369,7 +369,7 @@ def render_ai_notification_widget():
                     st.markdown("---")
                 
                 # 全部標記為已讀按鈕
-                if st.button("✅ 全部標記為已讀", key="mark_all_read", type="primary", use_container_width=True):
+                if st.button("✅ 全部標記為已讀", key="mark_all_read", type="primary", width='stretch'):
                     for rec in unread_pending + unread_approved:
                         mark_as_read(rec.get('id'))
                     st.rerun()

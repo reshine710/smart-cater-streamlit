@@ -33,7 +33,7 @@ def dashboard_page():
             key="dashboard_end_date_input"
         )
     with col3:
-        if st.button("今日", use_container_width=True):
+        if st.button("今日", width='stretch'):
             st.session_state['dashboard_start_date'] = today
             st.session_state['dashboard_end_date'] = today
     start_date = st.session_state['dashboard_start_date']

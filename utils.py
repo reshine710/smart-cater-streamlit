@@ -157,7 +157,7 @@ class VendingMachineAPI:
             return None
     
     def delete_ai_notification_recipient(self, recipient_id: int) -> bool:
-        """停用（軟刪除） AI 通知收件者"""
+        """刪除（硬刪除） AI 通知收件者"""
         try:
             response = requests.delete(
                 f"{self.base_url}/notifications/ai/recipients/{recipient_id}",
@@ -166,7 +166,7 @@ class VendingMachineAPI:
             )
             if response.status_code in [200, 204]:
                 import streamlit as st
-                st.success("✅ 已停用收件者")
+                st.success("🗑️ 已刪除收件者")
                 return True
             elif response.status_code == 404:
                 import streamlit as st
@@ -180,6 +180,37 @@ class VendingMachineAPI:
             import streamlit as st
             st.error(f"🌐 無法連接到 API 伺服器: {str(e)}")
             return False
+    
+    def set_ai_notification_recipient_status(self, recipient_id: int, is_active: bool) -> Optional[Dict]:
+        """啟用/停用（軟刪） AI 通知收件者：PATCH /status?is_active=true|false"""
+        try:
+            params = {"is_active": str(bool(is_active)).lower()}
+            response = requests.patch(
+                f"{self.base_url}/notifications/ai/recipients/{recipient_id}/status",
+                headers=self._get_auth_headers(),
+                params=params,
+                timeout=10
+            )
+            if response.status_code == 200:
+                import streamlit as st
+                st.success("✅ 狀態已更新")
+                return response.json()
+            elif response.status_code == 404:
+                import streamlit as st
+                st.error("❌ 找不到指定的收件者")
+                return None
+            elif response.status_code in [401, 403]:
+                import streamlit as st
+                st.error("❌ 權限不足：僅管理員可變更狀態")
+                return None
+            else:
+                api_logger.warning(f"Failed to set AI recipient status - Status: {response.status_code}")
+                return None
+        except requests.exceptions.RequestException as e:
+            api_logger.error(f"Network error setting AI recipient status: {str(e)}")
+            import streamlit as st
+            st.error(f"🌐 無法連接到 API 伺服器: {str(e)}")
+            return None
     
     def send_ai_notification_test(self, subject: Optional[str] = None, body: Optional[str] = None) -> Optional[Dict]:
         """呼叫測試寄送端點，驗證 SMTP 與收件者設定"""
