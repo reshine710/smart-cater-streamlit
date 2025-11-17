@@ -943,7 +943,45 @@ def render_order_details(order: Dict):
     weather = order.get("weather")
     temperature = order.get("temperature") or order.get("temperature_celsius")
 
-    # 嘗試取得機台資訊（只顯示簡單識別，不顯示完整 machine 物件）
+    # ===== 建立機台資訊映射（用於查詢機台名稱和代碼） =====
+    def get_machine_info_mapping():
+        """獲取機台資訊映射（ID -> 機台資訊，包含 name 和 machine_code）"""
+        try:
+            # 快取所有機台列表，避免重複呼叫 API
+            if "order_machines_cache" not in st.session_state:
+                api = st.session_state.get("api")
+                machines = api.get_machines() if api else []
+                # 建立映射：machine_id -> {name, machine_code, location_name}
+                by_id = {}
+                by_code = {}  # 也建立 machine_code -> 機台資訊的映射
+                for m in machines or []:
+                    mid = m.get("id")
+                    if mid is not None:
+                        # 處理 location_name：如果是字典格式，只提取 name 欄位
+                        location_raw = m.get("location_name") or m.get("location")
+                        if isinstance(location_raw, dict):
+                            location_name_clean = location_raw.get("name")
+                        else:
+                            location_name_clean = location_raw
+                        
+                        by_id[mid] = {
+                            "name": m.get("name"),
+                            "machine_code": m.get("machine_code") or m.get("code"),
+                            "location_name": location_name_clean
+                        }
+                        # 同時建立 code -> 機台資訊的映射
+                        code = m.get("machine_code") or m.get("code")
+                        if code:
+                            by_code[code] = by_id[mid]
+                st.session_state["order_machines_cache"] = {
+                    "by_id": by_id,
+                    "by_code": by_code
+                }
+            return st.session_state.get("order_machines_cache", {"by_id": {}, "by_code": {}})
+        except Exception:
+            return {"by_id": {}, "by_code": {}}
+
+    # 嘗試取得機台資訊（需要透過查表轉換才能獲得正確的中文名稱）
     machine_code = None
     machine_name = None
     location_name = None
@@ -952,8 +990,13 @@ def render_order_details(order: Dict):
     machine_obj = order.get("machine") or {}
     if isinstance(machine_obj, dict):
         machine_code = machine_obj.get("machine_code") or machine_obj.get("code")
-        machine_name = machine_obj.get("name")
-        location_name = machine_obj.get("location_name") or machine_obj.get("location")
+        # 不直接使用 machine_obj 的 name，而是透過查表取得
+        location_raw = machine_obj.get("location_name") or machine_obj.get("location")
+        # 如果 location 是字典格式，只提取 name 欄位
+        if isinstance(location_raw, dict):
+            location_name = location_raw.get("name")
+        else:
+            location_name = location_raw
 
     # 後端有些版本只回傳 machine_id / machine_code 在訂單本身
     machine_id = order.get("machine_id")
@@ -961,33 +1004,35 @@ def render_order_details(order: Dict):
     if not machine_code:
         machine_code = order.get("machine_code") or order.get("machineCode")
 
-    # 如果只有 machine_id，嘗試透過 API 映射出機台資訊
-    if machine_id and not (machine_code or machine_name):
-        try:
-            # 快取所有機台列表，避免重複呼叫 API
-            if "order_machines_cache" not in st.session_state:
-                api = st.session_state.get("api")
-                machines = api.get_machines() if api else []
-                by_id = {}
-                for m in machines or []:
-                    mid = m.get("id")
-                    if mid is not None:
-                        by_id[mid] = m
-                st.session_state["order_machines_cache"] = by_id
+    # 透過 API 查表轉換取得機台資訊（包含中文名稱）
+    machine_mapping = get_machine_info_mapping()
+    by_id = machine_mapping.get("by_id", {})
+    by_code = machine_mapping.get("by_code", {})
 
-            machines_cache = st.session_state.get("order_machines_cache", {})
-            m = machines_cache.get(machine_id)
-            if isinstance(m, dict):
-                machine_code = (
-                    m.get("machine_code") or m.get("code") or machine_code
-                )
-                machine_name = m.get("name") or machine_name
-                location_name = (
-                    m.get("location_name") or m.get("location") or location_name
-                )
-        except Exception:
-            # 若查詢失敗，不影響整體畫面
-            pass
+    # 優先使用 machine_id 查詢
+    if machine_id:
+        machine_info = by_id.get(machine_id)
+        if machine_info:
+            machine_name = machine_info.get("name") or machine_name
+            machine_code = machine_info.get("machine_code") or machine_code
+            location_raw = machine_info.get("location_name") or location_name
+            # 如果 location 是字典格式，只提取 name 欄位
+            if isinstance(location_raw, dict):
+                location_name = location_raw.get("name") or location_name
+            else:
+                location_name = location_raw or location_name
+
+    # 如果沒有透過 ID 找到，嘗試使用 machine_code 查詢
+    if not machine_name and machine_code:
+        machine_info = by_code.get(machine_code)
+        if machine_info:
+            machine_name = machine_info.get("name") or machine_name
+            location_raw = machine_info.get("location_name") or location_name
+            # 如果 location 是字典格式，只提取 name 欄位
+            if isinstance(location_raw, dict):
+                location_name = location_raw.get("name") or location_name
+            else:
+                location_name = location_raw or location_name
 
     # ===== 訂單明細（items）處理 =====
     items = (
@@ -1056,6 +1101,113 @@ def render_order_details(order: Dict):
 
     total_quantity = order_quantity if order_quantity is not None else total_quantity_from_items
 
+    # ===== 建立菜單項目映射（用於查詢中文名稱） =====
+    def get_menu_item_name_by_code(product_code_or_meal_id):
+        """根據 product_code 或 meal_id 查詢菜單項目中文名稱"""
+        if not product_code_or_meal_id:
+            return None
+        
+        try:
+            # 快取菜單項目列表
+            if "order_menu_items_cache" not in st.session_state:
+                api = st.session_state.get("api")
+                if api:
+                    menu_items = api.get_menu_items() or []
+                    # 建立映射：product_code -> name 和 meal_id -> name
+                    mapping = {}
+                    for item in menu_items:
+                        product_code = item.get("product_code")
+                        name = item.get("name")
+                        if product_code and name:
+                            mapping[product_code] = name
+                        # 如果有 meal_id 欄位，也加入映射
+                        meal_id = item.get("meal_id")
+                        if meal_id and name:
+                            mapping[meal_id] = name
+                    st.session_state["order_menu_items_cache"] = mapping
+                else:
+                    st.session_state["order_menu_items_cache"] = {}
+            
+            menu_cache = st.session_state.get("order_menu_items_cache", {})
+            return menu_cache.get(str(product_code_or_meal_id))
+        except Exception:
+            return None
+
+    # ===== 提取購買的餐點列表（格式：中文（product_code）） =====
+    purchased_items_display = []
+    if isinstance(items, list) and items:
+        for item in items:
+            if not isinstance(item, dict):
+                continue
+            
+            # 取得中文名稱和代碼
+            item_name_cn = (
+                item.get("item_name")
+                or item.get("name")
+                or None
+            )
+            item_code = (
+                item.get("product_code")
+                or item.get("meal_id")
+                or item.get("menu_item_id")
+                or None
+            )
+            
+            # 如果沒有中文名稱，嘗試從菜單查詢
+            if not item_name_cn and item_code:
+                item_name_cn = get_menu_item_name_by_code(item_code)
+            
+            # 格式化顯示：中文（product_code）
+            if item_name_cn and item_code:
+                purchased_items_display.append(f"{item_name_cn}（{item_code}）")
+            elif item_name_cn:
+                purchased_items_display.append(item_name_cn)
+            elif item_code:
+                purchased_items_display.append(f"（{item_code}）")
+    
+    # 如果沒有從 items 中取得，嘗試從訂單本身取得
+    if not purchased_items_display:
+        item_name_cn = (
+            order.get("item_name")
+            or order.get("name")
+            or None
+        )
+        item_code = (
+            order.get("product_code")
+            or order.get("meal_id")
+            or None
+        )
+        
+        if not item_name_cn and item_code:
+            item_name_cn = get_menu_item_name_by_code(item_code)
+        
+        if item_name_cn and item_code:
+            purchased_items_display.append(f"{item_name_cn}（{item_code}）")
+        elif item_name_cn:
+            purchased_items_display.append(item_name_cn)
+        elif item_code:
+            purchased_items_display.append(f"（{item_code}）")
+
+    # ===== 提取推薦的餐點內容（格式：中文（product_code）） =====
+    recommended_item_display = None
+    recommended_item_raw = order.get("recommended_item")
+    if recommended_item_raw is not None:
+        # 轉換為字串格式（處理各種類型：字串、數字等）
+        if isinstance(recommended_item_raw, str):
+            recommended_code = recommended_item_raw.strip()
+        else:
+            recommended_code = str(recommended_item_raw).strip()
+        
+        if recommended_code and recommended_code.lower() not in ("none", "null", ""):
+            # 查詢中文名稱
+            recommended_name_cn = get_menu_item_name_by_code(recommended_code)
+            
+            # 格式化顯示：中文（product_code）
+            if recommended_name_cn:
+                recommended_item_display = f"{recommended_name_cn}（{recommended_code}）"
+            else:
+                recommended_item_display = f"（{recommended_code}）"
+
     # ===== 版面呈現 =====
     # 上方概要：訂單編號與時間各自一列，避免被截斷
     st.markdown("#### 📌 訂單概要")
@@ -1080,6 +1232,21 @@ def render_order_details(order: Dict):
         else:
             st.metric("總數量", "-")
 
+    # 購買的餐點
+    if purchased_items_display:
+        st.markdown("**🛒 購買的餐點：**")
+        for item_display in purchased_items_display:
+            st.write(f"- {item_display}")
+    else:
+        st.markdown("**🛒 購買的餐點：** 無")
+
+    # 推薦的餐點內容
+    if recommended_item_display:
+        st.markdown("**🤖 推薦的餐點內容：**")
+        st.write(f"- {recommended_item_display}")
+    else:
+        st.markdown("**🤖 推薦的餐點內容：** 無")
+
     # 機台 / 付款資訊
     st.markdown("---")
     st.markdown("#### 🏪 機台與付款資訊")
@@ -1087,12 +1254,14 @@ def render_order_details(order: Dict):
     with col4:
         st.markdown("**機台資訊**")
         if machine_code or machine_name or location_name:
-            if machine_name:
-                st.write(f"- 名稱：{machine_name}")
-            if machine_code:
-                st.write(f"- 編碼：{machine_code}")
-            if machine_id:
-                st.write(f"- ID：{machine_id}")
+            # 格式：中文（machine_code）
+            if machine_name and machine_code:
+                st.write(f"- {machine_name}（{machine_code}）")
+            elif machine_name:
+                st.write(f"- {machine_name}")
+            elif machine_code:
+                st.write(f"- （{machine_code}）")
+            
             if location_name:
                 st.write(f"- 地點：{location_name}")
         elif machine_id:
@@ -1416,13 +1585,13 @@ def order_management_page():
     st.markdown("---")
     
     # 創建標籤頁
-    tab1, tab2, tab3 = st.tabs(["📤 訂單上傳", "🔍 訂單查詢", "🗑️ 訂單刪除"])
+    tab1, tab2, tab3 = st.tabs(["🔍 訂單查詢", "📤 訂單上傳", "🗑️ 訂單刪除"])
     
     with tab1:
-        render_order_upload_tab()
-    
-    with tab2:
         render_order_query_tab()
+        
+    with tab2:
+        render_order_upload_tab()
     
     with tab3:
         render_order_delete_tab()

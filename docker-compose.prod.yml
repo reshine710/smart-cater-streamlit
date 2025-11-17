@@ -30,8 +30,6 @@ services:
       - DB_PORT=5432
       - POSTGRES_USER=smartcater_prod
       - POSTGRES_DB=smartcater_prod_db
-    env_file:
-      - .env.production
       
       # MQTT 配置：連接到後端的 EMQX
       - MQTT_BROKER_HOST=smartcater_emqx
@@ -41,7 +39,8 @@ services:
       
       # 日誌配置
       - LOG_LEVEL=${LOG_LEVEL:-INFO}
-      
+    env_file:
+      - .env.production
     extra_hosts:
       - "host.docker.internal:host-gateway"  
     volumes:
