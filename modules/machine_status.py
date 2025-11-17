@@ -222,13 +222,15 @@ def render_machine_card(machine: Dict, status_config: Dict):
                 st.write(f"**IP地址**: {ip_address}")
             
             with col2:
-                # 顯示狀態和錯誤碼
-                status_display = f"**狀態**: {status_config['icon']} {status_config['title']}"
+                # 顯示狀態
+                st.write(f"**狀態**: {status_config['icon']} {status_config['title']}")
+                
+                # 顯示錯誤碼（如果有）
                 current_fault_code = machine.get('current_fault_code')
                 if current_fault_code is not None:
                     fault_desc = get_fault_description(current_fault_code)
-                    status_display += f"\n**錯誤碼**: {current_fault_code} - {fault_desc}"
-                st.write(status_display)
+                    st.write(f"**錯誤碼**: {current_fault_code} - {fault_desc}")
+                
                 st.write(f"**韌體版本**: {firmware_version}")
                 st.write(f"**心跳狀態**: {heartbeat_status}")
             
@@ -690,13 +692,14 @@ def machine_status_page():
                     machine_status = 'offline'
                 
                 status_config = get_status_config(machine_status)
-                status_display = f"**狀態**: {status_config['icon']} {status_config['title']}"
+                # 顯示狀態
+                st.write(f"**狀態**: {status_config['icon']} {status_config['title']}")
+                
                 # 顯示錯誤碼（如果有）
                 current_fault_code = machine.get('current_fault_code')
                 if current_fault_code is not None:
                     fault_desc = get_fault_description(current_fault_code)
-                    status_display += f"\n**錯誤碼**: {current_fault_code} - {fault_desc}"
-                st.write(status_display)
+                    st.write(f"**錯誤碼**: {current_fault_code} - {fault_desc}")
                 # 處理位置顯示格式
                 location_info = machine.get('location', 'Unknown Location')
                 if isinstance(location_info, dict):
