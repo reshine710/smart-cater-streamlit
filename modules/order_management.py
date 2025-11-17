@@ -353,9 +353,10 @@ def upload_orders_from_dataframe(df: pd.DataFrame) -> Tuple[int, int, int, List[
                 
                 purchase_time = parse_timestamp(row["purchase_timestamp"])
                 product_code = row.get("product_code", row.get("meal_id"))
+                from utils import format_datetime_display
                 system_logger.info(
                     f"✅ [{index + 1}/{len(df)}] 訂單 {order_number} - "
-                    f"{purchase_time.strftime('%Y-%m-%d %H:%M:%S')} - "
+                    f"{format_datetime_display(purchase_time)} - "
                     f"產品: {product_code}"
                 )
 
@@ -1216,7 +1217,8 @@ def render_order_details(order: Dict):
         st.caption(f"ID：{order_id}")
 
     if created_at:
-        st.write(f"**建立時間：** {created_at}")
+        from utils import format_datetime_display
+        st.write(f"**建立時間：** {format_datetime_display(created_at)}")
     else:
         st.write("**建立時間：** -")
 

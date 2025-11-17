@@ -2423,3 +2423,60 @@ def init_session_state():
         st.session_state.idle_warning_shown = False
     
     system_logger.info("Session state initialized successfully")
+
+def format_datetime_display(dt) -> str:
+    """
+    格式化時間顯示為 YYYY-MM-DD - hh:mm:ss 格式
+    
+    Args:
+        dt: 可以是 datetime 物件、ISO 格式字串、或其他時間格式字串
+    
+    Returns:
+        格式化後的時間字串，格式為 YYYY-MM-DD - hh:mm:ss
+    """
+    if dt is None:
+        return "N/A"
+    
+    try:
+        # 如果是字串，嘗試解析
+        if isinstance(dt, str):
+            # 移除可能的時區標記和微秒
+            dt_str = dt.replace('Z', '+00:00').split('.')[0]
+            # 嘗試解析 ISO 格式
+            try:
+                dt = datetime.fromisoformat(dt_str)
+            except ValueError:
+                # 如果解析失敗，嘗試其他格式
+                try:
+                    dt = datetime.strptime(dt_str, '%Y-%m-%d %H:%M:%S')
+                except ValueError:
+                    try:
+                        dt = datetime.strptime(dt_str, '%Y-%m-%dT%H:%M:%S')
+                    except ValueError:
+                        # 如果都失敗，嘗試從原始字串中提取並格式化
+                        if len(dt_str) >= 19:
+                            # 嘗試提取日期和時間部分
+                            dt_str_clean = dt_str[:19].replace('T', ' ')
+                            # 如果包含日期和時間，嘗試格式化
+                            if ' ' in dt_str_clean:
+                                date_part, time_part = dt_str_clean.split(' ', 1)
+                                # 確保日期格式正確（YYYY-MM-DD）
+                                if len(date_part) == 10 and date_part.count('-') == 2:
+                                    # 時間部分應該已經是 HH:MM:SS 格式
+                                    if len(time_part) >= 8:
+                                        return f"{date_part} - {time_part[:8]}"
+                        return dt_str[:19] if len(dt_str) >= 19 else dt_str
+        
+        # 如果是 datetime 物件，直接格式化
+        if isinstance(dt, datetime):
+            return dt.strftime('%Y-%m-%d - %H:%M:%S')
+        
+        # 其他類型，嘗試轉換為字串
+        return str(dt)[:19] if len(str(dt)) >= 19 else str(dt)
+    except Exception as e:
+        system_logger.warning(f"Error formatting datetime: {e}, original value: {dt}")
+        # 如果格式化失敗，返回原始值的字串表示（截取前19個字符以避免顯示小數點）
+        dt_str = str(dt)
+        if len(dt_str) >= 19:
+            return dt_str[:19]
+        return dt_str

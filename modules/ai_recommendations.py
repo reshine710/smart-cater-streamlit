@@ -4,6 +4,7 @@ from datetime import datetime, timedelta
 import json
 from typing import Dict, List, Optional
 from logger_config import api_logger, ui_logger
+from utils import format_datetime_display
 
 def ai_recommendations_page():
     """AI推薦管理頁面"""
@@ -256,11 +257,13 @@ def show_recommendation_details(rec: Dict, index: int):
             st.write(f"**信心分數**: {confidence_score:.2%}")
         else:
             st.write("**信心分數**: N/A")
-        st.write(f"**有效期間**: {rec.get('valid_from', 'Unknown')} ~ {rec.get('valid_until', 'Unknown')}")
+        valid_from = format_datetime_display(rec.get('valid_from', 'Unknown'))
+        valid_until = format_datetime_display(rec.get('valid_until', 'Unknown'))
+        st.write(f"**有效期間**: {valid_from} ~ {valid_until}")
     
     with col2:
         st.write(f"**狀態**: {get_status_display(rec['status'])}")
-        st.write(f"**創建時間**: {rec.get('created_at', 'Unknown')}")
+        st.write(f"**創建時間**: {format_datetime_display(rec.get('created_at', 'Unknown'))}")
         if rec.get('notes'):
             st.write(f"**備註**: {rec['notes']}")
         if rec.get('review_notes'):
@@ -630,7 +633,7 @@ def show_dynamic_menu_display():
                 else:
                     st.info(f"ℹ️ {status}")
             with col_date:
-                st.write(f"**創建時間**: {rec.get('created_at', 'N/A')[:19] if rec.get('created_at') else 'N/A'}")
+                st.write(f"**創建時間**: {format_datetime_display(rec.get('created_at', 'N/A'))}")
             with col_machines:
                 target_machines = rec.get('target_machine_ids', [])
                 # 獲取機台資訊映射，顯示機台名稱（machine_code）
@@ -784,11 +787,7 @@ def show_push_notification_records():
     records_data = []
     for record in push_records:
         # 格式化推播時間
-        try:
-            push_time = datetime.fromisoformat(record['push_time'].replace('Z', '+00:00'))
-            formatted_time = push_time.strftime('%Y-%m-%d %H:%M:%S')
-        except:
-            formatted_time = record['push_time']
+        formatted_time = format_datetime_display(record['push_time'])
         
         records_data.append({
             "推播ID": record['push_id'],

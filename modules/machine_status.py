@@ -7,6 +7,7 @@ import random
 import json
 from logger_config import mqtt_logger, ui_logger, system_logger
 from typing import Optional, List, Dict
+from utils import format_datetime_display
 
 # 台灣時區 (UTC+8)
 TAIWAN_TZ = timezone(timedelta(hours=8))
@@ -218,7 +219,7 @@ def render_machine_card(machine: Dict, status_config: Dict):
             is_admin = st.session_state.get('is_admin', False)
             if is_admin:
                 st.markdown("**操作**")
-                op_col1, op_col2, op_col3 = st.columns(3)
+                op_col1, op_col2 = st.columns(2)
                 
                 with op_col1:
                     # 狀態切換 (使用 REST API)
@@ -297,9 +298,9 @@ def render_machine_card(machine: Dict, status_config: Dict):
                             ui_logger.error(f"Failed to refresh machine status: {str(e)}")
                             st.error(f"❌ 刷新失敗: {str(e)}")
                 
-                with op_col3:
-                    # 預留第三個操作按鈕位置
-                    pass
+                # with op_col3:
+                #     # 預留第三個操作按鈕位置
+                #     pass
             
             
             # 编辑机台按钮（仅管理员）
@@ -686,7 +687,8 @@ def machine_status_page():
                         if last_time:
                             # 轉換為台灣時區並格式化顯示
                             last_time_tw = convert_to_taiwan_time(last_time)
-                            last_time_display = last_time_tw.strftime('%Y-%m-%d %H:%M:%S')
+                            from utils import format_datetime_display
+                            last_time_display = format_datetime_display(last_time_tw)
                         else:
                             last_time_display = str(last_time_raw)
                     except Exception as e:
@@ -1375,9 +1377,9 @@ def _show_mqtt_realtime_monitoring():
                             break
                     
                     # 顯示訊息
-                    with st.expander(f"{icon} {msg['timestamp']} - {msg['summary']}", expanded=False):
+                    with st.expander(f"{icon} {format_datetime_display(msg['timestamp'])} - {msg['summary']}", expanded=False):
                         st.write(f"**主題**: `{msg['topic']}`")
-                        st.write(f"**時間**: {msg['timestamp']}")
+                        st.write(f"**時間**: {format_datetime_display(msg['timestamp'])}")
                         if isinstance(msg['payload'], dict):
                             st.json(msg['payload'])
                         else:
@@ -1540,7 +1542,7 @@ def show_mqtt_command_dialog_content(machine_code: str, machine_name: str, comma
                 "命令": command,
                 "命令描述": command_name,
                 "參數": parameters if parameters else "無",
-                "發送時間": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                "發送時間": format_datetime_display(datetime.now()),
                 "狀態": "已發送"
             }
             

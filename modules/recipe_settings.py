@@ -133,10 +133,11 @@ def recipe_settings_page():
                     st.write("無標籤")
             
             # 顯示時間資訊
+            from utils import format_datetime_display
             if selected_item.get('created_at'):
-                st.write(f"**📅 建立時間**: {selected_item['created_at'][:19]}")
+                st.write(f"**📅 建立時間**: {format_datetime_display(selected_item['created_at'])}")
             if selected_item.get('updated_at'):
-                st.write(f"**🔄 更新時間**: {selected_item['updated_at'][:19]}")
+                st.write(f"**🔄 更新時間**: {format_datetime_display(selected_item['updated_at'])}")
             
             st.markdown("---")
             

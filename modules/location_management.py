@@ -3,6 +3,7 @@ import pandas as pd
 from datetime import datetime
 from typing import Dict, List
 from logger_config import api_logger, ui_logger
+from utils import format_datetime_display
 
 def location_management_page():
     """地點管理頁面"""
@@ -76,10 +77,11 @@ def show_location_details(location: Dict, index: int):
     
     with col2:
         st.write(f"**描述**: {location.get('description', '無描述')}")
+        from utils import format_datetime_display
         if location.get('created_at'):
-            st.write(f"**建立時間**: {location['created_at'][:19]}")
+            st.write(f"**建立時間**: {format_datetime_display(location['created_at'])}")
         if location.get('updated_at'):
-            st.write(f"**更新時間**: {location['updated_at'][:19]}")
+            st.write(f"**更新時間**: {format_datetime_display(location['updated_at'])}")
     
     with col3:
         location_id = location.get('id')
@@ -301,7 +303,7 @@ def show_location_statistics():
                     '環境': '室內' if location.get('is_indoor', False) else '室外',
                     '地址': location.get('address', '未提供'),
                     '描述': location.get('description', '無描述')[:50] + ('...' if len(location.get('description', '')) > 50 else ''),
-                    '建立時間': location.get('created_at', 'N/A')[:19] if location.get('created_at') else 'N/A'
+                    '建立時間': format_datetime_display(location.get('created_at', 'N/A'))
                 })
             
             df = pd.DataFrame(df_data)
