@@ -1,8 +1,15 @@
 import streamlit as st
 import time
-from datetime import datetime
+from datetime import datetime, timezone, timedelta
 from typing import Dict, List, Optional, Tuple
 from logger_config import ui_logger
+
+# 台灣時區 (UTC+8)
+TAIWAN_TZ = timezone(timedelta(hours=8))
+
+def get_taiwan_now() -> datetime:
+    """獲取台灣時區的當前時間"""
+    return datetime.now(TAIWAN_TZ)
 
 
 def init_notification_state():
@@ -203,7 +210,7 @@ def render_ai_notification_widget():
         'pending': pending_recs,
         'approved': approved_recs
     }
-    st.session_state.ai_notification_last_check = datetime.now()
+    st.session_state.ai_notification_last_check = get_taiwan_now()
     
     # 獲取未讀推薦
     unread_pending, unread_approved = get_unread_recommendations(pending_recs, approved_recs)
@@ -374,10 +381,17 @@ def render_ai_notification_widget():
                         mark_as_read(rec.get('id'))
                     st.rerun()
         
-        # 顯示最後檢查時間
+        # 顯示最後檢查時間（確保使用台灣時區）
         last_check = st.session_state.get('ai_notification_last_check')
         if last_check:
-            time_str = last_check.strftime('%H:%M:%S')
+            # 確保 last_check 是台灣時區
+            if last_check.tzinfo is None:
+                # 如果沒有時區信息，假設為 UTC 並轉換為台灣時區
+                last_check = last_check.replace(tzinfo=timezone.utc).astimezone(TAIWAN_TZ)
+            elif last_check.tzinfo != TAIWAN_TZ:
+                # 如果時區不同，轉換為台灣時區
+                last_check = last_check.astimezone(TAIWAN_TZ)
+            time_str = last_check.strftime('%Y-%m-%d %H:%M:%S')
             st.caption(f"🕒 最後檢查: {time_str}")
 
 
@@ -393,8 +407,16 @@ def auto_refresh_notifications(refresh_interval: int = 60):
         # 首次檢查
         return True
     
-    # 檢查是否超過刷新間隔
-    time_elapsed = (datetime.now() - last_check).total_seconds()
+    # 檢查是否超過刷新間隔（使用台灣時區）
+    now = get_taiwan_now()
+    # 確保 last_check 也是台灣時區
+    if last_check.tzinfo is None:
+        # 如果沒有時區信息，假設為 UTC 並轉換為台灣時區
+        last_check = last_check.replace(tzinfo=timezone.utc).astimezone(TAIWAN_TZ)
+    elif last_check.tzinfo != TAIWAN_TZ:
+        # 如果時區不同，轉換為台灣時區
+        last_check = last_check.astimezone(TAIWAN_TZ)
+    time_elapsed = (now - last_check).total_seconds()
     
     if time_elapsed >= refresh_interval:
         ui_logger.debug(f"Auto-refresh triggered: {time_elapsed}s elapsed since last check")
@@ -416,8 +438,16 @@ def render_notification_auto_refresh(refresh_interval: int = 60):
         # 首次檢查
         time_remaining = 0
     else:
-        # 計算剩餘時間
-        time_elapsed = (datetime.now() - last_check).total_seconds()
+        # 計算剩餘時間（使用台灣時區）
+        now = get_taiwan_now()
+        # 確保 last_check 也是台灣時區
+        if last_check.tzinfo is None:
+            # 如果沒有時區信息，假設為 UTC 並轉換為台灣時區
+            last_check = last_check.replace(tzinfo=timezone.utc).astimezone(TAIWAN_TZ)
+        elif last_check.tzinfo != TAIWAN_TZ:
+            # 如果時區不同，轉換為台灣時區
+            last_check = last_check.astimezone(TAIWAN_TZ)
+        time_elapsed = (now - last_check).total_seconds()
         time_remaining = max(0, refresh_interval - int(time_elapsed))
     
     # 顯示刷新控制
