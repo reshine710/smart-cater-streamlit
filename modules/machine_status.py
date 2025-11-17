@@ -61,25 +61,28 @@ def show_machine_overview(machines: List[Dict]):
     ui_logger.info(f"Displaying overview for {len(valid_machines)} machines")
     
     # 按狀態分組機台（三種狀態：上線、離線、故障）
+    # 注意：maintenance 狀態會被歸類為 offline（隱藏維護狀態）
     status_groups = {
         'online': [],
-        'error': [],     # 故障（包含 missing/maintenance）
-        'offline': []    # 離線
+        'offline': [],
+        'fault': []         # 故障
     }
     
     for machine in valid_machines:
         status = machine.get('status', 'offline').lower()
-        # 處理舊狀態的映射：將所有故障相關狀態統一為 error
-        if status == 'maintenance' or status == 'missing':
-            status = 'error'  # 失去心跳歸為故障
-        elif status == 'unknown':
+        # 處理未知狀態，預設為離線
+        if status == 'unknown':
             status = 'offline'
-        # 注意：API 返回的 'offline' 如果是真正的離線狀態，保持為 'offline'
-        # 如果是舊的錯誤狀態，已在其他地方映射為 'error'
         
+        # 將 maintenance 狀態歸類為 offline（隱藏維護狀態）
+        if status == 'maintenance':
+            status = 'offline'
+        
+        # 直接使用後端返回的狀態值（online, offline, fault）
         if status in status_groups:
             status_groups[status].append(machine)
         else:
+            # 未知狀態歸類為離線
             status_groups['offline'].append(machine)
     
     # 顯示機台卡片
@@ -100,16 +103,32 @@ def show_machine_overview(machines: List[Dict]):
                 with cols[j]:
                     render_machine_card(machine, status_config)
 
+def get_fault_description(fault_code: int) -> str:
+    """取得錯誤碼描述"""
+    fault_descriptions = {
+        10: "失去心跳",
+        11: "溫度感應器異常",
+        12: "加熱系統故障",
+        13: "門鎖系統異常",
+        14: "支付系統錯誤",
+        15: "庫存感應器故障",
+        20: "網路連線中斷",
+        21: "資料庫連線失敗",
+        30: "硬體顯示器故障",
+        31: "硬體按鍵系統故障",
+        32: "其他硬體故障",
+        40: "記憶體不足",
+        41: "儲存空間不足",
+        50: "電源供應故障",
+        51: "備用電源故障"
+    }
+    return fault_descriptions.get(fault_code, f"未知錯誤 ({fault_code})")
+
 def get_status_config(status: str) -> Dict:
-    """獲取狀態配置"""
-    # 處理舊狀態的映射：將所有故障相關狀態統一為 error
-    if status == 'maintenance' or status == 'missing':
-        status = 'error'  # 失去心跳歸為故障
-    elif status == 'unknown':
+    """獲取狀態配置（根據後端實際狀態：online, offline, maintenance, fault）"""
+    # 處理未知狀態，預設為離線
+    if status == 'unknown':
         status = 'offline'
-    # 注意：API 可能返回的 'offline' 需要根據上下文判斷
-    # 如果是真正的離線狀態，保持為 'offline'
-    # 如果是舊的錯誤狀態，已在其他地方映射為 'error'
     
     configs = {
         'online': {
@@ -119,19 +138,26 @@ def get_status_config(status: str) -> Dict:
             'bg_color': '#d4edda',
             'border_color': '#28a745'
         },
-        'error': {
-            'icon': '🔴',
-            'title': '故障',
-            'color': 'error',
-            'bg_color': '#f8d7da',
-            'border_color': '#dc3545'
-        },
         'offline': {
             'icon': '⚪',
             'title': '離線',
             'color': 'info',
             'bg_color': '#e2e3e5',
             'border_color': '#6c757d'
+        },
+        'maintenance': {
+            'icon': '🟡',
+            'title': '維護中',
+            'color': 'warning',
+            'bg_color': '#fff3cd',
+            'border_color': '#ffc107'
+        },
+        'fault': {
+            'icon': '🔴',
+            'title': '故障',
+            'color': 'error',
+            'bg_color': '#f8d7da',
+            'border_color': '#dc3545'
         }
     }
     return configs.get(status, configs['offline'])
@@ -142,12 +168,10 @@ def render_machine_card(machine: Dict, status_config: Dict):
     machine_code = machine.get('machine_code', 'N/A')
     machine_name = machine.get('name', '未命名機台')
     status = machine.get('status', 'offline')
-    # 處理舊狀態的映射：將所有故障相關狀態統一為 error
-    if status == 'maintenance' or status == 'missing':
-        status = 'error'  # 失去心跳歸為故障
-    elif status == 'unknown':
+    # 處理未知狀態，預設為離線
+    if status == 'unknown':
         status = 'offline'
-    # 注意：API 返回的 'offline' 如果是真正的離線狀態，保持為 'offline'
+    # 直接使用後端返回的狀態值（online, offline, maintenance, fault）
     location = machine.get('location', {})
     
     # 處理位置資訊
@@ -198,7 +222,13 @@ def render_machine_card(machine: Dict, status_config: Dict):
                 st.write(f"**IP地址**: {ip_address}")
             
             with col2:
-                st.write(f"**狀態**: {status_config['icon']} {status_config['title']}")
+                # 顯示狀態和錯誤碼
+                status_display = f"**狀態**: {status_config['icon']} {status_config['title']}"
+                current_fault_code = machine.get('current_fault_code')
+                if current_fault_code is not None:
+                    fault_desc = get_fault_description(current_fault_code)
+                    status_display += f"\n**錯誤碼**: {current_fault_code} - {fault_desc}"
+                st.write(status_display)
                 st.write(f"**韌體版本**: {firmware_version}")
                 st.write(f"**心跳狀態**: {heartbeat_status}")
             
@@ -224,16 +254,15 @@ def render_machine_card(machine: Dict, status_config: Dict):
                 with op_col1:
                     # 狀態切換 (使用 REST API)
                     current_status = machine.get('status', 'offline').lower()
-                    # 處理舊狀態的映射：將所有故障相關狀態統一為 error
-                    if current_status == 'maintenance' or current_status == 'missing':
-                        current_status = 'error'  # 失去心跳歸為故障
-                    elif current_status == 'unknown':
+                    # 處理未知狀態，預設為離線
+                    if current_status == 'unknown':
                         current_status = 'offline'
                     
-                    if current_status == 'error':
+                    if current_status == 'fault':
+                        # 故障狀態：可以恢復上線
                         if st.button("✅ 恢復上線", key=f"overview_resume_{machine_id}"):
                             try:
-                                # 使用新的狀態事件 API
+                                # 使用狀態事件 API，fault_code=1 表示上線
                                 result = st.session_state.api.update_machine_status_by_code(
                                     machine_code, "online", "機台恢復正常"
                                 )
@@ -247,10 +276,23 @@ def render_machine_card(machine: Dict, status_config: Dict):
                             except Exception as e:
                                 ui_logger.error(f"Failed to update machine status: {str(e)}")
                                 st.error(f"❌ 操作失敗: {str(e)}")
+                    elif current_status == 'maintenance':
+                        # 維護狀態：歸類為離線，顯示恢復上線按鈕
+                        if st.button("✅ 恢復上線", key=f"overview_maintenance_online_{machine_id}"):
+                            try:
+                                result = st.session_state.api.update_machine_status_by_code(
+                                    machine_code, "online", "機台恢復正常"
+                                )
+                                if result:
+                                    st.success(f"✅ {machine_name} 已恢復上線")
+                                    time.sleep(1)
+                                    st.rerun()
+                            except Exception as e:
+                                st.error(f"❌ 操作失敗: {str(e)}")
                     elif current_status == 'offline':
+                        # 離線狀態：可以設為上線
                         if st.button("✅ 設為上線", key=f"overview_online_{machine_id}"):
                             try:
-                                # 使用新的狀態事件 API
                                 result = st.session_state.api.update_machine_status_by_code(
                                     machine_code, "online", "機台上線"
                                 )
@@ -265,21 +307,17 @@ def render_machine_card(machine: Dict, status_config: Dict):
                                 ui_logger.error(f"Failed to update machine status: {str(e)}")
                                 st.error(f"❌ 操作失敗: {str(e)}")
                     else:
-                        if st.button("🔧 設為故障", key=f"overview_error_{machine_id}"):
+                        # 上線狀態：可以設為故障（維護狀態已隱藏）
+                        if st.button("🔧 設為故障", key=f"overview_online_fault_{machine_id}"):
                             try:
-                                # 使用新的狀態事件 API，設為故障狀態（使用 maintenance 作為 API 狀態值）
                                 result = st.session_state.api.update_machine_status_by_code(
-                                    machine_code, "missing", "機台故障"
+                                    machine_code, "fault", "機台故障"
                                 )
                                 if result:
-                                    ui_logger.info(f"Machine {machine_code} status updated to error (fault) via status event API")
-                                    st.success(f"✅ {machine_name} 已設為故障狀態")
+                                    st.success(f"✅ {machine_name} 已設為故障")
                                     time.sleep(1)
                                     st.rerun()
-                                else:
-                                    st.error(f"❌ 更新失敗")
                             except Exception as e:
-                                ui_logger.error(f"Failed to update machine status: {str(e)}")
                                 st.error(f"❌ 操作失敗: {str(e)}")
                 
                 with op_col2:
@@ -326,8 +364,18 @@ def get_heartbeat_status(machine_or_time) -> str:
     Returns:
         str: 心跳狀態字串
     """
-    # 如果是字典物件，優先使用 last_online，否則使用 last_heartbeat
+    # 如果是字典物件，檢查機台狀態
     if isinstance(machine_or_time, dict):
+        machine_status = machine_or_time.get('status', 'offline').lower()
+        # 離線或維護狀態的機台，直接顯示無心跳
+        if machine_status == 'offline' or machine_status == 'maintenance':
+            return "🔴 無心跳"
+        
+        # 故障狀態的機台，也顯示無心跳
+        if machine_status == 'fault':
+            return "🔴 無心跳"
+        
+        # 只有上線狀態的機台才計算心跳時間
         last_time = machine_or_time.get('last_online') or machine_or_time.get('last_heartbeat')
     else:
         last_time = machine_or_time
@@ -434,13 +482,13 @@ def machine_status_page():
     
     system_logger.debug(f"Valid machines count: {len(valid_machines)}")
     
-    # 狀態總覽
+    # 狀態總覽（三種狀態：上線、離線、故障）
     col1, col2, col3 = st.columns(3)
     
     status_counts = {
         'online': 0,
         'offline': 0,
-        'error': 0
+        'fault': 0
     }
     
     for machine in valid_machines:
@@ -451,14 +499,15 @@ def machine_status_page():
         
         status = status.lower()
         
-        # 處理舊狀態的映射：將所有故障相關狀態統一為 error
-        if status == 'maintenance' or status == 'missing':
-            status = 'error'  # 失去心跳歸為故障
-        elif status == 'unknown':
+        # 處理未知狀態，預設為離線
+        if status == 'unknown':
             status = 'offline'
-        # 注意：API 返回的 'offline' 如果是真正的離線狀態，保持為 'offline'
         
-        # 確保狀態在三種預期狀態中，否則歸類為離線
+        # 將 maintenance 狀態歸類為 offline（隱藏維護狀態）
+        if status == 'maintenance':
+            status = 'offline'
+        
+        # 直接使用後端返回的狀態值（online, offline, fault）
         if status not in status_counts:
             system_logger.warning(f"Unknown machine status: {status}, defaulting to offline. Machine ID: {machine.get('id')}")
             status = 'offline'
@@ -470,7 +519,7 @@ def machine_status_page():
     with col2:
         st.metric("⚪ 離線", status_counts.get('offline', 0))
     with col3:
-        st.metric("🔴 故障", status_counts.get('error', 0))
+        st.metric("🔴 故障", status_counts.get('fault', 0))
     
     st.markdown("---")
     
@@ -549,18 +598,15 @@ def machine_status_page():
                 with col2:
                     status = st.selectbox(
                         "初始狀態", 
-                        options=["online", "offline", "error"],
+                        options=["online", "offline", "fault"],
                         format_func=lambda x: {
                             "online": "🟢 上線",
                             "offline": "⚪ 離線",
-                            "error": "🔴 故障"
+                            "fault": "🔴 故障"
                         }[x]
                     )
-                    # 映射到 API 使用的狀態值
-                    if status == 'error':
-                        api_status = 'maintenance'  # API 使用 maintenance 表示故障
-                    else:
-                        api_status = status
+                    # 直接使用後端狀態值，無需映射
+                    api_status = status
                     firmware_version = st.text_input(
                         "韌體版本", 
                         placeholder="例如: 1.0.0",
@@ -587,17 +633,12 @@ def machine_status_page():
                         st.error("❌ 請填寫所有必填欄位（標記 * 的欄位）")
                     else:
                         # 準備機台資料（按照 API 規格）
-                        # 映射到 API 使用的狀態值
-                        if status == 'error':
-                            api_status = 'maintenance'  # API 使用 maintenance 表示故障
-                        else:
-                            api_status = status
-                        
+                        # 直接使用後端狀態值，無需映射
                         machine_data = {
                             "machine_code": machine_code.strip(),
                             "name": machine_name.strip(),
                             "location": selected_location.strip(),  # 直接使用地點名稱
-                            "status": api_status,  # 使用映射後的 API 狀態值
+                            "status": status,  # 直接使用選擇的狀態值（online, offline, maintenance, fault）
                             "max_capacity": max_capacity,
                             "temperature": None,  # 預設值，後續可由機台更新
                             "humidity": None      # 預設值，後續可由機台更新
@@ -644,14 +685,18 @@ def machine_status_page():
             
             with col1:
                 machine_status = machine.get('status', 'offline').lower()
-                # 處理舊狀態的映射：將所有故障相關狀態統一為 error
-                if machine_status == 'maintenance' or machine_status == 'missing':
-                    machine_status = 'error'  # 失去心跳歸為故障
-                elif machine_status == 'unknown':
+                # 處理未知狀態，預設為離線
+                if machine_status == 'unknown':
                     machine_status = 'offline'
                 
                 status_config = get_status_config(machine_status)
-                st.write(f"**狀態**: {status_config['icon']} {status_config['title']}")
+                status_display = f"**狀態**: {status_config['icon']} {status_config['title']}"
+                # 顯示錯誤碼（如果有）
+                current_fault_code = machine.get('current_fault_code')
+                if current_fault_code is not None:
+                    fault_desc = get_fault_description(current_fault_code)
+                    status_display += f"\n**錯誤碼**: {current_fault_code} - {fault_desc}"
+                st.write(status_display)
                 # 處理位置顯示格式
                 location_info = machine.get('location', 'Unknown Location')
                 if isinstance(location_info, dict):
@@ -705,17 +750,15 @@ def machine_status_page():
                 if is_admin:
                     # 狀態切換
                     current_status = machine.get('status', 'offline').lower()
-                    # 處理舊狀態的映射：將所有故障相關狀態統一為 error
-                    if current_status == 'maintenance' or current_status == 'missing':
-                        current_status = 'error'  # 失去心跳歸為故障
-                    elif current_status == 'unknown':
+                    # 處理未知狀態，預設為離線
+                    if current_status == 'unknown':
                         current_status = 'offline'
                     
-                    if current_status == 'error':
+                    if current_status == 'fault':
+                        # 故障狀態：可以恢復上線
                         if st.button(f"✅ 恢復上線 {machine_id}", 
                                    key=f"detail_resume_{machine_id}"):
                             try:
-                                # 使用新的狀態事件 API
                                 result = st.session_state.api.update_machine_status_by_code(
                                     machine_code, "online", "機台恢復正常"
                                 )
@@ -729,11 +772,25 @@ def machine_status_page():
                             except Exception as e:
                                 ui_logger.error(f"Failed to update machine status via API: {str(e)}")
                                 st.error(f"❌ 更新狀態失敗: {str(e)}")
+                    elif current_status == 'maintenance':
+                        # 維護狀態：歸類為離線，顯示恢復上線按鈕
+                        if st.button(f"✅ 恢復上線 {machine_id}", 
+                                   key=f"detail_maintenance_online_{machine_id}"):
+                            try:
+                                result = st.session_state.api.update_machine_status_by_code(
+                                    machine_code, "online", "機台恢復正常"
+                                )
+                                if result:
+                                    st.success(f"✅ 機台 {machine_name} 已恢復上線")
+                                    time.sleep(1)
+                                    st.rerun()
+                            except Exception as e:
+                                st.error(f"❌ 更新狀態失敗: {str(e)}")
                     elif current_status == 'offline':
+                        # 離線狀態：可以設為上線
                         if st.button(f"✅ 設為上線 {machine_id}", 
                                    key=f"detail_online_{machine_id}"):
                             try:
-                                # 使用新的狀態事件 API
                                 result = st.session_state.api.update_machine_status_by_code(
                                     machine_code, "online", "機台上線"
                                 )
@@ -748,22 +805,18 @@ def machine_status_page():
                                 ui_logger.error(f"Failed to update machine status via API: {str(e)}")
                                 st.error(f"❌ 更新狀態失敗: {str(e)}")
                     else:
+                        # 上線狀態：可以設為故障（維護狀態已隱藏）
                         if st.button(f"🔧 設為故障 {machine_id}", 
-                                   key=f"detail_error_{machine_id}"):
+                                   key=f"detail_online_fault_{machine_id}"):
                             try:
-                                # 使用新的狀態事件 API，設為故障狀態（使用 maintenance 作為 API 狀態值）
                                 result = st.session_state.api.update_machine_status_by_code(
-                                    machine_code, "missing", "機台故障"
+                                    machine_code, "fault", "機台故障"
                                 )
                                 if result:
-                                    ui_logger.info(f"Machine {machine_code} status updated to error (fault) via status event API")
-                                    st.success(f"✅ 機台 {machine_name} 已設為故障狀態")
+                                    st.success(f"✅ 機台 {machine_name} 已設為故障")
                                     time.sleep(1)
                                     st.rerun()
-                                else:
-                                    st.error(f"❌ 更新機台狀態失敗")
                             except Exception as e:
-                                ui_logger.error(f"Failed to update machine status via API: {str(e)}")
                                 st.error(f"❌ 更新狀態失敗: {str(e)}")
                     
                     # 更新狀態（從後端獲取最新狀態）
@@ -1054,35 +1107,32 @@ def show_edit_machine_dialog_content(machine: Dict):
         
         # 機台狀態
         st.markdown("**🔧 狀態設定**")
-        # 處理當前狀態的映射：將所有故障相關狀態統一為 error
+        # 處理當前狀態，直接使用後端狀態值
         current_status = machine.get('status', 'offline').lower()
-        if current_status == 'maintenance' or current_status == 'missing':
-            current_status_display = 'error'  # 失去心跳歸為故障
-        elif current_status == 'unknown':
-            current_status_display = 'offline'
-        else:
-            current_status_display = current_status
+        if current_status == 'unknown':
+            current_status = 'offline'
         
-        status_options = ["online", "offline", "error"]
-        status_index = status_options.index(current_status_display) if current_status_display in status_options else 0
+        # 處理 maintenance 狀態：在編輯時歸類為 offline
+        if current_status == 'maintenance':
+            current_status = 'offline'
+        
+        status_options = ["online", "offline", "fault"]
+        status_index = status_options.index(current_status) if current_status in status_options else 0
         
         status = st.selectbox(
-            "機台狀態(測試環境)",
+            "機台狀態",
             options=status_options,
             index=status_index,
             format_func=lambda x: {
                 "online": "🟢 上線",
                 "offline": "⚪ 離線",
-                "error": "🔴 故障"
+                "fault": "🔴 故障"
             }.get(x, x),
             key=f"edit_status_{machine_id}"
         )
         
-        # 映射到 API 使用的狀態值
-        if status == 'error':
-            api_status = 'maintenance'  # API 使用 maintenance 表示故障
-        else:
-            api_status = status
+        # 直接使用後端狀態值，無需映射
+        api_status = status
         
         # 位置資訊
         st.markdown("**📍 位置資訊**")

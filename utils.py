@@ -570,15 +570,19 @@ class VendingMachineAPI:
         
         Returns:
             Dict: API 回應的機台資訊，失敗時返回空字典
+        
+        注意：
+        - online → fault_code 1 (機台上線)
+        - offline → fault_code 9 (機台下線)
+        - fault → fault_code 10 (機台故障，預設故障碼)
+        - maintenance → 維護狀態，可能需要通過其他 API 設定，這裡暫時使用 fault_code 9
         """
-        # 映射狀態字串到 fault_code
+        # 映射狀態字串到 fault_code（根據後端 API 規格）
         status_to_fault_code = {
             "online": 1,      # 機台上線
             "offline": 9,     # 機台下線
             "fault": 10,      # 機台故障（預設故障碼）
-            "maintenance": 9, # 維護模式視為下線
-            "error": 10,      # 錯誤視為故障
-            "missing": 10     # 未知錯誤視為故障
+            "maintenance": 9  # 維護模式：暫時使用下線碼，實際可能需要其他 API
         }
         
         fault_code = status_to_fault_code.get(status.lower(), 10)
@@ -589,9 +593,7 @@ class VendingMachineAPI:
                 "online": "機台上線",
                 "offline": "機台下線",
                 "fault": "機台故障",
-                "maintenance": "機台進入維護模式",
-                "error": "機台發生錯誤",
-                "missing": "機台未知錯誤，失去心跳"
+                "maintenance": "機台進入維護模式"
             }
             message = status_messages.get(status.lower(), "機台狀態更新")
         
