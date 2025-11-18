@@ -242,7 +242,7 @@ def show_recommendations_list():
 
 def show_recommendation_details(rec: Dict, index: int):
     """顯示推薦詳細資訊"""
-    col1, col2, col3 = st.columns([2, 2, 1])
+    col1, col2, col3 = st.columns([2, 2, 2])
     
     with col1:
         st.write(f"**AI模型版本**: {rec.get('ai_model_version', 'Unknown')}")
