@@ -10,6 +10,23 @@ def ai_recommendations_page():
     """AI推薦管理頁面"""
     ui_logger.info(f"User {st.session_state.get('username', 'Unknown')} accessing AI recommendations page")
     st.title("🤖 AI智能推薦管理")
+
+    col_title, col_refresh = st.columns([4, 1])
+    with col_title:
+        pass  # 保留標題空間
+    with col_refresh:
+        if st.button("🔄 重新整理", key="recommendations_refresh_button", type="secondary", width='stretch'):
+            # 清除所有可能的緩存狀態
+            cache_keys_to_clear = [
+                'ai_recommendations_cache',
+                'ai_recommendations_data',
+                'recommendations_data'
+            ]
+            for key in cache_keys_to_clear:
+                if key in st.session_state:
+                    del st.session_state[key]
+            st.rerun()
+
     st.markdown("---")
     
     # 檢查管理員權限
@@ -81,17 +98,7 @@ def show_recommendations_list():
         machine_filter = st.selectbox("機台篩選", ["全部", "1", "2", "3"], key="recommendations_machine_filter")
     
     with col3:
-        if st.button("🔄 重新整理", key="recommendations_refresh_button"):
-            # 清除所有可能的緩存狀態
-            cache_keys_to_clear = [
-                'ai_recommendations_cache',
-                'ai_recommendations_data',
-                'recommendations_data'
-            ]
-            for key in cache_keys_to_clear:
-                if key in st.session_state:
-                    del st.session_state[key]
-            st.rerun()
+        pass
     
     # 批量操作模式切換
     # st.markdown("---")

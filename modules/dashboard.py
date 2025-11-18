@@ -21,19 +21,31 @@ def dashboard_page():
     
     col1, col2, col3 = st.columns(3)
     with col1:
+        st.markdown("<div style='height: 0px;'></div>", unsafe_allow_html=True)
         st.session_state['dashboard_start_date'] = st.date_input(
             "開始日期", 
             value=st.session_state['dashboard_start_date'],
             key="dashboard_start_date_input"
         )
     with col2:
+        st.markdown("<div style='height: 0px;'></div>", unsafe_allow_html=True)
         st.session_state['dashboard_end_date'] = st.date_input(
             "結束日期", 
             value=st.session_state['dashboard_end_date'],
             key="dashboard_end_date_input"
         )
     with col3:
-        if st.button("今日", width='stretch'):
+        # 添加空標籤以對齊左側日期輸入框的標籤高度
+        st.markdown("<div style='height: 42.5px;'></div>", unsafe_allow_html=True)
+        # 添加 CSS 來調整按鈕高度，使其對齊日期輸入框
+        # st.markdown("""
+        # <style>
+        # div[data-testid="column"]:nth-of-type(3) button {
+        #     height: 38px !important;
+        # }
+        # </style>
+        # """, unsafe_allow_html=True)
+        if st.button("今日", key="today_button", width='stretch'):
             st.session_state['dashboard_start_date'] = today
             st.session_state['dashboard_end_date'] = today
     start_date = st.session_state['dashboard_start_date']

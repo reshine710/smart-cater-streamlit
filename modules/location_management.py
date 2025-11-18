@@ -9,6 +9,14 @@ def location_management_page():
     """地點管理頁面"""
     ui_logger.info(f"User {st.session_state.get('username', 'Unknown')} accessing location management page")
     st.title("📍 地點管理")
+
+    col_title, col_refresh = st.columns([4, 1])
+    with col_title:
+        pass  # 保留標題空間
+    with col_refresh:
+        if st.button("🔄 重新整理", type="secondary", width='stretch'):
+            st.rerun()
+
     st.markdown("---")
     
     # 檢查管理員權限
@@ -47,8 +55,7 @@ def show_locations_list():
     with col2:
         indoor_filter = st.selectbox("環境篩選", ["全部", "室內", "室外"], key="location_indoor_filter")
     with col3:
-        if st.button("🔄 重新整理"):
-            st.rerun()
+        pass
     
     # 篩選地點
     filtered_locations = locations
