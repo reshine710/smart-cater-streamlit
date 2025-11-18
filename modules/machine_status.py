@@ -19,9 +19,10 @@ def get_taiwan_now() -> datetime:
 def convert_to_taiwan_time(dt: datetime) -> datetime:
     """將 datetime 轉換為台灣時區"""
     if dt.tzinfo is None:
-        # 如果沒有時區信息，假設為 UTC
-        dt = dt.replace(tzinfo=timezone.utc)
-    # 轉換為台灣時區
+        # 如果沒有時區信息，假設為台灣時區（後端返回的時間通常是台灣時區）
+        dt = dt.replace(tzinfo=TAIWAN_TZ)
+        return dt
+    # 如果已經有時區信息，轉換為台灣時區
     return dt.astimezone(TAIWAN_TZ)
 
 # Import MQTT client (assuming it exists in the project)
@@ -47,6 +48,57 @@ def show_machine_overview(machines: List[Dict]):
     if not machines:
         st.info("📭 目前沒有機台數據")
         return
+    
+    # 注入全局 CSS 樣式（固定卡片尺寸）
+    st.markdown("""
+    <style>
+    .machine-card {
+        width: 100%;
+        height: 180px;
+        border-radius: 10px;
+        padding: 15px;
+        margin: 10px 0;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+        align-items: center;
+        overflow: hidden;
+        box-sizing: border-box;
+    }
+    .machine-card-content {
+        text-align: center;
+        width: 100%;
+    }
+    .machine-card-title {
+        margin: 0;
+        font-size: 1.1em;
+        font-weight: bold;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        width: 100%;
+    }
+    .machine-card-subtitle {
+        margin: 5px 0 0 0;
+        font-size: 0.9em;
+        color: #666;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        width: 100%;
+    }
+    .machine-card-heartbeat {
+        margin: 8px 0 0 0;
+        font-size: 0.8em;
+        color: #888;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        width: 100%;
+    }
+    </style>
+    """, unsafe_allow_html=True)
     
     # 過濾有效的機台數據
     valid_machines = []
@@ -186,25 +238,25 @@ def render_machine_card(machine: Dict, status_config: Dict):
     
     # 計算最後心跳時間（優先使用 last_online，否則使用 last_heartbeat）
     heartbeat_status = get_heartbeat_status(machine)
+    last_heartbeat_time = format_last_heartbeat_time(machine)
     
     # 創建卡片容器
     with st.container():
-        # 使用自定義CSS樣式
+        # 使用 CSS 類別 + 動態樣式（背景色和邊框色）
         card_style = f"""
-        <div style="
+        <div class="machine-card" style="
             background-color: {status_config['bg_color']};
             border: 2px solid {status_config['border_color']};
-            border-radius: 10px;
-            padding: 15px;
-            margin: 10px 0;
-            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
         ">
-            <div style="text-align: center;">
-                <h4 style="margin: 0; color: {status_config['border_color']};">
+            <div class="machine-card-content">
+                <h4 class="machine-card-title" style="color: {status_config['border_color']};">
                     {status_config['icon']} {machine_name}
                 </h4>
-                <p style="margin: 5px 0; font-size: 14px; color: #666;">
+                <p class="machine-card-subtitle">
                     {machine_code} (ID: {machine_id})
+                </p>
+                <p class="machine-card-heartbeat">
+                    💓 {last_heartbeat_time}
                 </p>
             </div>
         </div>
@@ -233,6 +285,7 @@ def render_machine_card(machine: Dict, status_config: Dict):
                 
                 st.write(f"**韌體版本**: {firmware_version}")
                 st.write(f"**心跳狀態**: {heartbeat_status}")
+                st.write(f"**最後心跳**: {last_heartbeat_time}")
             
             # 環境資訊（如果有）
             if 'temperature' in machine or 'humidity' in machine:
@@ -249,94 +302,94 @@ def render_machine_card(machine: Dict, status_config: Dict):
             
             # 操作按鈕（僅管理員）
             is_admin = st.session_state.get('is_admin', False)
-            if is_admin:
-                st.markdown("**操作**")
-                op_col1, op_col2 = st.columns(2)
+            # if is_admin:
+            #     st.markdown("**操作**")
+            #     op_col1, op_col2 = st.columns(2)
                 
-                with op_col1:
-                    # 狀態切換 (使用 REST API)
-                    current_status = machine.get('status', 'offline').lower()
-                    # 處理未知狀態，預設為離線
-                    if current_status == 'unknown':
-                        current_status = 'offline'
+            #     with op_col1:
+            #         # 狀態切換 (使用 REST API)
+            #         current_status = machine.get('status', 'offline').lower()
+            #         # 處理未知狀態，預設為離線
+            #         if current_status == 'unknown':
+            #             current_status = 'offline'
                     
-                    if current_status == 'fault':
-                        # 故障狀態：可以恢復上線
-                        if st.button("✅ 恢復上線", key=f"overview_resume_{machine_id}"):
-                            try:
-                                # 使用狀態事件 API，fault_code=1 表示上線
-                                result = st.session_state.api.update_machine_status_by_code(
-                                    machine_code, "online", "機台恢復正常"
-                                )
-                                if result:
-                                    ui_logger.info(f"Machine {machine_code} status updated to online via status event API")
-                                    st.success(f"✅ {machine_name} 已恢復上線")
-                                    time.sleep(1)
-                                    st.rerun()
-                                else:
-                                    st.error(f"❌ 更新失敗")
-                            except Exception as e:
-                                ui_logger.error(f"Failed to update machine status: {str(e)}")
-                                st.error(f"❌ 操作失敗: {str(e)}")
-                    elif current_status == 'maintenance':
-                        # 維護狀態：歸類為離線，顯示恢復上線按鈕
-                        if st.button("✅ 恢復上線", key=f"overview_maintenance_online_{machine_id}"):
-                            try:
-                                result = st.session_state.api.update_machine_status_by_code(
-                                    machine_code, "online", "機台恢復正常"
-                                )
-                                if result:
-                                    st.success(f"✅ {machine_name} 已恢復上線")
-                                    time.sleep(1)
-                                    st.rerun()
-                            except Exception as e:
-                                st.error(f"❌ 操作失敗: {str(e)}")
-                    elif current_status == 'offline':
-                        # 離線狀態：可以設為上線
-                        if st.button("✅ 設為上線", key=f"overview_online_{machine_id}"):
-                            try:
-                                result = st.session_state.api.update_machine_status_by_code(
-                                    machine_code, "online", "機台上線"
-                                )
-                                if result:
-                                    ui_logger.info(f"Machine {machine_code} status updated to online via status event API")
-                                    st.success(f"✅ {machine_name} 已設為上線")
-                                    time.sleep(1)
-                                    st.rerun()
-                                else:
-                                    st.error(f"❌ 更新失敗")
-                            except Exception as e:
-                                ui_logger.error(f"Failed to update machine status: {str(e)}")
-                                st.error(f"❌ 操作失敗: {str(e)}")
-                    else:
-                        # 上線狀態：可以設為故障（維護狀態已隱藏）
-                        if st.button("🔧 設為故障", key=f"overview_online_fault_{machine_id}"):
-                            try:
-                                result = st.session_state.api.update_machine_status_by_code(
-                                    machine_code, "fault", "機台故障"
-                                )
-                                if result:
-                                    st.success(f"✅ {machine_name} 已設為故障")
-                                    time.sleep(1)
-                                    st.rerun()
-                            except Exception as e:
-                                st.error(f"❌ 操作失敗: {str(e)}")
+            #         if current_status == 'fault':
+            #             # 故障狀態：可以恢復上線
+            #             if st.button("✅ 恢復上線", key=f"overview_resume_{machine_id}"):
+            #                 try:
+            #                     # 使用狀態事件 API，fault_code=1 表示上線
+            #                     result = st.session_state.api.update_machine_status_by_code(
+            #                         machine_code, "online", "機台恢復正常"
+            #                     )
+            #                     if result:
+            #                         ui_logger.info(f"Machine {machine_code} status updated to online via status event API")
+            #                         st.success(f"✅ {machine_name} 已恢復上線")
+            #                         time.sleep(1)
+            #                         st.rerun()
+            #                     else:
+            #                         st.error(f"❌ 更新失敗")
+            #                 except Exception as e:
+            #                     ui_logger.error(f"Failed to update machine status: {str(e)}")
+            #                     st.error(f"❌ 操作失敗: {str(e)}")
+            #         elif current_status == 'maintenance':
+            #             # 維護狀態：歸類為離線，顯示恢復上線按鈕
+            #             if st.button("✅ 恢復上線", key=f"overview_maintenance_online_{machine_id}"):
+            #                 try:
+            #                     result = st.session_state.api.update_machine_status_by_code(
+            #                         machine_code, "online", "機台恢復正常"
+            #                     )
+            #                     if result:
+            #                         st.success(f"✅ {machine_name} 已恢復上線")
+            #                         time.sleep(1)
+            #                         st.rerun()
+            #                 except Exception as e:
+            #                     st.error(f"❌ 操作失敗: {str(e)}")
+            #         elif current_status == 'offline':
+            #             # 離線狀態：可以設為上線
+            #             if st.button("✅ 設為上線", key=f"overview_online_{machine_id}"):
+            #                 try:
+            #                     result = st.session_state.api.update_machine_status_by_code(
+            #                         machine_code, "online", "機台上線"
+            #                     )
+            #                     if result:
+            #                         ui_logger.info(f"Machine {machine_code} status updated to online via status event API")
+            #                         st.success(f"✅ {machine_name} 已設為上線")
+            #                         time.sleep(1)
+            #                         st.rerun()
+            #                     else:
+            #                         st.error(f"❌ 更新失敗")
+            #                 except Exception as e:
+            #                     ui_logger.error(f"Failed to update machine status: {str(e)}")
+            #                     st.error(f"❌ 操作失敗: {str(e)}")
+            #         else:
+            #             # 上線狀態：可以設為故障（維護狀態已隱藏）
+            #             if st.button("🔧 設為故障", key=f"overview_online_fault_{machine_id}"):
+            #                 try:
+            #                     result = st.session_state.api.update_machine_status_by_code(
+            #                         machine_code, "fault", "機台故障"
+            #                     )
+            #                     if result:
+            #                         st.success(f"✅ {machine_name} 已設為故障")
+            #                         time.sleep(1)
+            #                         st.rerun()
+            #                 except Exception as e:
+            #                     st.error(f"❌ 操作失敗: {str(e)}")
                 
-                with op_col2:
-                    # 刷新狀態 (使用 REST API)
-                    if st.button("📊 刷新", key=f"overview_refresh_{machine_id}"):
-                        try:
-                            machine_detail = st.session_state.api.get_machine_detail(machine_id)
-                            if machine_detail:
-                                ui_logger.info(f"Refreshed machine {machine_id} status from API")
-                                st.success(f"✅ {machine_name} 狀態已更新")
-                                time.sleep(1)
-                                st.rerun()
-                            else:
-                                st.error(f"❌ 無法獲取機台資訊")
-                        except Exception as e:
-                            ui_logger.error(f"Failed to refresh machine status: {str(e)}")
-                            st.error(f"❌ 刷新失敗: {str(e)}")
+                # with op_col2:
+                #     # 刷新狀態 (使用 REST API)
+                #     if st.button("📊 刷新", key=f"overview_refresh_{machine_id}"):
+                #         try:
+                #             machine_detail = st.session_state.api.get_machine_detail(machine_id)
+                #             if machine_detail:
+                #                 ui_logger.info(f"Refreshed machine {machine_id} status from API")
+                #                 st.success(f"✅ {machine_name} 狀態已更新")
+                #                 time.sleep(1)
+                #                 st.rerun()
+                #             else:
+                #                 st.error(f"❌ 無法獲取機台資訊")
+                #         except Exception as e:
+                #             ui_logger.error(f"Failed to refresh machine status: {str(e)}")
+                #             st.error(f"❌ 刷新失敗: {str(e)}")
                 
                 # with op_col3:
                 #     # 預留第三個操作按鈕位置
@@ -353,6 +406,44 @@ def render_machine_card(machine: Dict, status_config: Dict):
             st.markdown("**菜單資訊**")
             if st.button("📋 查看當前菜單", key=f"view_menu_{machine_id}"):
                 show_machine_menu_dialog(machine_id, machine_name)
+
+def format_last_heartbeat_time(machine: Dict) -> str:
+    """
+    格式化最後心跳時間顯示
+    
+    Args:
+        machine: 機台字典物件
+    
+    Returns:
+        str: 格式化後的時間字串
+    """
+    last_online = machine.get('last_online')
+    last_heartbeat = machine.get('last_heartbeat')
+    last_time_raw = last_online or last_heartbeat
+    
+    if last_time_raw and last_time_raw != 'Unknown':
+        try:
+            # 解析時間並轉換為台灣時區
+            if isinstance(last_time_raw, str):
+                last_time = datetime.fromisoformat(last_time_raw.replace('Z', '+00:00'))
+            elif isinstance(last_time_raw, datetime):
+                last_time = last_time_raw
+            else:
+                last_time = None
+            
+            if last_time:
+                # 轉換為台灣時區並格式化顯示
+                last_time_tw = convert_to_taiwan_time(last_time)
+                last_time_display = format_datetime_display(last_time_tw)
+            else:
+                last_time_display = str(last_time_raw)
+        except Exception as e:
+            ui_logger.warning(f"Error formatting heartbeat time: {e}")
+            last_time_display = str(last_time_raw)
+    else:
+        last_time_display = 'Unknown'
+    
+    return last_time_display
 
 def get_heartbeat_status(machine_or_time) -> str:
     """
@@ -426,12 +517,12 @@ def machine_status_page():
     with col_title:
         pass  # 保留標題空間
     with col_refresh:
-        if st.button("🔄 刷新全部機台", key="refresh_all_machines", type="primary", width='stretch'):
+        if st.button("🔄 重新整理", key="refresh_all_machines", type="secondary", width='stretch'):
             # 清除可能的快取，強制重新獲取資料
             if 'machines_cache' in st.session_state:
                 del st.session_state.machines_cache
             ui_logger.info("User triggered refresh all machines")
-            st.success("✅ 正在刷新機台資料...")
+            st.success("✅ 正在重新整理機台資料...")
             time.sleep(0.5)  # 短暫延遲讓用戶看到提示
             st.rerun()
     
@@ -717,139 +808,112 @@ def machine_status_page():
                     st.write(f"**溫度**: {temperature}°C")
                 else:
                     st.write("**溫度**: N/A")
-                # 顯示最後心跳時間（優先使用 last_online，否則使用 last_heartbeat）
-                last_online = machine.get('last_online')
-                last_heartbeat = machine.get('last_heartbeat')
-                last_time_raw = last_online or last_heartbeat
-                
-                if last_time_raw and last_time_raw != 'Unknown':
-                    try:
-                        # 解析時間並轉換為台灣時區
-                        if isinstance(last_time_raw, str):
-                            last_time = datetime.fromisoformat(last_time_raw.replace('Z', '+00:00'))
-                        elif isinstance(last_time_raw, datetime):
-                            last_time = last_time_raw
-                        else:
-                            last_time = None
-                        
-                        if last_time:
-                            # 轉換為台灣時區並格式化顯示
-                            last_time_tw = convert_to_taiwan_time(last_time)
-                            from utils import format_datetime_display
-                            last_time_display = format_datetime_display(last_time_tw)
-                        else:
-                            last_time_display = str(last_time_raw)
-                    except Exception as e:
-                        ui_logger.warning(f"Error formatting heartbeat time: {e}")
-                        last_time_display = str(last_time_raw)
-                else:
-                    last_time_display = 'Unknown'
-                
+                # 顯示最後心跳時間（使用統一的格式化函數）
+                last_time_display = format_last_heartbeat_time(machine)
                 st.write(f"**最後心跳**: {last_time_display}")
             
             with col3:
                 # 機台操作按鈕 (使用 REST API)
                 is_admin = st.session_state.get('is_admin', False)
-                if is_admin:
-                    # 狀態切換
-                    current_status = machine.get('status', 'offline').lower()
-                    # 處理未知狀態，預設為離線
-                    if current_status == 'unknown':
-                        current_status = 'offline'
+                # if is_admin:
+                #     # 狀態切換
+                #     current_status = machine.get('status', 'offline').lower()
+                #     # 處理未知狀態，預設為離線
+                #     if current_status == 'unknown':
+                #         current_status = 'offline'
                     
-                    if current_status == 'fault':
-                        # 故障狀態：可以恢復上線
-                        if st.button(f"✅ 恢復上線 {machine_id}", 
-                                   key=f"detail_resume_{machine_id}"):
-                            try:
-                                result = st.session_state.api.update_machine_status_by_code(
-                                    machine_code, "online", "機台恢復正常"
-                                )
-                                if result:
-                                    ui_logger.info(f"Machine {machine_code} status updated to online via status event API")
-                                    st.success(f"✅ 機台 {machine_name} 已恢復上線")
-                                    time.sleep(1)
-                                    st.rerun()
-                                else:
-                                    st.error(f"❌ 更新機台狀態失敗")
-                            except Exception as e:
-                                ui_logger.error(f"Failed to update machine status via API: {str(e)}")
-                                st.error(f"❌ 更新狀態失敗: {str(e)}")
-                    elif current_status == 'maintenance':
-                        # 維護狀態：歸類為離線，顯示恢復上線按鈕
-                        if st.button(f"✅ 恢復上線 {machine_id}", 
-                                   key=f"detail_maintenance_online_{machine_id}"):
-                            try:
-                                result = st.session_state.api.update_machine_status_by_code(
-                                    machine_code, "online", "機台恢復正常"
-                                )
-                                if result:
-                                    st.success(f"✅ 機台 {machine_name} 已恢復上線")
-                                    time.sleep(1)
-                                    st.rerun()
-                            except Exception as e:
-                                st.error(f"❌ 更新狀態失敗: {str(e)}")
-                    elif current_status == 'offline':
-                        # 離線狀態：可以設為上線
-                        if st.button(f"✅ 設為上線 {machine_id}", 
-                                   key=f"detail_online_{machine_id}"):
-                            try:
-                                result = st.session_state.api.update_machine_status_by_code(
-                                    machine_code, "online", "機台上線"
-                                )
-                                if result:
-                                    ui_logger.info(f"Machine {machine_code} status updated to online via status event API")
-                                    st.success(f"✅ 機台 {machine_name} 已設為上線")
-                                    time.sleep(1)
-                                    st.rerun()
-                                else:
-                                    st.error(f"❌ 更新機台狀態失敗")
-                            except Exception as e:
-                                ui_logger.error(f"Failed to update machine status via API: {str(e)}")
-                                st.error(f"❌ 更新狀態失敗: {str(e)}")
-                    else:
-                        # 上線狀態：可以設為故障（維護狀態已隱藏）
-                        if st.button(f"🔧 設為故障 {machine_id}", 
-                                   key=f"detail_online_fault_{machine_id}"):
-                            try:
-                                result = st.session_state.api.update_machine_status_by_code(
-                                    machine_code, "fault", "機台故障"
-                                )
-                                if result:
-                                    st.success(f"✅ 機台 {machine_name} 已設為故障")
-                                    time.sleep(1)
-                                    st.rerun()
-                            except Exception as e:
-                                st.error(f"❌ 更新狀態失敗: {str(e)}")
+                #     if current_status == 'fault':
+                #         # 故障狀態：可以恢復上線
+                #         if st.button(f"✅ 恢復上線 {machine_id}", 
+                #                    key=f"detail_resume_{machine_id}"):
+                #             try:
+                #                 result = st.session_state.api.update_machine_status_by_code(
+                #                     machine_code, "online", "機台恢復正常"
+                #                 )
+                #                 if result:
+                #                     ui_logger.info(f"Machine {machine_code} status updated to online via status event API")
+                #                     st.success(f"✅ 機台 {machine_name} 已恢復上線")
+                #                     time.sleep(1)
+                #                     st.rerun()
+                #                 else:
+                #                     st.error(f"❌ 更新機台狀態失敗")
+                #             except Exception as e:
+                #                 ui_logger.error(f"Failed to update machine status via API: {str(e)}")
+                #                 st.error(f"❌ 更新狀態失敗: {str(e)}")
+                #     elif current_status == 'maintenance':
+                #         # 維護狀態：歸類為離線，顯示恢復上線按鈕
+                #         if st.button(f"✅ 恢復上線 {machine_id}", 
+                #                    key=f"detail_maintenance_online_{machine_id}"):
+                #             try:
+                #                 result = st.session_state.api.update_machine_status_by_code(
+                #                     machine_code, "online", "機台恢復正常"
+                #                 )
+                #                 if result:
+                #                     st.success(f"✅ 機台 {machine_name} 已恢復上線")
+                #                     time.sleep(1)
+                #                     st.rerun()
+                #             except Exception as e:
+                #                 st.error(f"❌ 更新狀態失敗: {str(e)}")
+                #     elif current_status == 'offline':
+                #         # 離線狀態：可以設為上線
+                #         if st.button(f"✅ 設為上線", 
+                #                    key=f"detail_online_{machine_id}"):
+                #             try:
+                #                 result = st.session_state.api.update_machine_status_by_code(
+                #                     machine_code, "online", "機台上線"
+                #                 )
+                #                 if result:
+                #                     ui_logger.info(f"Machine {machine_code} status updated to online via status event API")
+                #                     st.success(f"✅ 機台 {machine_name} 已設為上線")
+                #                     time.sleep(1)
+                #                     st.rerun()
+                #                 else:
+                #                     st.error(f"❌ 更新機台狀態失敗")
+                #             except Exception as e:
+                #                 ui_logger.error(f"Failed to update machine status via API: {str(e)}")
+                #                 st.error(f"❌ 更新狀態失敗: {str(e)}")
+                #     else:
+                #         # 上線狀態：可以設為故障（維護狀態已隱藏）
+                #         if st.button(f"🔧 設為故障", 
+                #                    key=f"detail_online_fault_{machine_id}"):
+                #             try:
+                #                 result = st.session_state.api.update_machine_status_by_code(
+                #                     machine_code, "fault", "機台故障"
+                #                 )
+                #                 if result:
+                #                     st.success(f"✅ 機台 {machine_name} 已設為故障")
+                #                     time.sleep(1)
+                #                     st.rerun()
+                #             except Exception as e:
+                #                 st.error(f"❌ 更新狀態失敗: {str(e)}")
                     
-                    # 更新狀態（從後端獲取最新狀態）
-                    if st.button(f"📊 刷新狀態 {machine_id}", 
-                               key=f"detail_refresh_{machine_id}"):
-                        try:
-                            # 重新獲取機台資料
-                            machine_detail = st.session_state.api.get_machine_detail(machine_id)
-                            if machine_detail:
-                                ui_logger.info(f"Refreshed machine {machine_id} status from API")
-                                st.success(f"✅ 已更新 {machine_name} 的狀態資訊")
-                                time.sleep(1)
-                                st.rerun()
-                            else:
-                                st.error(f"❌ 無法獲取機台資訊")
-                        except Exception as e:
-                            ui_logger.error(f"Failed to refresh machine status: {str(e)}")
-                            st.error(f"❌ 刷新狀態失敗: {str(e)}")
-                else:
-                    st.caption("🔒 機台操作功能僅限管理員使用")
+                #     # 更新狀態（從後端獲取最新狀態）
+                #     if st.button(f"📊 刷新狀態", 
+                #                key=f"detail_refresh_{machine_id}"):
+                #         try:
+                #             # 重新獲取機台資料
+                #             machine_detail = st.session_state.api.get_machine_detail(machine_id)
+                #             if machine_detail:
+                #                 ui_logger.info(f"Refreshed machine {machine_id} status from API")
+                #                 st.success(f"✅ 已更新 {machine_name} 的狀態資訊")
+                #                 time.sleep(1)
+                #                 st.rerun()
+                #             else:
+                #                 st.error(f"❌ 無法獲取機台資訊")
+                #         except Exception as e:
+                #             ui_logger.error(f"Failed to refresh machine status: {str(e)}")
+                #             st.error(f"❌ 刷新狀態失敗: {str(e)}")
+                # else:
+                #     st.caption("🔒 機台操作功能僅限管理員使用")
                 
                 # 刪除機台功能 (僅管理員可用)
                 if is_admin:
-                    st.markdown("---")
-                    st.write("**⚠️ 危險操作區域**")
+                    # st.markdown("---")
                     
                     # 使用 st.dialog 確認對話框
                     if st.button(f"🗑️ 刪除機台", 
                                key=f"delete_{machine_id}",
-                               type="secondary",
+                               type="primary",
                                help="此操作無法復原，請謹慎使用"):
                         show_delete_machine_confirmation_dialog(machine)
                 else:

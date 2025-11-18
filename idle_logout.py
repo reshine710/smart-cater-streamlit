@@ -5,8 +5,11 @@
 
 import streamlit as st
 import time
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from logger_config import auth_logger, system_logger
+
+# 台灣時區 (UTC+8)
+TAIWAN_TZ = timezone(timedelta(hours=8))
 
 # 閒置時間設定（30分鐘）
 IDLE_TIMEOUT_MINUTES = 30
@@ -136,12 +139,15 @@ def get_idle_status():
     idle_time = current_time - last_activity
     remaining_time = max(0, IDLE_TIMEOUT_SECONDS - idle_time)
     
+    # 將時間戳轉換為台灣時區的 datetime
+    last_activity_dt = datetime.fromtimestamp(last_activity, tz=TAIWAN_TZ)
+    
     return {
         'is_logged_in': True,
         'idle_time': idle_time,
         'remaining_time': remaining_time,
         'warning_shown': st.session_state.get('idle_warning_shown', False),
-        'last_activity': datetime.fromtimestamp(last_activity).strftime('%H:%M:%S')
+        'last_activity': last_activity_dt.strftime('%Y-%m-%d - %H:%M:%S')
     }
 
 def render_idle_status_widget():
