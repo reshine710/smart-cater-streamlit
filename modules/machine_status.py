@@ -6,7 +6,7 @@ import time
 import random
 import json
 from logger_config import mqtt_logger, ui_logger, system_logger
-from typing import Optional, List, Dict
+from typing import Optional, List, Dict, Tuple
 from utils import format_datetime_display
 
 # 台灣時區 (UTC+8)
@@ -240,6 +240,10 @@ def render_machine_card(machine: Dict, status_config: Dict):
     heartbeat_status = get_heartbeat_status(machine)
     last_heartbeat_time = format_last_heartbeat_time(machine)
     
+    # 獲取冰箱溫度並格式化
+    fridge_temp = machine.get('fridge_temp')
+    fridge_temp_text, fridge_temp_color = format_fridge_temp(fridge_temp)
+    
     # 創建卡片容器
     with st.container():
         # 使用 CSS 類別 + 動態樣式（背景色和邊框色）
@@ -257,6 +261,9 @@ def render_machine_card(machine: Dict, status_config: Dict):
                 </p>
                 <p class="machine-card-heartbeat">
                     💓 {last_heartbeat_time}
+                </p>
+                <p class="machine-card-fridge-temp" style="color: {fridge_temp_color};">
+                    {fridge_temp_text}
                 </p>
             </div>
         </div>
@@ -288,9 +295,9 @@ def render_machine_card(machine: Dict, status_config: Dict):
                 st.write(f"**最後心跳**: {last_heartbeat_time}")
             
             # 環境資訊（如果有）
-            if 'temperature' in machine or 'humidity' in machine:
+            if 'temperature' in machine or 'humidity' in machine or 'fridge_temp' in machine:
                 st.markdown("**環境資訊**")
-                env_col1, env_col2 = st.columns(2)
+                env_col1, env_col2, env_col3 = st.columns(3)
                 with env_col1:
                     if 'temperature' in machine:
                         temp = machine['temperature']
@@ -299,6 +306,11 @@ def render_machine_card(machine: Dict, status_config: Dict):
                     if 'humidity' in machine:
                         humidity = machine['humidity']
                         st.write(f"💧 濕度: {humidity}%" if humidity is not None else "💧 濕度: N/A")
+                with env_col3:
+                    if 'fridge_temp' in machine:
+                        fridge_temp_display, fridge_temp_color = format_fridge_temp(machine.get('fridge_temp'))
+                        # 使用 markdown 來顯示帶顏色的文字
+                        st.markdown(f"<span style='color: {fridge_temp_color};'>{fridge_temp_display}</span>", unsafe_allow_html=True)
             
             # 操作按鈕（僅管理員）
             is_admin = st.session_state.get('is_admin', False)
@@ -406,6 +418,35 @@ def render_machine_card(machine: Dict, status_config: Dict):
             st.markdown("**菜單資訊**")
             if st.button("📋 查看當前菜單", key=f"view_menu_{machine_id}"):
                 show_machine_menu_dialog(machine_id, machine_name)
+
+def format_fridge_temp(fridge_temp: Optional[float]) -> Tuple[str, str]:
+    """
+    格式化冰箱溫度顯示，並返回顯示文字和顏色
+    
+    Args:
+        fridge_temp: 冰箱溫度值（攝氏度），可能為 None
+    
+    Returns:
+        tuple: (顯示文字, 顏色代碼)
+    """
+    if fridge_temp is None:
+        return "❄️ 冰箱溫度: 未回報", "#999999"  # 灰色：未回報
+    
+    # 格式化溫度，保留一位小數
+    temp_str = f"{fridge_temp:.1f}°C"
+    
+    # 根據溫度範圍判斷顏色
+    if 0 <= fridge_temp <= 5:
+        # 綠色：正常範圍 (0-5°C)
+        color = "#4CAF50"
+    elif -30 <= fridge_temp < 0 or 5 < fridge_temp <= 20:
+        # 橙色：異常範圍（但仍在有效範圍內）
+        color = "#FF9800"
+    else:
+        # 紅色：超出有效範圍
+        color = "#F44336"
+    
+    return f"❄️ 冰箱溫度: {temp_str}", color
 
 def format_last_heartbeat_time(machine: Dict) -> str:
     """
