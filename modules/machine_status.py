@@ -1183,13 +1183,43 @@ def show_fridge_temperature_history_dialog_content(machine_id: int, machine_name
     try:
         ui_logger.info(f"Showing fridge temperature history dialog for machine {machine_id} ({machine_name})")
         
-        st.markdown(f"### ❄️ {machine_name} ({machine_code}) 冰箱溫度歷史")
+        st.markdown(f"### ❄️ {machine_name} ({machine_code}) 冰箱溫度管理")
         
         # 檢查 API 客戶端是否可用
         if not hasattr(st.session_state, 'api') or not st.session_state.api:
             st.error("❌ API 客戶端不可用")
             return
         
+        # 檢查是否為管理員
+        is_admin = st.session_state.get('is_admin', False)
+        
+        # 創建標籤頁
+        if is_admin:
+            tab1, tab2 = st.tabs(["📊 歷史記錄", "⚙️ 溫度告警設定"])
+        else:
+            # 非管理員只顯示歷史記錄
+            st.markdown("#### 📊 溫度歷史記錄")
+        
+        # 標籤頁 1: 歷史記錄
+        if is_admin:
+            with tab1:
+                _show_fridge_temperature_history_tab(machine_id, machine_name)
+        else:
+            # 非管理員直接顯示歷史記錄
+            _show_fridge_temperature_history_tab(machine_id, machine_name)
+        
+        # 標籤頁 2: 溫度告警設定（僅管理員）
+        if is_admin:
+            with tab2:
+                _show_fridge_temperature_settings_tab(machine_id, machine_name, machine_code)
+        
+    except Exception as e:
+        ui_logger.error(f"Error showing fridge temperature history dialog: {str(e)}")
+        st.error(f"❌ 顯示冰箱溫度歷史時發生錯誤: {str(e)}")
+    
+def _show_fridge_temperature_history_tab(machine_id: int, machine_name: str):
+    """顯示冰箱溫度歷史記錄標籤頁內容"""
+    try:
         # 日期選擇器
         col_date1, col_date2, col_date3 = st.columns([2, 2, 1])
         
@@ -1216,7 +1246,7 @@ def show_fridge_temperature_history_dialog_content(machine_id: int, machine_name
         with col_date3:
             st.write("")  # 空白行，用於對齊
             st.write("")  # 空白行，用於對齊
-            query_button = st.button("🔍 查詢", key=f"query_fridge_temp_{machine_id}", type="primary", width='stretch')
+            query_button = st.button("🔍 查詢", key=f"query_fridge_temp_{machine_id}", type="primary", use_container_width=True)
         
         # 驗證日期範圍
         if start_date > end_date:
@@ -1384,7 +1414,7 @@ def show_fridge_temperature_history_dialog_content(machine_id: int, machine_name
         )
         
         # 顯示圖表
-        st.plotly_chart(fig, width='stretch')
+        st.plotly_chart(fig, use_container_width=True)
         
         # 顯示數據表格（可選）
         with st.expander("📋 查看詳細數據", expanded=False):
@@ -1393,14 +1423,222 @@ def show_fridge_temperature_history_dialog_content(machine_id: int, machine_name
             df_display = df_display.rename(columns={'時間': '記錄時間', '溫度': '溫度 (°C)'})
             df_display['溫度 (°C)'] = df_display['溫度 (°C)'].apply(lambda x: f"{x:.2f}")
             st.dataframe(df_display, width='stretch', hide_index=True)
-        
     except Exception as e:
-        ui_logger.error(f"Error showing fridge temperature history dialog: {str(e)}")
+        ui_logger.error(f"Error showing fridge temperature history tab: {str(e)}")
         st.error(f"❌ 顯示冰箱溫度歷史時發生錯誤: {str(e)}")
 
 def show_fridge_temperature_history_dialog(machine_id: int, machine_name: str, machine_code: str):
     """顯示冰箱溫度歷史數據對話框"""
     show_fridge_temperature_history_dialog_content(machine_id, machine_name, machine_code)
+
+def _show_fridge_temperature_settings_tab(machine_id: int, machine_name: str, machine_code: str):
+    """顯示冰箱溫度告警設定標籤頁內容"""
+    try:
+        # 檢查 API 客戶端是否可用
+        if not hasattr(st.session_state, 'api') or not st.session_state.api:
+            st.error("❌ API 客戶端不可用")
+            return
+        
+        # 取得當前溫度設定
+        with st.spinner("正在載入溫度設定..."):
+            settings = st.session_state.api.get_fridge_temperature_settings(machine_id)
+            alert_status = st.session_state.api.get_fridge_temperature_alert_status(machine_id)
+        
+        if not settings:
+            st.error("❌ 無法載入溫度設定")
+            return
+        
+        # 顯示當前狀態卡片
+        st.markdown("### 📊 當前狀態")
+        col_status1, col_status2, col_status3 = st.columns(3)
+        
+        with col_status1:
+            current_temp = settings.get('current_temp')
+            if current_temp is not None:
+                st.metric("🌡️ 當前溫度", f"{current_temp:.2f}°C")
+            else:
+                st.metric("🌡️ 當前溫度", "未回報")
+        
+        with col_status2:
+            min_temp = settings.get('min_temp')
+            max_temp = settings.get('max_temp')
+            if min_temp is not None and max_temp is not None:
+                st.metric("📏 設定範圍", f"{min_temp:.1f}°C ~ {max_temp:.1f}°C")
+            elif min_temp is not None:
+                st.metric("📏 設定範圍", f"≥ {min_temp:.1f}°C")
+            elif max_temp is not None:
+                st.metric("📏 設定範圍", f"≤ {max_temp:.1f}°C")
+            else:
+                st.metric("📏 設定範圍", "未設定")
+        
+        with col_status3:
+            alert_status_text = settings.get('alert_status', 'normal')
+            if alert_status_text == 'normal':
+                st.metric("✅ 告警狀態", "正常")
+            elif alert_status_text == 'counting_down':
+                remaining_seconds = settings.get('alert_remaining_seconds')
+                if remaining_seconds:
+                    minutes = remaining_seconds // 60
+                    st.metric("⏱️ 告警狀態", f"倒數中（{minutes} 分鐘）")
+                else:
+                    st.metric("⏱️ 告警狀態", "倒數中")
+            elif alert_status_text == 'alert_sent':
+                st.metric("🚨 告警狀態", "已發送告警")
+            else:
+                st.metric("❓ 告警狀態", alert_status_text)
+        
+        st.markdown("---")
+        
+        # 顯示告警詳細資訊
+        if alert_status:
+            is_over_limit = alert_status.get('is_over_limit', False)
+            if is_over_limit:
+                st.warning("⚠️ **溫度超標**：當前溫度超出設定範圍")
+                if alert_status.get('alert_started_at'):
+                    alert_start_time = alert_status.get('alert_started_at')
+                    try:
+                        if isinstance(alert_start_time, str):
+                            alert_start_dt = datetime.fromisoformat(alert_start_time.replace('Z', '+00:00'))
+                            alert_start_tw = convert_to_taiwan_time(alert_start_dt)
+                            st.caption(f"告警開始時間：{format_datetime_display(alert_start_tw)}")
+                    except:
+                        pass
+                
+                if alert_status.get('alert_remaining_seconds'):
+                    remaining = alert_status.get('alert_remaining_seconds')
+                    minutes = remaining // 60
+                    seconds = remaining % 60
+                    st.caption(f"剩餘時間：{minutes} 分 {seconds} 秒")
+                
+                if alert_status.get('alert_sent'):
+                    st.error("🚨 已發送告警郵件給管理人員")
+                    if alert_status.get('alert_sent_at'):
+                        sent_at = alert_status.get('alert_sent_at')
+                        try:
+                            if isinstance(sent_at, str):
+                                sent_dt = datetime.fromisoformat(sent_at.replace('Z', '+00:00'))
+                                sent_tw = convert_to_taiwan_time(sent_dt)
+                                st.caption(f"告警發送時間：{format_datetime_display(sent_tw)}")
+                        except:
+                            pass
+            else:
+                st.success("✅ 溫度正常")
+        
+        st.markdown("---")
+        
+        # 溫度設定表單
+        st.markdown("### ⚙️ 溫度告警設定")
+        
+        with st.form(key=f"fridge_temp_settings_form_{machine_id}", clear_on_submit=False):
+            st.markdown("**設定溫度範圍（-30°C ~ 20°C）**")
+            
+            col_temp1, col_temp2 = st.columns(2)
+            
+            with col_temp1:
+                current_min = settings.get('min_temp')
+                min_temp = st.number_input(
+                    "溫度下限 (°C)",
+                    min_value=-30.0,
+                    max_value=20.0,
+                    value=float(current_min) if current_min is not None else None,
+                    step=0.1,
+                    format="%.1f",
+                    help="溫度低於此值時觸發告警（可留空表示不設下限）",
+                    key=f"min_temp_input_{machine_id}"
+                )
+                use_min_temp = st.checkbox("啟用下限檢查", value=current_min is not None, key=f"use_min_temp_{machine_id}")
+            
+            with col_temp2:
+                current_max = settings.get('max_temp')
+                max_temp = st.number_input(
+                    "溫度上限 (°C)",
+                    min_value=-30.0,
+                    max_value=20.0,
+                    value=float(current_max) if current_max is not None else None,
+                    step=0.1,
+                    format="%.1f",
+                    help="溫度高於此值時觸發告警（可留空表示不設上限）",
+                    key=f"max_temp_input_{machine_id}"
+                )
+                use_max_temp = st.checkbox("啟用上限檢查", value=current_max is not None, key=f"use_max_temp_{machine_id}")
+            
+            # 告警開關
+            current_alert_enabled = settings.get('alert_enabled', False)
+            alert_enabled = st.checkbox(
+                "啟用溫度告警功能",
+                value=current_alert_enabled,
+                help="啟用後，系統將監控溫度並在超標時發送告警",
+                key=f"alert_enabled_{machine_id}"
+            )
+            
+            # 表單提交按鈕
+            submit_button = st.form_submit_button("💾 儲存設定", type="primary", use_container_width=True)
+            
+            # 處理表單提交
+            if submit_button:
+                # 驗證設定
+                final_min_temp = min_temp if use_min_temp else None
+                final_max_temp = max_temp if use_max_temp else None
+                
+                # 驗證：至少設定一個
+                if not final_min_temp and not final_max_temp and alert_enabled:
+                    st.error("❌ 啟用告警功能時，必須至少設定溫度上限或下限")
+                # 驗證：如果都設定了，下限必須小於上限
+                elif final_min_temp is not None and final_max_temp is not None:
+                    if final_min_temp >= final_max_temp:
+                        st.error("❌ 溫度下限必須小於溫度上限")
+                    else:
+                        # 更新設定
+                        updated_settings = st.session_state.api.update_fridge_temperature_settings(
+                            machine_id=machine_id,
+                            min_temp=final_min_temp,
+                            max_temp=final_max_temp,
+                            alert_enabled=alert_enabled
+                        )
+                        if updated_settings:
+                            st.success("✅ 溫度設定已更新")
+                            st.rerun()
+                else:
+                    # 更新設定
+                    updated_settings = st.session_state.api.update_fridge_temperature_settings(
+                        machine_id=machine_id,
+                        min_temp=final_min_temp,
+                        max_temp=final_max_temp,
+                        alert_enabled=alert_enabled
+                    )
+                    if updated_settings:
+                        st.success("✅ 溫度設定已更新")
+                        st.rerun()
+        
+        # 重置告警按鈕（表單外）- 只在有告警狀態時顯示
+        if alert_status and (alert_status.get('is_over_limit') or alert_status.get('alert_sent')):
+            st.markdown("---")
+            st.markdown("### 🔄 告警管理")
+            if st.button("🔄 重置告警狀態", key=f"reset_alert_{machine_id}", use_container_width=True, help="手動重置告警狀態，清除倒數計時器"):
+                if st.session_state.api.reset_fridge_temperature_alert(machine_id):
+                    st.rerun()
+        
+        st.markdown("---")
+        
+        # 顯示提示資訊
+        with st.expander("ℹ️ 告警機制說明", expanded=False):
+            st.markdown("""
+            **告警流程：**
+            1. 系統每 5 分鐘檢查一次溫度
+            2. 當溫度超過設定範圍時，啟動 1 小時倒數計時
+            3. 如果溫度在倒數期間恢復正常，自動重置計時
+            4. 1 小時後如果溫度仍超標，發送告警郵件
+            5. 溫度恢復正常時，自動重置告警狀態
+            
+            **注意事項：**
+            - 溫度等於上下限時不會觸發告警（例如：上限 6°C，當前 6°C 不會觸發）
+            - 可以只設定上限或下限，也可以同時設定兩者
+            - 關閉告警功能時，系統會停止監控但保留設定值
+            """)
+        
+    except Exception as e:
+        ui_logger.error(f"Error showing fridge temperature settings tab: {str(e)}")
+        st.error(f"❌ 顯示溫度設定時發生錯誤: {str(e)}")
 
 # ============================================================================
 # MQTT 命令對話框函數已移至檔案末尾的 "MQTT 功能保留區塊"

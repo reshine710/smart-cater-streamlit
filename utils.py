@@ -524,6 +524,225 @@ class VendingMachineAPI:
             st.error(f"🌐 無法連接到 API 伺服器: {str(e)}")
             return {"records": [], "total": 0, "machine_id": machine_id}
     
+    def get_fridge_temperature_settings(self, machine_id: int) -> Optional[Dict]:
+        """
+        取得機台冰箱溫度設定
+        
+        Args:
+            machine_id: 機台 ID
+        
+        Returns:
+            Dict: 包含溫度設定和告警狀態的回應資料，失敗時返回 None
+        """
+        api_logger.debug(f"Fetching fridge temperature settings for machine ID: {machine_id}")
+        try:
+            response = requests.get(
+                f"{self.base_url}/machines/{machine_id}/fridge-temperature/settings",
+                headers=self._get_auth_headers(),
+                timeout=10
+            )
+            
+            if response.status_code == 200:
+                settings = response.json()
+                api_logger.info(f"Successfully retrieved fridge temperature settings for machine ID: {machine_id}")
+                return settings
+            elif response.status_code == 404:
+                api_logger.warning(f"Machine not found for ID: {machine_id}")
+                import streamlit as st
+                st.error("❌ 機台不存在")
+                return None
+            elif response.status_code == 401:
+                api_logger.warning("Unauthorized access to fridge temperature settings API")
+                import streamlit as st
+                st.error("❌ 未授權存取，請重新登入")
+                return None
+            else:
+                api_logger.warning(f"Failed to get fridge temperature settings - Status code: {response.status_code}")
+                import streamlit as st
+                st.error(f"❌ 取得溫度設定失敗 (狀態碼: {response.status_code})")
+                return None
+                
+        except requests.exceptions.RequestException as e:
+            api_logger.error(f"Network error getting fridge temperature settings: {str(e)}")
+            import streamlit as st
+            st.error(f"🌐 無法連接到 API 伺服器: {str(e)}")
+            return None
+    
+    def update_fridge_temperature_settings(
+        self, 
+        machine_id: int, 
+        min_temp: Optional[float] = None, 
+        max_temp: Optional[float] = None, 
+        alert_enabled: Optional[bool] = None
+    ) -> Optional[Dict]:
+        """
+        更新機台冰箱溫度設定
+        
+        Args:
+            machine_id: 機台 ID
+            min_temp: 溫度下限（°C），範圍：-30°C ~ 20°C，None 表示不設下限
+            max_temp: 溫度上限（°C），範圍：-30°C ~ 20°C，None 表示不設上限
+            alert_enabled: 是否啟用告警功能
+        
+        Returns:
+            Dict: 更新後的設定資料，失敗時返回 None
+        """
+        api_logger.debug(f"Updating fridge temperature settings for machine ID: {machine_id}, min_temp: {min_temp}, max_temp: {max_temp}, alert_enabled: {alert_enabled}")
+        try:
+            payload = {}
+            if min_temp is not None:
+                payload["min_temp"] = min_temp
+            if max_temp is not None:
+                payload["max_temp"] = max_temp
+            if alert_enabled is not None:
+                payload["alert_enabled"] = alert_enabled
+            
+            response = requests.put(
+                f"{self.base_url}/machines/{machine_id}/fridge-temperature/settings",
+                headers=self._get_auth_headers(),
+                json=payload,
+                timeout=10
+            )
+            
+            if response.status_code == 200:
+                settings = response.json()
+                api_logger.info(f"Successfully updated fridge temperature settings for machine ID: {machine_id}")
+                import streamlit as st
+                st.success("✅ 溫度設定已更新")
+                return settings
+            elif response.status_code == 400:
+                api_logger.warning(f"Bad request for updating fridge temperature settings - Status: {response.status_code}")
+                try:
+                    error_detail = response.json().get("detail", "請求參數錯誤")
+                    import streamlit as st
+                    st.error(f"❌ 設定更新失敗: {error_detail}")
+                except:
+                    import streamlit as st
+                    st.error("❌ 設定更新失敗: 請求參數錯誤")
+                return None
+            elif response.status_code == 404:
+                api_logger.warning(f"Machine not found for ID: {machine_id}")
+                import streamlit as st
+                st.error("❌ 機台不存在")
+                return None
+            elif response.status_code == 401:
+                api_logger.warning("Unauthorized access to update fridge temperature settings API")
+                import streamlit as st
+                st.error("❌ 未授權存取，請重新登入")
+                return None
+            elif response.status_code == 403:
+                api_logger.warning("Forbidden access to update fridge temperature settings API")
+                import streamlit as st
+                st.error("❌ 權限不足：僅管理員可更新溫度設定")
+                return None
+            else:
+                api_logger.warning(f"Failed to update fridge temperature settings - Status code: {response.status_code}")
+                import streamlit as st
+                st.error(f"❌ 設定更新失敗 (狀態碼: {response.status_code})")
+                return None
+                
+        except requests.exceptions.RequestException as e:
+            api_logger.error(f"Network error updating fridge temperature settings: {str(e)}")
+            import streamlit as st
+            st.error(f"🌐 無法連接到 API 伺服器: {str(e)}")
+            return None
+    
+    def get_fridge_temperature_alert_status(self, machine_id: int) -> Optional[Dict]:
+        """
+        取得機台冰箱溫度告警狀態
+        
+        Args:
+            machine_id: 機台 ID
+        
+        Returns:
+            Dict: 包含告警狀態資訊的回應資料，失敗時返回 None
+        """
+        api_logger.debug(f"Fetching fridge temperature alert status for machine ID: {machine_id}")
+        try:
+            response = requests.get(
+                f"{self.base_url}/machines/{machine_id}/fridge-temperature/alert/status",
+                headers=self._get_auth_headers(),
+                timeout=10
+            )
+            
+            if response.status_code == 200:
+                status = response.json()
+                api_logger.info(f"Successfully retrieved fridge temperature alert status for machine ID: {machine_id}")
+                return status
+            elif response.status_code == 404:
+                api_logger.warning(f"Machine not found for ID: {machine_id}")
+                import streamlit as st
+                st.error("❌ 機台不存在")
+                return None
+            elif response.status_code == 401:
+                api_logger.warning("Unauthorized access to fridge temperature alert status API")
+                import streamlit as st
+                st.error("❌ 未授權存取，請重新登入")
+                return None
+            else:
+                api_logger.warning(f"Failed to get fridge temperature alert status - Status code: {response.status_code}")
+                import streamlit as st
+                st.error(f"❌ 取得告警狀態失敗 (狀態碼: {response.status_code})")
+                return None
+                
+        except requests.exceptions.RequestException as e:
+            api_logger.error(f"Network error getting fridge temperature alert status: {str(e)}")
+            import streamlit as st
+            st.error(f"🌐 無法連接到 API 伺服器: {str(e)}")
+            return None
+    
+    def reset_fridge_temperature_alert(self, machine_id: int) -> bool:
+        """
+        重置機台冰箱溫度告警狀態
+        
+        Args:
+            machine_id: 機台 ID
+        
+        Returns:
+            bool: 成功返回 True，失敗返回 False
+        """
+        api_logger.debug(f"Resetting fridge temperature alert for machine ID: {machine_id}")
+        try:
+            response = requests.post(
+                f"{self.base_url}/machines/{machine_id}/fridge-temperature/alert/reset",
+                headers=self._get_auth_headers(),
+                timeout=10
+            )
+            
+            if response.status_code == 200:
+                result = response.json()
+                api_logger.info(f"Successfully reset fridge temperature alert for machine ID: {machine_id}")
+                import streamlit as st
+                if result.get("success"):
+                    st.success("✅ 告警狀態已重置")
+                return result.get("success", False)
+            elif response.status_code == 404:
+                api_logger.warning(f"Machine not found for ID: {machine_id}")
+                import streamlit as st
+                st.error("❌ 機台不存在")
+                return False
+            elif response.status_code == 401:
+                api_logger.warning("Unauthorized access to reset fridge temperature alert API")
+                import streamlit as st
+                st.error("❌ 未授權存取，請重新登入")
+                return False
+            elif response.status_code == 403:
+                api_logger.warning("Forbidden access to reset fridge temperature alert API")
+                import streamlit as st
+                st.error("❌ 權限不足：僅管理員可重置告警狀態")
+                return False
+            else:
+                api_logger.warning(f"Failed to reset fridge temperature alert - Status code: {response.status_code}")
+                import streamlit as st
+                st.error(f"❌ 重置告警狀態失敗 (狀態碼: {response.status_code})")
+                return False
+                
+        except requests.exceptions.RequestException as e:
+            api_logger.error(f"Network error resetting fridge temperature alert: {str(e)}")
+            import streamlit as st
+            st.error(f"🌐 無法連接到 API 伺服器: {str(e)}")
+            return False
+    
     def update_machine_status(self, machine_id: int, status: str) -> bool:
         """更新機台狀態（使用舊的 API，保留向後相容性）"""
         api_logger.debug(f"Updating machine {machine_id} status to: {status}")
