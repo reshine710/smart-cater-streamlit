@@ -373,7 +373,7 @@ def show_user_management():
                             st.rerun()
                 with row_cols[2]:
                     # 硬刪：不可回復
-                    if st.button("刪除", key=f"btn_delete_{rid}", use_container_width=True):
+                    if st.button("刪除", key=f"btn_delete_{rid}", width='stretch'):
                         ok = st.session_state.api.delete_ai_notification_recipient(rid)
                         if ok:
                             # 二次驗證：立即向後端取一次資料確認是否仍存在

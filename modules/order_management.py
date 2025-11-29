@@ -1294,7 +1294,7 @@ def render_order_details(order: Dict):
         st.markdown("---")
         st.markdown("#### 🧾 訂單明細")
         df_items = pd.DataFrame(items_table)
-        st.dataframe(df_items, use_container_width=True)
+        st.dataframe(df_items, width='stretch')
 
     # 進階：顯示已過濾的原始 JSON（方便除錯）
     with st.expander("🧩 查看原始資料（已隱藏部份欄位）", expanded=False):

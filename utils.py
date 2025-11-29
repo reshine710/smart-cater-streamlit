@@ -459,6 +459,71 @@ class VendingMachineAPI:
             api_logger.error(f"Network error getting machine detail: {str(e)}")
             return {}
     
+    def get_fridge_temperature_history(
+        self, 
+        machine_id: int, 
+        start_date: Optional[str] = None, 
+        end_date: Optional[str] = None, 
+        limit: int = 1000
+    ) -> Dict:
+        """
+        取得機台冰箱溫度歷史記錄
+        
+        Args:
+            machine_id: 機台 ID
+            start_date: 開始日期 (YYYY-MM-DD 格式)
+            end_date: 結束日期 (YYYY-MM-DD 格式)
+            limit: 最大記錄數 (預設 1000，範圍：1 ~ 10000)
+        
+        Returns:
+            Dict: 包含 records, total, machine_id, machine_code, machine_name 等欄位的回應資料
+        """
+        api_logger.debug(f"Fetching fridge temperature history for machine ID: {machine_id}, start_date: {start_date}, end_date: {end_date}, limit: {limit}")
+        try:
+            params = {"limit": limit}
+            if start_date:
+                params["start_date"] = start_date
+            if end_date:
+                params["end_date"] = end_date
+            
+            response = requests.get(
+                f"{self.base_url}/machines/{machine_id}/fridge-temperature/history",
+                headers=self._get_auth_headers(),
+                params=params,
+                timeout=10
+            )
+            
+            if response.status_code == 200:
+                history_data = response.json()
+                api_logger.info(f"Successfully retrieved fridge temperature history for machine ID: {machine_id}, total records: {history_data.get('total', 0)}")
+                return history_data
+            elif response.status_code == 400:
+                api_logger.warning(f"Bad request for fridge temperature history - Status: {response.status_code}")
+                try:
+                    error_detail = response.json().get("detail", "請求參數錯誤")
+                    import streamlit as st
+                    st.error(f"❌ 請求錯誤: {error_detail}")
+                except:
+                    pass
+                return {"records": [], "total": 0, "machine_id": machine_id}
+            elif response.status_code == 404:
+                api_logger.warning(f"Machine not found for ID: {machine_id}")
+                return {"records": [], "total": 0, "machine_id": machine_id}
+            elif response.status_code == 401:
+                api_logger.warning("Unauthorized access to fridge temperature history API")
+                import streamlit as st
+                st.error("❌ 未授權存取，請重新登入")
+                return {"records": [], "total": 0, "machine_id": machine_id}
+            else:
+                api_logger.warning(f"Failed to get fridge temperature history - Status code: {response.status_code}")
+                return {"records": [], "total": 0, "machine_id": machine_id}
+                
+        except requests.exceptions.RequestException as e:
+            api_logger.error(f"Network error getting fridge temperature history: {str(e)}")
+            import streamlit as st
+            st.error(f"🌐 無法連接到 API 伺服器: {str(e)}")
+            return {"records": [], "total": 0, "machine_id": machine_id}
+    
     def update_machine_status(self, machine_id: int, status: str) -> bool:
         """更新機台狀態（使用舊的 API，保留向後相容性）"""
         api_logger.debug(f"Updating machine {machine_id} status to: {status}")

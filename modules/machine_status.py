@@ -5,6 +5,8 @@ from datetime import datetime, timedelta, timezone
 import time
 import random
 import json
+import plotly.graph_objects as go
+import plotly.express as px
 from logger_config import mqtt_logger, ui_logger, system_logger
 from typing import Optional, List, Dict, Tuple
 from utils import format_datetime_display
@@ -860,6 +862,9 @@ def machine_status_page():
                 # 顯示最後心跳時間（使用統一的格式化函數）
                 last_time_display = format_last_heartbeat_time(machine)
                 st.write(f"**最後心跳**: {last_time_display}")
+                # 查看冰箱溫度歷史按鈕
+                if st.button("📊 查看冰箱溫度歷史", key=f"view_fridge_temp_history_{machine_id}", width='stretch'):
+                    show_fridge_temperature_history_dialog(machine_id, machine_name, machine_code)
             
             with col3:
                 # 機台操作按鈕 (使用 REST API)
@@ -1169,6 +1174,233 @@ def show_machine_menu_dialog(machine_id: int, machine_name: str):
     """顯示機台菜單對話框"""
     # 調用對話框函數
     show_machine_menu_dialog_content(machine_id, machine_name)
+
+
+# 定義冰箱溫度歷史對話框函數
+@st.dialog("❄️ 冰箱溫度歷史數據", width="large")
+def show_fridge_temperature_history_dialog_content(machine_id: int, machine_name: str, machine_code: str):
+    """顯示冰箱溫度歷史數據對話框內容"""
+    try:
+        ui_logger.info(f"Showing fridge temperature history dialog for machine {machine_id} ({machine_name})")
+        
+        st.markdown(f"### ❄️ {machine_name} ({machine_code}) 冰箱溫度歷史")
+        
+        # 檢查 API 客戶端是否可用
+        if not hasattr(st.session_state, 'api') or not st.session_state.api:
+            st.error("❌ API 客戶端不可用")
+            return
+        
+        # 日期選擇器
+        col_date1, col_date2, col_date3 = st.columns([2, 2, 1])
+        
+        with col_date1:
+            # 預設為過去 7 天
+            default_start_date = (datetime.now() - timedelta(days=7)).date()
+            start_date = st.date_input(
+                "開始日期",
+                value=default_start_date,
+                key=f"fridge_temp_start_{machine_id}",
+                help="選擇查詢的開始日期"
+            )
+        
+        with col_date2:
+            # 預設為今天
+            default_end_date = datetime.now().date()
+            end_date = st.date_input(
+                "結束日期",
+                value=default_end_date,
+                key=f"fridge_temp_end_{machine_id}",
+                help="選擇查詢的結束日期"
+            )
+        
+        with col_date3:
+            st.write("")  # 空白行，用於對齊
+            st.write("")  # 空白行，用於對齊
+            query_button = st.button("🔍 查詢", key=f"query_fridge_temp_{machine_id}", type="primary", width='stretch')
+        
+        # 驗證日期範圍
+        if start_date > end_date:
+            st.error("❌ 開始日期不能晚於結束日期")
+            return
+        
+        # 查詢數據（初始載入或點擊查詢按鈕時載入）
+        # 使用 session_state 來追蹤是否已初始載入，避免重複查詢
+        init_key = f'fridge_temp_init_{machine_id}'
+        if query_button or init_key not in st.session_state:
+            with st.spinner("正在載入冰箱溫度歷史數據..."):
+                start_date_str = start_date.strftime('%Y-%m-%d')
+                end_date_str = end_date.strftime('%Y-%m-%d')
+                
+                history_data = st.session_state.api.get_fridge_temperature_history(
+                    machine_id=machine_id,
+                    start_date=start_date_str,
+                    end_date=end_date_str,
+                    limit=1000
+                )
+                # 標記已初始載入
+                st.session_state[init_key] = True
+        else:
+            # 如果已初始載入但沒有點擊查詢按鈕，顯示提示
+            st.info("💡 請選擇日期範圍並點擊「查詢」按鈕以重新載入數據")
+            history_data = {"records": [], "total": 0}
+        
+        # 處理和顯示數據
+        records = history_data.get('records', [])
+        total = history_data.get('total', 0)
+        
+        if not records or total == 0:
+            st.info("📭 所選日期範圍內沒有冰箱溫度歷史記錄")
+            st.caption("💡 提示：系統每 15 分鐘自動儲存一次溫度記錄")
+            return
+        
+        # 顯示統計資訊
+        st.markdown("---")
+        col_stat1, col_stat2, col_stat3, col_stat4 = st.columns(4)
+        
+        with col_stat1:
+            st.metric("📊 總記錄數", total)
+        
+        # 計算統計數據
+        temps = [record.get('fridge_temp') for record in records if record.get('fridge_temp') is not None]
+        
+        with col_stat2:
+            if temps:
+                avg_temp = sum(temps) / len(temps)
+                st.metric("📈 平均溫度", f"{avg_temp:.2f}°C")
+            else:
+                st.metric("📈 平均溫度", "N/A")
+        
+        with col_stat3:
+            if temps:
+                max_temp = max(temps)
+                st.metric("🔥 最高溫度", f"{max_temp:.2f}°C")
+            else:
+                st.metric("🔥 最高溫度", "N/A")
+        
+        with col_stat4:
+            if temps:
+                min_temp = min(temps)
+                st.metric("❄️ 最低溫度", f"{min_temp:.2f}°C")
+            else:
+                st.metric("❄️ 最低溫度", "N/A")
+        
+        st.markdown("---")
+        
+        # 準備圖表數據
+        df_records = []
+        for record in records:
+            recorded_at = record.get('recorded_at')
+            fridge_temp = record.get('fridge_temp')
+            
+            if recorded_at and fridge_temp is not None:
+                try:
+                    # 解析時間（處理 ISO 8601 格式）
+                    if isinstance(recorded_at, str):
+                        # 處理時區標記
+                        if recorded_at.endswith('Z'):
+                            recorded_at = recorded_at.replace('Z', '+00:00')
+                        record_time = datetime.fromisoformat(recorded_at.replace('Z', '+00:00'))
+                    elif isinstance(recorded_at, datetime):
+                        record_time = recorded_at
+                    else:
+                        continue
+                    
+                    # 轉換為台灣時區
+                    record_time_tw = convert_to_taiwan_time(record_time)
+                    
+                    df_records.append({
+                        '時間': record_time_tw,
+                        '溫度': fridge_temp
+                    })
+                except Exception as e:
+                    ui_logger.warning(f"Error parsing record time: {e}")
+                    continue
+        
+        if not df_records:
+            st.warning("⚠️ 無法解析溫度記錄數據")
+            return
+        
+        # 創建 DataFrame
+        df = pd.DataFrame(df_records)
+        df = df.sort_values('時間')  # 按時間排序
+        
+        # 計算當前數據的最高和最低溫度
+        max_temp = df['溫度'].max()
+        min_temp = df['溫度'].min()
+        
+        # 繪製折線圖
+        st.markdown("### 📊 溫度趨勢圖")
+        
+        fig = go.Figure()
+        
+        # 添加溫度折線
+        fig.add_trace(go.Scatter(
+            x=df['時間'],
+            y=df['溫度'],
+            mode='lines+markers',
+            name='冰箱溫度',
+            line=dict(color='#1f77b4', width=2),
+            marker=dict(size=4),
+            hovertemplate='<b>時間</b>: %{x}<br><b>溫度</b>: %{y:.2f}°C<extra></extra>'
+        ))
+        
+        # 添加當前數據範圍參考線（最高和最低溫度）
+        fig.add_hline(y=max_temp, line_dash="dash", line_color="orange", 
+                     annotation_text=f"最高溫度 ({max_temp:.2f}°C)", 
+                     annotation_position="right",
+                     annotation_font_size=10)
+        fig.add_hline(y=min_temp, line_dash="dash", line_color="green", 
+                     annotation_text=f"最低溫度 ({min_temp:.2f}°C)", 
+                     annotation_position="right",    
+                     annotation_font_size=10)
+        
+        # 更新圖表布局
+        fig.update_layout(
+            title=f"{machine_name} 冰箱溫度歷史趨勢",
+            xaxis_title="時間",
+            yaxis_title="溫度 (°C)",
+            hovermode='x unified',
+            height=500,
+            showlegend=True,
+            legend=dict(
+                orientation="h",
+                yanchor="bottom",
+                y=1.02,
+                xanchor="right",
+                x=1
+            ),
+            xaxis=dict(
+                showgrid=True,
+                gridwidth=1,
+                gridcolor='lightgray'
+            ),
+            yaxis=dict(
+                showgrid=True,
+                gridwidth=1,
+                gridcolor='lightgray'
+            ),
+            plot_bgcolor='white',
+            margin=dict(t=80, b=50, l=50, r=50)
+        )
+        
+        # 顯示圖表
+        st.plotly_chart(fig, width='stretch')
+        
+        # 顯示數據表格（可選）
+        with st.expander("📋 查看詳細數據", expanded=False):
+            df_display = df.copy()
+            df_display['時間'] = df_display['時間'].apply(lambda x: format_datetime_display(x))
+            df_display = df_display.rename(columns={'時間': '記錄時間', '溫度': '溫度 (°C)'})
+            df_display['溫度 (°C)'] = df_display['溫度 (°C)'].apply(lambda x: f"{x:.2f}")
+            st.dataframe(df_display, width='stretch', hide_index=True)
+        
+    except Exception as e:
+        ui_logger.error(f"Error showing fridge temperature history dialog: {str(e)}")
+        st.error(f"❌ 顯示冰箱溫度歷史時發生錯誤: {str(e)}")
+
+def show_fridge_temperature_history_dialog(machine_id: int, machine_name: str, machine_code: str):
+    """顯示冰箱溫度歷史數據對話框"""
+    show_fridge_temperature_history_dialog_content(machine_id, machine_name, machine_code)
 
 # ============================================================================
 # MQTT 命令對話框函數已移至檔案末尾的 "MQTT 功能保留區塊"
