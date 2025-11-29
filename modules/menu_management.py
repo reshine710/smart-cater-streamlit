@@ -365,6 +365,10 @@ def show_menu_item_details(item: Dict, index: int):
             if st.button("🏷️ 管理標籤", key=f"tags_{item_id}_{index}"):
                 show_tags_management(item)
             
+            # 配方管理
+            if st.button("🧾 配方管理", key=f"recipe_{item_id}_{index}"):
+                show_recipe_management_dialog(item)
+            
             # 刪除菜單項目功能 (危險操作)
             st.markdown("---")
             st.write("**⚠️ 危險操作**")
@@ -524,6 +528,204 @@ def show_tags_management(item: Dict):
     
     # 觸發對話框
     tags_dialog()
+
+
+def show_recipe_management_dialog(item: Dict):
+    """顯示配方管理對話框"""
+    
+    @st.dialog(f"🧾 配方管理 - {item.get('name', 'Unknown')}")
+    def recipe_dialog():
+        # 權限檢查
+        if not st.session_state.get('is_admin', False):
+            st.error("❌ 權限不足：此功能僅限管理員使用")
+            ui_logger.warning(f"Non-admin user {st.session_state.get('username', 'Unknown')} attempted to access recipe management")
+            if st.button("❌ 關閉", width="stretch"):
+                st.rerun()
+            return
+        
+        item_name = item.get('name', 'Unknown')
+        item_id = item.get('id')
+        
+        if not item_id:
+            st.error("❌ 無法取得商品ID")
+            if st.button("❌ 關閉", width="stretch"):
+                st.rerun()
+            return
+        
+        # 商品基本資訊顯示
+        st.subheader(f"🍽️ {item_name}")
+        
+        col_info1, col_info2, col_info3 = st.columns(3)
+        with col_info1:
+            st.write(f"**💰 價格**: NT$ {item.get('price', 0):.1f}")
+        with col_info2:
+            status = "✅ 啟用" if item.get('is_active', False) else "❌ 停用"
+            st.write(f"**📊 狀態**: {status}")
+        with col_info3:
+            st.write(f"**🆔 商品代碼**: {item.get('product_code', '未設定')}")
+        
+        st.markdown("---")
+        
+        # 獲取現有參數
+        current_heating_method = item.get('heating_method', 'none')
+        heating_params = item.get('heating_params') or {}
+        if not isinstance(heating_params, dict):
+            heating_params = {}
+        
+        # 加熱方式選擇器
+        st.subheader("⚙️ 加熱方式設定")
+        heating_options = ["none", "microwave", "steam"]
+        heating_index = heating_options.index(current_heating_method) if current_heating_method in heating_options else 0
+        selected_heating_method = st.selectbox(
+            "🔥 選擇加熱方式",
+            heating_options,
+            index=heating_index,
+            format_func=lambda x: {"none": "❄️ 無需加熱", "microwave": "🔥 微波加熱", "steam": "💨 蒸氣加熱"}[x],
+            help="選擇此商品的加熱方式，切換後可設定對應的加熱參數"
+        )
+        
+        st.markdown("---")
+        
+        # 動態參數設定區
+        st.subheader("📋 加熱參數設定")
+        
+        recipe_config = {}
+        current_heating_time = heating_params.get('time_seconds', 0) if isinstance(heating_params, dict) else 0
+        
+        if selected_heating_method == 'steam':
+            st.success("💨 蒸氣加熱參數設定")
+            
+            # 從現有參數讀取，如果加熱方式改變則使用預設值
+            if current_heating_method == 'steam' and heating_params:
+                current_temp = heating_params.get('temperature', 100)
+                current_pressure = heating_params.get('pressure_bar', 1.5)
+                current_time = heating_params.get('time_seconds', 120)
+            else:
+                current_temp = 100
+                current_pressure = 1.5
+                current_time = 120
+            
+            steam_temp = st.slider("蒸氣溫度 (°C)", 80, 120, current_temp, help="建議範圍：80-120°C")
+            steam_time = st.slider("加熱時間 (秒)", 30, 300, current_time, step=5, help="建議範圍：30-300秒")
+            steam_pressure = st.slider("蒸氣壓力 (bar)", 1.0, 3.0, current_pressure, 0.1, help="建議範圍：1.0-3.0 bar")
+            
+            recipe_config = {
+                "heating_method": "steam",
+                "temperature": steam_temp,
+                "time_seconds": steam_time,
+                "pressure_bar": steam_pressure
+            }
+            
+        elif selected_heating_method == 'microwave':
+            st.success("🔥 微波加熱參數設定")
+            
+            # 從現有參數讀取，如果加熱方式改變則使用預設值
+            if current_heating_method == 'microwave' and heating_params:
+                current_power = heating_params.get('power_percent', 80)
+                current_time = heating_params.get('time_seconds', 90)
+            else:
+                current_power = 80
+                current_time = 90
+            
+            microwave_power = st.slider("微波功率 (%)", 30, 100, current_power, step=5, help="建議範圍：30-100%")
+            microwave_time = st.slider("加熱時間 (秒)", 30, 180, current_time, step=5, help="建議範圍：30-180秒")
+            
+            recipe_config = {
+                "heating_method": "microwave",
+                "power_percent": microwave_power,
+                "time_seconds": microwave_time
+            }
+            
+        else:  # none
+            st.info("❄️ 無需加熱")
+            st.write("此項目無需加熱，可直接供應。")
+            recipe_config = {
+                "heating_method": "none",
+                "time_seconds": 0
+            }
+        
+        # 參數預覽
+        st.markdown("---")
+        st.subheader("🔮 參數預覽")
+        st.code(f"{recipe_config}", language="json")
+        
+        # 顯示現有參數（如果存在且與新設定不同）
+        if heating_params and isinstance(heating_params, dict) and current_heating_method == selected_heating_method:
+            st.info("📋 目前設定參數:")
+            st.json(heating_params)
+        
+        st.markdown("---")
+        
+        # 操作按鈕
+        col1, col2, col3 = st.columns(3)
+        
+        with col1:
+            if st.button("💾 儲存配方設定", width="stretch", type="primary"):
+                # 構建更新資料
+                update_data = {
+                    "heating_method": selected_heating_method,
+                    "heating_params": recipe_config
+                }
+                
+                ui_logger.info(f"Admin {st.session_state.get('username')} saving recipe settings for {item_name} (ID: {item_id})")
+                ui_logger.debug(f"Update data: {update_data}")
+                
+                # 調用 API 更新
+                result = st.session_state.api.update_menu_item(item_id, update_data)
+                if result:
+                    st.success(f"✅ {item_name} 的配方設定已儲存！")
+                    st.toast(f"🎉 配方設定已更新：{item_name}", icon="✅", duration='long')
+                    ui_logger.info(f"Recipe settings saved successfully for {item_name} (ID: {item_id})")
+                    time.sleep(1)
+                    st.rerun()
+                else:
+                    st.error("❌ 儲存失敗，請稍後再試")
+                    ui_logger.error(f"Failed to save recipe settings for {item_name} (ID: {item_id})")
+        
+        with col2:
+            if st.button("🔄 重設為預設值", width="stretch"):
+                # 根據加熱方式設定預設值
+                if selected_heating_method == 'steam':
+                    default_config = {
+                        "heating_method": "steam",
+                        "temperature": 100,
+                        "time_seconds": 120,
+                        "pressure_bar": 1.5
+                    }
+                elif selected_heating_method == 'microwave':
+                    default_config = {
+                        "heating_method": "microwave",
+                        "power_percent": 80,
+                        "time_seconds": 90
+                    }
+                else:
+                    default_config = {
+                        "heating_method": "none",
+                        "time_seconds": 0
+                    }
+                
+                update_data = {
+                    "heating_method": selected_heating_method,
+                    "heating_params": default_config
+                }
+                
+                ui_logger.info(f"Admin {st.session_state.get('username')} resetting recipe settings for {item_name} (ID: {item_id})")
+                
+                result = st.session_state.api.update_menu_item(item_id, update_data)
+                if result:
+                    st.success(f"✅ {item_name} 的配方設定已重設為預設值")
+                    st.toast(f"🔄 配方設定已重設：{item_name}", icon="✅", duration='long')
+                    time.sleep(1)
+                    st.rerun()
+                else:
+                    st.error("❌ 重設失敗，請稍後再試")
+        
+        with col3:
+            if st.button("❌ 取消", width="stretch"):
+                st.rerun()
+    
+    # 觸發對話框
+    recipe_dialog()
 
 
 def show_menu_analytics(menu_items: List[Dict]):
