@@ -241,7 +241,11 @@ def render_machine_card(machine: Dict, status_config: Dict):
     last_heartbeat_time = format_last_heartbeat_time(machine)
     
     # 獲取冰箱溫度並格式化
+    # 如果機台失去心跳，即使有 fridge_temp 值也視為過期數據，顯示為未回報
     fridge_temp = machine.get('fridge_temp')
+    if heartbeat_status == "🔴 無心跳":
+        # 失去心跳時，冰箱溫度視為無效
+        fridge_temp = None
     fridge_temp_text, fridge_temp_color = format_fridge_temp(fridge_temp)
     
     # 創建卡片容器
@@ -308,7 +312,11 @@ def render_machine_card(machine: Dict, status_config: Dict):
                         st.write(f"💧 濕度: {humidity}%" if humidity is not None else "💧 濕度: N/A")
                 with env_col3:
                     if 'fridge_temp' in machine:
-                        fridge_temp_display, fridge_temp_color = format_fridge_temp(machine.get('fridge_temp'))
+                        # 如果機台失去心跳，即使有 fridge_temp 值也視為過期數據，顯示為未回報
+                        fridge_temp_value = machine.get('fridge_temp')
+                        if heartbeat_status == "🔴 無心跳":
+                            fridge_temp_value = None
+                        fridge_temp_display, fridge_temp_color = format_fridge_temp(fridge_temp_value)
                         # 使用 markdown 來顯示帶顏色的文字
                         st.markdown(f"<span style='color: {fridge_temp_color};'>{fridge_temp_display}</span>", unsafe_allow_html=True)
             
