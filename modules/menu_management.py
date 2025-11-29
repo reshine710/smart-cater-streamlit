@@ -5,8 +5,84 @@ from datetime import datetime
 from typing import Dict, List, Optional
 from logger_config import api_logger, ui_logger
 
+
+def get_machine_type_from_product_code(product_code: Optional[str]) -> str:
+    """
+    從 product_code 提取機型代號
+    
+    Args:
+        product_code: 商品代碼
+    
+    Returns:
+        str: 機型代號（A-Z）或 '其他'
+    """
+    if not product_code or not isinstance(product_code, str):
+        return '其他'
+    
+    product_code = product_code.strip()
+    if not product_code:
+        return '其他'
+    
+    first_char = product_code[0].upper()
+    if first_char.isalpha() and 'A' <= first_char <= 'Z':
+        return first_char
+    
+    return '其他'
+
+
+def categorize_menu_items_by_machine_type(menu_items: List[Dict]) -> Dict[str, List[Dict]]:
+    """
+    將菜單項目按機型分類
+    
+    Args:
+        menu_items: 所有菜單項目列表
+    
+    Returns:
+        Dict[str, List[Dict]]: {
+            'A': [A機型的項目列表],
+            'B': [B機型的項目列表],
+            '其他': [無法分類的項目列表]
+        }
+    """
+    categorized = {}
+    
+    for item in menu_items:
+        product_code = item.get('product_code')
+        machine_type = get_machine_type_from_product_code(product_code)
+        
+        if machine_type not in categorized:
+            categorized[machine_type] = []
+        
+        categorized[machine_type].append(item)
+    
+    return categorized
+
+
+def get_available_machine_types(categorized: Dict[str, List[Dict]]) -> List[str]:
+    """
+    獲取目前資料中實際存在的機型列表並排序
+    
+    Args:
+        categorized: 已分類的菜單項目字典
+    
+    Returns:
+        List[str]: 排序後的機型列表，如 ['A', 'B', 'C', '其他']
+    """
+    available_types = []
+    
+    # 先收集 A-Z 的機型
+    letter_types = sorted([k for k in categorized.keys() if k != '其他' and len(k) == 1 and k.isalpha()])
+    available_types.extend(letter_types)
+    
+    # 最後加入「其他」
+    if '其他' in categorized:
+        available_types.append('其他')
+    
+    return available_types
+
+
 def menu_management_page():
-    """菜單管理頁面"""
+    """菜單管理頁面（按機型分類）"""
     ui_logger.info(f"User {st.session_state.get('username', 'Unknown')} accessing menu management page")
     st.title("🍽️ 菜單管理")
     st.markdown("---")
@@ -17,126 +93,202 @@ def menu_management_page():
         ui_logger.warning(f"Non-admin user {st.session_state.get('username', 'Unknown')} attempted to access menu management")
         return
     
-    tab1, tab2, tab3 = st.tabs(["📋 菜單項目管理", "➕ 新增項目", "📊 菜單分析"])
+    # 獲取所有菜單項目
+    menu_items = st.session_state.api.get_menu_items()
+    ui_logger.debug(f"Retrieved {len(menu_items)} menu items for display")
     
-    with tab1:
-        st.subheader("📋 現有菜單項目")
-        
-        # 獲取菜單項目
-        menu_items = st.session_state.api.get_menu_items()
-        ui_logger.debug(f"Retrieved {len(menu_items)} menu items for display")
-        
-        if not menu_items:
-            st.info("📝 目前沒有菜單項目，請先新增項目")
-            return
-        
-        # 篩選和搜尋
-        col1, col2, col3 = st.columns([2, 1, 1])
-        with col1:
-            search_term = st.text_input("🔍 搜尋菜單項目", placeholder="輸入項目名稱...")
-        with col2:
-            status_filter = st.selectbox("狀態篩選", ["全部", "啟用", "停用"], key="menu_status_filter")
-        with col3:
-            if st.button("🔄 重新整理"):
-                st.rerun()
-        
-        # 篩選菜單項目
-        filtered_items = menu_items
-        if search_term:
-            filtered_items = [item for item in filtered_items if search_term.lower() in item.get('name', '').lower()]
-        if status_filter == "啟用":
-            filtered_items = [item for item in filtered_items if item.get('is_active', False)]
-        elif status_filter == "停用":
-            filtered_items = [item for item in filtered_items if not item.get('is_active', False)]
-        
-        st.write(f"顯示 {len(filtered_items)} 個項目 (共 {len(menu_items)} 個)")
-        
-        # 顯示菜單項目
-        for i, item in enumerate(filtered_items):
-            with st.expander(f"{'✅' if item.get('is_active', False) else '❌'} {item.get('name', 'Unknown')} - NT$ {item.get('price', 0)}", expanded=False):
-                show_menu_item_details(item, i)
-    
-    with tab2:
+    if not menu_items:
+        st.info("📝 目前沒有菜單項目，請先新增項目")
+        # 仍然顯示新增項目表單
+        st.markdown("---")
         st.subheader("➕ 新增菜單項目")
-        
-        with st.form("add_menu_item", clear_on_submit=True):
-            col1, col2 = st.columns(2)
-            
-            with col1:
-                new_name = st.text_input("商品名稱 *", placeholder="例：拿鐵咖啡")
-                new_product_code = st.text_input("商品代碼", placeholder="例：A001", help="產品編號，用於訂單管理")
-                new_description = st.text_area("商品描述", placeholder="詳細描述商品特色...")
-                new_price = st.number_input("價格 (NT$) *", min_value=0.0, step=1.0, format="%.1f")
-                new_image_url = st.text_input("圖片網址", placeholder="https://example.com/image.jpg")
-            
-            with col2:
-                new_heating_method = st.selectbox("加熱方式 *", ["none", "microwave", "steam"], 
-                                                format_func=lambda x: {"none": "無需加熱", "microwave": "微波加熱", "steam": "蒸氣加熱"}[x])
-                new_heating_time = st.number_input("加熱時間 (秒)", min_value=0, max_value=300, step=5)
-                new_is_active = st.checkbox("立即啟用", value=True)
-                
-                # 營養資訊
-                st.write("**營養資訊 (可選)**")
-                col2_1, col2_2 = st.columns(2)
-                with col2_1:
-                    calories = st.number_input("熱量 (卡)", min_value=0, step=10)
-                    protein = st.number_input("蛋白質 (g)", min_value=0.0, step=0.1, format="%.1f")
-                with col2_2:
-                    carbs = st.number_input("碳水化合物 (g)", min_value=0.0, step=0.1, format="%.1f")
-                    fat = st.number_input("脂肪 (g)", min_value=0.0, step=0.1, format="%.1f")
-            
-            # 標籤
-            tags_input = st.text_input("標籤 (用逗號分隔)", placeholder="熱門, 健康, 咖啡")
-            
-            submitted = st.form_submit_button("✨ 創建菜單項目", width="stretch")
-            
-            if submitted:
-                if not new_name or new_price <= 0:
-                    st.error("❌ 請填寫必填欄位：商品名稱和價格")
-                else:
-                    # 處理標籤
-                    tags = [tag.strip() for tag in tags_input.split(',') if tag.strip()] if tags_input else []
-                    
-                    # 構建菜單項目數據
-                    menu_item_data = {
-                        "name": new_name,
-                        "product_code": new_product_code.strip() if new_product_code else None,
-                        "description": new_description or f"{new_name} - 美味可口",
-                        "price": float(new_price),
-                        "image_url": new_image_url or "https://via.placeholder.com/300x200?text=No+Image",
-                        "heating_method": new_heating_method,
-                        "heating_time": new_heating_time,
-                        "is_active": new_is_active,
-                        "nutrition_info": {
-                            "calories": int(calories),
-                            "protein": float(protein),
-                            "carbs": float(carbs),
-                            "fat": float(fat)
-                        },
-                        "tags": tags
-                    }
-                    
-                    ui_logger.info(f"Admin {st.session_state.get('username')} creating menu item: {new_name}")
-                    
-                    # 調用 API 創建菜單項目
-                    if st.session_state.api.create_menu_item(menu_item_data):
-                        st.success(f"✅ 菜單項目 '{new_name}' 創建成功！")
-                        st.toast(f"🎉 已成功建立新菜單項目：{new_name}", icon="✅", duration='long')
-                        time.sleep(2)
-                        st.rerun()
-                    else:
-                        st.error(f"❌ 創建菜單項目 '{new_name}' 失敗，請稍後再試")
-                        st.toast(f"❌ 建立菜單項目失敗：{new_name}", icon="❌", duration='long')
+        show_add_menu_item_form()
+        return
     
-    with tab3:
-        st.subheader("📊 菜單分析")
-        
-        # 獲取菜單統計
-        menu_items = st.session_state.api.get_menu_items()
-        if menu_items:
-            show_menu_analytics(menu_items)
+    # 按機型分類
+    categorized = categorize_menu_items_by_machine_type(menu_items)
+    available_types = get_available_machine_types(categorized)
+    
+    if not available_types:
+        st.info("📝 目前沒有有效的菜單項目")
+        return
+    
+    # 方案C：主要機型（A-Z）使用 tabs，「其他」作為單獨 tab
+    # 建立 tab 標籤列表
+    tab_labels = []
+    for machine_type in available_types:
+        if machine_type == '其他':
+            tab_labels.append(f"📦 {machine_type}")
         else:
-            st.info("📝 沒有菜單數據可供分析")
+            tab_labels.append(f"{machine_type}機型")
+    
+    # 創建機型 tabs
+    machine_tabs = st.tabs(tab_labels)
+    
+    # 為每個機型 tab 顯示內容
+    for idx, machine_type in enumerate(available_types):
+        with machine_tabs[idx]:
+            # 顯示機型標題
+            if machine_type == '其他':
+                st.subheader(f"📦 {machine_type}機型商品")
+            else:
+                st.subheader(f"{machine_type}機型商品管理")
+            
+            # 獲取該機型的商品列表
+            machine_items = categorized.get(machine_type, [])
+            
+            # 顯示統計資訊
+            if machine_items:
+                total_count = len(machine_items)
+                active_count = len([item for item in machine_items if item.get('is_active', False)])
+                inactive_count = total_count - active_count
+                
+                col1, col2, col3, col4 = st.columns(4)
+                with col1:
+                    st.metric("商品總數", total_count)
+                with col2:
+                    st.metric("啟用", active_count)
+                with col3:
+                    st.metric("停用", inactive_count)
+                with col4:
+                    avg_price = sum(item.get('price', 0) for item in machine_items) / total_count if total_count > 0 else 0
+                    st.metric("平均價格", f"NT$ {avg_price:.1f}")
+                
+                st.markdown("---")
+            
+            # 在每個機型 tab 內，顯示三個子功能：商品列表、新增項目、分析
+            sub_tab1, sub_tab2, sub_tab3 = st.tabs(["📋 商品列表", "➕ 新增項目", "📊 機型分析"])
+            
+            with sub_tab1:
+                show_machine_type_items_list(machine_items, machine_type)
+            
+            with sub_tab2:
+                show_add_menu_item_form(machine_type)
+            
+            with sub_tab3:
+                if machine_items:
+                    show_menu_analytics(machine_items)
+                else:
+                    st.info(f"📝 {machine_type}機型目前沒有商品數據可供分析")
+
+
+def show_machine_type_items_list(machine_items: List[Dict], machine_type: str):
+    """顯示指定機型的商品列表"""
+    if not machine_items:
+        st.info(f"📝 {machine_type}機型目前沒有商品，請先新增項目")
+        return
+    
+    # 篩選和搜尋
+    col1, col2, col3 = st.columns([2, 1, 1])
+    with col1:
+        search_term = st.text_input("🔍 搜尋商品", placeholder="輸入商品名稱...", key=f"search_{machine_type}")
+    with col2:
+        status_filter = st.selectbox("狀態篩選", ["全部", "啟用", "停用"], key=f"status_filter_{machine_type}")
+    with col3:
+        if st.button("🔄 重新整理", key=f"refresh_{machine_type}"):
+            st.rerun()
+    
+    # 篩選商品
+    filtered_items = machine_items
+    if search_term:
+        filtered_items = [item for item in filtered_items if search_term.lower() in item.get('name', '').lower()]
+    if status_filter == "啟用":
+        filtered_items = [item for item in filtered_items if item.get('is_active', False)]
+    elif status_filter == "停用":
+        filtered_items = [item for item in filtered_items if not item.get('is_active', False)]
+    
+    st.write(f"顯示 {len(filtered_items)} 個項目 (共 {len(machine_items)} 個)")
+    
+    # 顯示商品列表
+    for i, item in enumerate(filtered_items):
+        with st.expander(f"{'✅' if item.get('is_active', False) else '❌'} {item.get('name', 'Unknown')} - NT$ {item.get('price', 0)}", expanded=False):
+            show_menu_item_details(item, i)
+
+
+def show_add_menu_item_form(suggested_machine_type: Optional[str] = None):
+    """顯示新增菜單項目表單"""
+    st.subheader("➕ 新增菜單項目")
+    
+    # 如果有建議的機型，顯示提示
+    if suggested_machine_type and suggested_machine_type != '其他':
+        st.info(f"💡 提示：建議的商品代碼格式為 {suggested_machine_type}001, {suggested_machine_type}002...")
+    
+    # 為每個機型使用唯一的 form key 和所有輸入欄位的 key
+    prefix = f"_{suggested_machine_type}" if suggested_machine_type else ""
+    form_key = f"add_menu_item{prefix}"
+    
+    with st.form(form_key, clear_on_submit=True):
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            new_name = st.text_input("商品名稱 *", placeholder="例：拿鐵咖啡", key=f"name{prefix}")
+            # 如果有建議機型，預設商品代碼格式
+            default_code = f"{suggested_machine_type}001" if suggested_machine_type and suggested_machine_type != '其他' else ""
+            new_product_code = st.text_input("商品代碼", value=default_code, placeholder="例：A001", 
+                                           help="產品編號，用於訂單管理", key=f"code{prefix}")
+            new_description = st.text_area("商品描述", placeholder="詳細描述商品特色...", key=f"desc{prefix}")
+            new_price = st.number_input("價格 (NT$) *", min_value=0.0, step=1.0, format="%.1f", key=f"price{prefix}")
+            new_image_url = st.text_input("圖片網址", placeholder="https://example.com/image.jpg", key=f"img{prefix}")
+        
+        with col2:
+            new_heating_method = st.selectbox("加熱方式 *", ["none", "microwave", "steam"], 
+                                            format_func=lambda x: {"none": "無需加熱", "microwave": "微波加熱", "steam": "蒸氣加熱"}[x],
+                                            key=f"heating{prefix}")
+            new_heating_time = st.number_input("加熱時間 (秒)", min_value=0, max_value=300, step=5, key=f"time{prefix}")
+            new_is_active = st.checkbox("立即啟用", value=True, key=f"active{prefix}")
+            
+            # 營養資訊
+            st.write("**營養資訊 (可選)**")
+            col2_1, col2_2 = st.columns(2)
+            with col2_1:
+                calories = st.number_input("熱量 (卡)", min_value=0, step=10, key=f"cal{prefix}")
+                protein = st.number_input("蛋白質 (g)", min_value=0.0, step=0.1, format="%.1f", key=f"pro{prefix}")
+            with col2_2:
+                carbs = st.number_input("碳水化合物 (g)", min_value=0.0, step=0.1, format="%.1f", key=f"carb{prefix}")
+                fat = st.number_input("脂肪 (g)", min_value=0.0, step=0.1, format="%.1f", key=f"fat{prefix}")
+        
+        # 標籤
+        tags_input = st.text_input("標籤 (用逗號分隔)", placeholder="熱門, 健康, 咖啡", key=f"tags{prefix}")
+        
+        submitted = st.form_submit_button("✨ 創建菜單項目", width="stretch")
+        
+        if submitted:
+            if not new_name or new_price <= 0:
+                st.error("❌ 請填寫必填欄位：商品名稱和價格")
+            else:
+                # 處理標籤
+                tags = [tag.strip() for tag in tags_input.split(',') if tag.strip()] if tags_input else []
+                
+                # 構建菜單項目數據
+                menu_item_data = {
+                    "name": new_name,
+                    "product_code": new_product_code.strip() if new_product_code else None,
+                    "description": new_description or f"{new_name} - 美味可口",
+                    "price": float(new_price),
+                    "image_url": new_image_url or "https://via.placeholder.com/300x200?text=No+Image",
+                    "heating_method": new_heating_method,
+                    "heating_time": new_heating_time,
+                    "is_active": new_is_active,
+                    "nutrition_info": {
+                        "calories": int(calories),
+                        "protein": float(protein),
+                        "carbs": float(carbs),
+                        "fat": float(fat)
+                    },
+                    "tags": tags
+                }
+                
+                ui_logger.info(f"Admin {st.session_state.get('username')} creating menu item: {new_name}")
+                
+                # 調用 API 創建菜單項目
+                if st.session_state.api.create_menu_item(menu_item_data):
+                    st.success(f"✅ 菜單項目 '{new_name}' 創建成功！")
+                    st.toast(f"🎉 已成功建立新菜單項目：{new_name}", icon="✅", duration='long')
+                    time.sleep(2)
+                    st.rerun()
+                else:
+                    st.error(f"❌ 創建菜單項目 '{new_name}' 失敗，請稍後再試")
+                    st.toast(f"❌ 建立菜單項目失敗：{new_name}", icon="❌", duration='long')
 
 
 def show_menu_item_details(item: Dict, index: int):
