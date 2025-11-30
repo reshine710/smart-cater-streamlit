@@ -281,7 +281,13 @@ def show_machine_type_items_list(machine_items: List[Dict], machine_type: str):
         price = item.get('price', 0)
         price_display = f"NTD {price:.0f}"
         
-        with st.expander(f"{'✅' if item.get('is_active', False) else '❌'} {item.get('name', 'Unknown')} - {price_display}", expanded=False):
+        # 獲取商品代號，如果有則在名稱後加上括號顯示
+        product_code = item.get('product_code', '')
+        name_display = item.get('name', 'Unknown')
+        if product_code:
+            name_display = f"{name_display} ({product_code})"
+        
+        with st.expander(f"{'✅' if item.get('is_active', False) else '❌'} {name_display} - {price_display}", expanded=False):
             show_menu_item_details(item, i)
 
 
@@ -917,7 +923,12 @@ def show_menu_analytics(menu_items: List[Dict]):
                             for item in items_with_tag:
                                 status_icon = "🟢" if item.get('is_active', False) else "🔴"
                                 price = item.get('price', 0)
-                                st.write(f"{status_icon} **{item.get('name', 'Unknown')}** - NT$ {price:.1f}")
+                                # 獲取商品代號，如果有則在名稱後加上括號顯示
+                                product_code = item.get('product_code', '')
+                                name_display = item.get('name', 'Unknown')
+                                if product_code:
+                                    name_display = f"{name_display} ({product_code})"
+                                st.write(f"{status_icon} **{name_display}** - NT$ {price:.1f}")
             else:
                 st.info("沒有標籤數據")
     
