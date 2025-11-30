@@ -1277,6 +1277,62 @@ class VendingMachineAPI:
             st.warning(f"🌐 無法連接到 API 伺服器，標籤更新功能暫時不可用: {str(e)}")
             return None
     
+    def update_menu_item_discount(self, item_id: int, discount_rate: Optional[float]) -> Dict:
+        """設定菜單項目折扣率"""
+        api_logger.info(f"Updating discount rate for menu item {item_id}: {discount_rate}")
+        try:
+            # 驗證折扣率範圍
+            if discount_rate is not None and (discount_rate < 0.0 or discount_rate > 1.0):
+                api_logger.error(f"Invalid discount rate: {discount_rate}. Must be between 0.0 and 1.0")
+                import streamlit as st
+                st.error("❌ 折扣率必須在 0.0-1.0 之間")
+                return None
+            
+            response = requests.patch(
+                f"{self.base_url}/menu-items/{item_id}/discount",
+                json={"discount_rate": discount_rate},
+                headers=self._get_auth_headers(),
+                timeout=10
+            )
+            api_logger.debug(f"Update menu item discount API response status: {response.status_code}")
+            
+            if response.status_code == 200:
+                api_logger.info(f"Menu item discount updated successfully: ID {item_id}, discount_rate={discount_rate}")
+                return response.json()
+            elif response.status_code == 400:
+                api_logger.error(f"Bad request (400) updating discount for menu item ID: {item_id}")
+                import streamlit as st
+                try:
+                    error_detail = response.json().get("detail", "折扣率參數錯誤")
+                    st.error(f"❌ {error_detail}")
+                except:
+                    st.error("❌ 折扣率參數錯誤，請確認折扣率在 0.0-1.0 之間")
+                return None
+            elif response.status_code == 404:
+                api_logger.error(f"Menu item not found (404) for ID: {item_id}")
+                import streamlit as st
+                st.error("❌ 菜單項目不存在")
+                return None
+            elif response.status_code == 403:
+                api_logger.error(f"Forbidden (403) updating discount for menu item ID: {item_id}")
+                import streamlit as st
+                st.error("❌ 權限不足：此功能僅限管理員使用")
+                return None
+            elif response.status_code == 500:
+                api_logger.error(f"Server error (500) updating discount for menu item ID: {item_id}")
+                import streamlit as st
+                st.error("⚠️ 伺服器資料庫未初始化，無法更新折扣")
+                return None
+            else:
+                api_logger.warning(f"Failed to update menu item discount - Status code: {response.status_code}")
+                return None
+                
+        except requests.exceptions.RequestException as e:
+            api_logger.error(f"Network error updating menu item discount: {str(e)}")
+            import streamlit as st
+            st.warning(f"🌐 無法連接到 API 伺服器，折扣更新功能暫時不可用: {str(e)}")
+            return None
+    
     def get_menu_item_detail(self, item_id: int) -> Dict:
         """獲取菜單項目詳細資訊"""
         api_logger.info(f"Fetching menu item detail for ID: {item_id}")

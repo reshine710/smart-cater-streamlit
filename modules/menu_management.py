@@ -6,6 +6,57 @@ from typing import Dict, List, Optional
 from logger_config import api_logger, ui_logger
 
 
+def calculate_final_price(price: float, discount_rate: Optional[float]) -> float:
+    """
+    計算折扣後的最終價格
+    
+    Args:
+        price: 原價
+        discount_rate: 折扣率（0.0-1.0），None 表示無折扣
+    
+    Returns:
+        float: 最終價格
+    """
+    if discount_rate is None:
+        return price
+    return price * discount_rate
+
+
+def format_discount_text(discount_rate: Optional[float]) -> str:
+    """
+    格式化折扣顯示文字
+    
+    Args:
+        discount_rate: 折扣率（0.0-1.0），None 表示無折扣
+    
+    Returns:
+        str: 折扣文字（如 "8折"、"無折扣"）
+    """
+    if discount_rate is None:
+        return '無折扣'
+    discount_percentage = round((1 - discount_rate) * 100)
+    return f'{discount_percentage}折'
+
+
+def format_price_display(price: float, discount_rate: Optional[float] = None) -> str:
+    """
+    格式化價格顯示，包含原價和折扣後價格
+    
+    Args:
+        price: 原價
+        discount_rate: 折扣率（0.0-1.0），None 表示無折扣
+    
+    Returns:
+        str: 格式化後的價格文字
+    """
+    final_price = calculate_final_price(price, discount_rate)
+    if discount_rate is None:
+        return f"NT$ {final_price:.1f}"
+    else:
+        discount_text = format_discount_text(discount_rate)
+        return f"NT$ {price:.1f} → NT$ {final_price:.1f} ({discount_text})"
+
+
 def get_machine_type_from_product_code(product_code: Optional[str]) -> str:
     """
     從 product_code 提取機型代號
@@ -151,7 +202,9 @@ def menu_management_page():
                 with col3:
                     st.metric("停用", inactive_count)
                 with col4:
-                    avg_price = sum(item.get('price', 0) for item in machine_items) / total_count if total_count > 0 else 0
+                    # 計算平均價格（使用折扣後價格）
+                    total_final_price = sum(calculate_final_price(item.get('price', 0), item.get('discount_rate')) for item in machine_items)
+                    avg_price = total_final_price / total_count if total_count > 0 else 0
                     st.metric("平均價格", f"NT$ {avg_price:.1f}")
                 
                 st.markdown("---")
@@ -201,7 +254,19 @@ def show_machine_type_items_list(machine_items: List[Dict], machine_type: str):
     
     # 顯示商品列表
     for i, item in enumerate(filtered_items):
-        with st.expander(f"{'✅' if item.get('is_active', False) else '❌'} {item.get('name', 'Unknown')} - NT$ {item.get('price', 0)}", expanded=False):
+        # 計算折扣後價格
+        price = item.get('price', 0)
+        discount_rate = item.get('discount_rate')
+        final_price = calculate_final_price(price, discount_rate)
+        
+        # 格式化價格顯示
+        if discount_rate is not None:
+            discount_text = format_discount_text(discount_rate)
+            price_display = f"NT$ {price:.0f} → NT$ {final_price:.0f} ({discount_text})"
+        else:
+            price_display = f"NT$ {final_price:.0f}"
+        
+        with st.expander(f"{'✅' if item.get('is_active', False) else '❌'} {item.get('name', 'Unknown')} - {price_display}", expanded=False):
             show_menu_item_details(item, i)
 
 
@@ -228,6 +293,26 @@ def show_add_menu_item_form(suggested_machine_type: Optional[str] = None):
                                            help="產品編號，用於訂單管理", key=f"code{prefix}")
             new_description = st.text_area("商品描述", placeholder="詳細描述商品特色...", key=f"desc{prefix}")
             new_price = st.number_input("價格 (NT$) *", min_value=0.0, step=1.0, format="%.1f", key=f"price{prefix}")
+            
+            # 折扣率設定
+            discount_input = st.number_input(
+                "折扣率 (0.0-1.0)", 
+                min_value=0.0, 
+                max_value=1.0, 
+                step=0.1, 
+                value=None,
+                format="%.1f",
+                help="例如：0.8 = 打8折，留空表示無折扣",
+                key=f"discount{prefix}"
+            )
+            new_discount_rate = discount_input if discount_input is not None else None
+            
+            # 顯示折扣後價格預覽
+            if new_price > 0 and new_discount_rate is not None:
+                final_price = calculate_final_price(new_price, new_discount_rate)
+                discount_text = format_discount_text(new_discount_rate)
+                st.info(f"💰 折扣後價格預覽：NT$ {final_price:.1f} ({discount_text})")
+            
             new_image_url = st.text_input("圖片網址", placeholder="https://example.com/image.jpg", key=f"img{prefix}")
         
         with col2:
@@ -265,6 +350,7 @@ def show_add_menu_item_form(suggested_machine_type: Optional[str] = None):
                     "product_code": new_product_code.strip() if new_product_code else None,
                     "description": new_description or f"{new_name} - 美味可口",
                     "price": float(new_price),
+                    "discount_rate": new_discount_rate,  # 折扣率（0.0-1.0），None 表示無折扣
                     "image_url": new_image_url or "https://via.placeholder.com/300x200?text=No+Image",
                     "heating_method": new_heating_method,
                     "heating_time": new_heating_time,
@@ -324,7 +410,19 @@ def show_menu_item_details(item: Dict, index: int):
                     st.markdown(f"`{tag_name}`")
     
     with col2:
-        st.write(f"**價格**: NT$ {item.get('price', 0):.1f}")
+        # 價格顯示（包含折扣資訊）
+        price = item.get('price', 0)
+        discount_rate = item.get('discount_rate')
+        final_price = calculate_final_price(price, discount_rate)
+        
+        if discount_rate is not None:
+            discount_text = format_discount_text(discount_rate)
+            st.write(f"**原價**: ~~NT$ {price:.1f}~~")
+            st.write(f"**折扣後價格**: **NT$ {final_price:.1f}** ({discount_text})")
+            st.markdown(f"<span style='color: red; font-weight: bold;'>💰 省 NT$ {price - final_price:.1f}</span>", unsafe_allow_html=True)
+        else:
+            st.write(f"**價格**: NT$ {final_price:.1f}")
+        
         st.write(f"**狀態**: {'🟢 啟用' if item.get('is_active', False) else '🔴 停用'}")
         
         # 營養資訊
@@ -361,6 +459,10 @@ def show_menu_item_details(item: Dict, index: int):
                     else:
                         st.error("❌ 啟用失敗")
             
+            # 折扣管理
+            if st.button("💰 設定折扣", key=f"discount_{item_id}_{index}"):
+                show_discount_management_dialog(item)
+            
             # 標籤管理
             if st.button("🏷️ 管理標籤", key=f"tags_{item_id}_{index}"):
                 show_tags_management(item)
@@ -388,7 +490,14 @@ def show_delete_confirmation_dialog(item: Dict):
     def delete_dialog():
         st.error("⚠️ **危險操作警告**")
         st.write(f"您即將刪除菜單項目：**{item.get('name', 'Unknown')}**")
-        st.write(f"價格：NT$ {item.get('price', 0):.1f}")
+        price = item.get('price', 0)
+        discount_rate = item.get('discount_rate')
+        final_price = calculate_final_price(price, discount_rate)
+        if discount_rate is not None:
+            discount_text = format_discount_text(discount_rate)
+            st.write(f"價格：NT$ {price:.1f} → NT$ {final_price:.1f} ({discount_text})")
+        else:
+            st.write(f"價格：NT$ {final_price:.1f}")
         
         # 顯示項目詳細資訊
         if item.get('description'):
@@ -447,6 +556,26 @@ def show_edit_menu_item_form(item: Dict):
                                                 placeholder="例：A001", help="產品編號，用於訂單管理")
             updated_description = st.text_area("商品描述", value=item.get('description', ''))
             updated_price = st.number_input("價格 (NT$)", value=float(item.get('price', 0)), min_value=0.0, step=1.0)
+            
+            # 折扣率設定
+            current_discount_rate = item.get('discount_rate')
+            discount_input = st.number_input(
+                "折扣率 (0.0-1.0)", 
+                min_value=0.0, 
+                max_value=1.0, 
+                step=0.1, 
+                value=float(current_discount_rate) if current_discount_rate is not None else None,
+                format="%.1f",
+                help="例如：0.8 = 打8折，留空表示無折扣",
+                key="edit_discount"
+            )
+            updated_discount_rate = discount_input if discount_input is not None else None
+            
+            # 顯示折扣後價格預覽
+            if updated_price > 0 and updated_discount_rate is not None:
+                final_price = calculate_final_price(updated_price, updated_discount_rate)
+                discount_text = format_discount_text(updated_discount_rate)
+                st.info(f"💰 折扣後價格預覽：NT$ {final_price:.1f} ({discount_text})")
         
         with col2:
             current_heating = item.get('heating_method', 'none')
@@ -465,6 +594,7 @@ def show_edit_menu_item_form(item: Dict):
                     "product_code": updated_product_code.strip() if updated_product_code else None,
                     "description": updated_description,
                     "price": float(updated_price),
+                    "discount_rate": updated_discount_rate,  # 折扣率（0.0-1.0），None 表示無折扣
                     "heating_method": updated_heating_method,
                     "heating_time": updated_heating_time,
                     "image_url": updated_image_url
@@ -484,6 +614,93 @@ def show_edit_menu_item_form(item: Dict):
     
     # 觸發對話框
     edit_dialog()
+
+
+def show_discount_management_dialog(item: Dict):
+    """顯示折扣管理對話框"""
+    
+    @st.dialog(f"💰 設定折扣 - {item.get('name', 'Unknown')}")
+    def discount_dialog():
+        item_name = item.get('name', 'Unknown')
+        item_id = item.get('id')
+        current_price = item.get('price', 0)
+        current_discount_rate = item.get('discount_rate')
+        
+        st.subheader(f"🍽️ {item_name}")
+        st.write(f"**原價**: NT$ {current_price:.1f}")
+        
+        if current_discount_rate is not None:
+            current_final_price = calculate_final_price(current_price, current_discount_rate)
+            current_discount_text = format_discount_text(current_discount_rate)
+            st.info(f"💰 目前折扣：{current_discount_text}，折扣後價格：NT$ {current_final_price:.1f}")
+        else:
+            st.info("💰 目前無折扣")
+        
+        st.markdown("---")
+        
+        # 折扣率輸入
+        discount_input = st.number_input(
+            "折扣率 (0.0-1.0)", 
+            min_value=0.0, 
+            max_value=1.0, 
+            step=0.1, 
+            value=float(current_discount_rate) if current_discount_rate is not None else None,
+            format="%.1f",
+            help="例如：0.8 = 打8折，留空表示無折扣",
+            key="discount_rate_input"
+        )
+        new_discount_rate = discount_input if discount_input is not None else None
+        
+        # 顯示折扣後價格預覽
+        if new_discount_rate is not None:
+            preview_final_price = calculate_final_price(current_price, new_discount_rate)
+            preview_discount_text = format_discount_text(new_discount_rate)
+            st.success(f"💰 折扣後價格預覽：NT$ {preview_final_price:.1f} ({preview_discount_text})")
+            st.write(f"💵 節省金額：NT$ {current_price - preview_final_price:.1f}")
+        
+        st.markdown("---")
+        
+        col_save, col_remove, col_cancel = st.columns(3)
+        
+        with col_save:
+            if st.button("💾 儲存折扣", width="stretch", type="primary"):
+                if new_discount_rate is None:
+                    st.error("❌ 請輸入折扣率（0.0-1.0）")
+                elif new_discount_rate < 0.0 or new_discount_rate > 1.0:
+                    st.error("❌ 折扣率必須在 0.0-1.0 之間")
+                else:
+                    ui_logger.info(f"Admin {st.session_state.get('username')} updating discount for menu item: {item_id}")
+                    
+                    result = st.session_state.api.update_menu_item_discount(item_id, new_discount_rate)
+                    if result:
+                        st.success(f"✅ {item_name} 的折扣設定已儲存！")
+                        st.toast(f"🎉 折扣設定已更新：{item_name}", icon="✅", duration='long')
+                        ui_logger.info(f"Discount updated successfully for {item_name} (ID: {item_id})")
+                        time.sleep(1)
+                        st.rerun()
+                    else:
+                        st.error("❌ 儲存失敗，請稍後再試")
+        
+        with col_remove:
+            if st.button("🗑️ 取消折扣", width="stretch"):
+                ui_logger.info(f"Admin {st.session_state.get('username')} removing discount for menu item: {item_id}")
+                
+                result = st.session_state.api.update_menu_item_discount(item_id, None)
+                if result:
+                    st.success(f"✅ {item_name} 的折扣已取消！")
+                    st.toast(f"🎉 折扣已取消：{item_name}", icon="✅", duration='long')
+                    ui_logger.info(f"Discount removed successfully for {item_name} (ID: {item_id})")
+                    time.sleep(1)
+                    st.rerun()
+                else:
+                    st.error("❌ 取消折扣失敗，請稍後再試")
+        
+        with col_cancel:
+            if st.button("❌ 取消", width="stretch"):
+                st.rerun()
+    
+    # 觸發對話框
+    discount_dialog()
 
 
 def show_tags_management(item: Dict):
@@ -557,7 +774,14 @@ def show_recipe_management_dialog(item: Dict):
         
         col_info1, col_info2, col_info3 = st.columns(3)
         with col_info1:
-            st.write(f"**💰 價格**: NT$ {item.get('price', 0):.1f}")
+            price = item.get('price', 0)
+            discount_rate = item.get('discount_rate')
+            final_price = calculate_final_price(price, discount_rate)
+            if discount_rate is not None:
+                discount_text = format_discount_text(discount_rate)
+                st.write(f"**💰 價格**: NT$ {price:.1f} → NT$ {final_price:.1f} ({discount_text})")
+            else:
+                st.write(f"**💰 價格**: NT$ {final_price:.1f}")
         with col_info2:
             status = "✅ 啟用" if item.get('is_active', False) else "❌ 停用"
             st.write(f"**📊 狀態**: {status}")
@@ -743,7 +967,9 @@ def show_menu_analytics(menu_items: List[Dict]):
     with col3:
         st.metric("停用項目", inactive_items)
     with col4:
-        avg_price = sum(item.get('price', 0) for item in menu_items) / total_items if total_items > 0 else 0
+        # 計算平均價格（使用折扣後價格）
+        total_final_price = sum(calculate_final_price(item.get('price', 0), item.get('discount_rate')) for item in menu_items)
+        avg_price = total_final_price / total_items if total_items > 0 else 0
         st.metric("平均價格", f"NT$ {avg_price:.1f}")
     
     st.markdown("---")
@@ -754,10 +980,11 @@ def show_menu_analytics(menu_items: List[Dict]):
     with col1:
         st.subheader("💰 價格分佈")
         if menu_items:
-            prices = [item.get('price', 0) for item in menu_items]
+            # 使用折扣後價格
+            final_prices = [calculate_final_price(item.get('price', 0), item.get('discount_rate')) for item in menu_items]
             price_df = pd.DataFrame({
                 '項目名稱': [item.get('name', 'Unknown') for item in menu_items],
-                '價格': prices,
+                '價格': final_prices,
                 '狀態': ['啟用' if item.get('is_active', False) else '停用' for item in menu_items]
             })
             st.bar_chart(price_df.set_index('項目名稱')['價格'])
@@ -829,7 +1056,8 @@ def show_menu_analytics(menu_items: List[Dict]):
                         with st.expander(f"🏷️ {tag} ({len(items_with_tag)} 個項目)", expanded=False):
                             for item in items_with_tag:
                                 status_icon = "🟢" if item.get('is_active', False) else "🔴"
-                                st.write(f"{status_icon} **{item.get('name', 'Unknown')}** - NT$ {item.get('price', 0):.1f}")
+                                final_price = calculate_final_price(item.get('price', 0), item.get('discount_rate'))
+                                st.write(f"{status_icon} **{item.get('name', 'Unknown')}** - NT$ {final_price:.1f}")
             else:
                 st.info("沒有標籤數據")
     
@@ -842,7 +1070,7 @@ def show_menu_analytics(menu_items: List[Dict]):
                 'ID': item.get('id', 'N/A'),
                 '商品代碼': item.get('product_code', '未設定'),
                 '名稱': item.get('name', 'Unknown'),
-                '價格': f"NT$ {item.get('price', 0):.1f}",
+                '價格': format_price_display(item.get('price', 0), item.get('discount_rate')),
                 '加熱方式': format_heating_method(item.get('heating_method', 'none')),
                 '狀態': '🟢 啟用' if item.get('is_active', False) else '🔴 停用',
                 '標籤數量': len(item.get('tags', []))
