@@ -1354,12 +1354,24 @@ def _show_fridge_temperature_history_tab(machine_id: int, machine_name: str):
         df = pd.DataFrame(df_records)
         df = df.sort_values('時間')  # 按時間排序
         
-        # 計算當前數據的最高和最低溫度
-        max_temp = df['溫度'].max()
-        min_temp = df['溫度'].min()
+        # 獲取溫度警告設定
+        settings = None
+        if hasattr(st.session_state, 'api') and st.session_state.api:
+            try:
+                settings = st.session_state.api.get_fridge_temperature_settings(machine_id)
+            except Exception as e:
+                ui_logger.warning(f"無法獲取溫度設定: {e}")
         
         # 繪製折線圖
         st.markdown("### 📊 溫度趨勢圖")
+        
+        # 添加顯示警告線的選項（預設為不顯示）
+        show_warning_lines = st.checkbox(
+            "顯示警告溫度上下限",
+            value=False,
+            key=f"show_warning_lines_{machine_id}",
+            help="勾選後會在圖表中顯示紅色虛線標記的警告溫度上下限"
+        )
         
         fig = go.Figure()
         
@@ -1374,15 +1386,25 @@ def _show_fridge_temperature_history_tab(machine_id: int, machine_name: str):
             hovertemplate='<b>時間</b>: %{x}<br><b>溫度</b>: %{y:.2f}°C<extra></extra>'
         ))
         
-        # 添加當前數據範圍參考線（最高和最低溫度）
-        fig.add_hline(y=max_temp, line_dash="dash", line_color="orange", 
-                     annotation_text=f"最高溫度 ({max_temp:.2f}°C)", 
-                     annotation_position="right",
-                     annotation_font_size=10)
-        fig.add_hline(y=min_temp, line_dash="dash", line_color="green", 
-                     annotation_text=f"最低溫度 ({min_temp:.2f}°C)", 
-                     annotation_position="right",    
-                     annotation_font_size=10)
+        # 根據用戶選擇添加警告溫度上下限參考線（紅色虛線）
+        if show_warning_lines and settings:
+            # 檢查並繪製上限警告線
+            max_warning_temp = settings.get('max_temp')
+            if max_warning_temp is not None:
+                fig.add_hline(y=max_warning_temp, line_dash="dash", line_color="red", 
+                             annotation_text=f"上限警告 ({max_warning_temp:.2f}°C)", 
+                             annotation_position="right",
+                             annotation_font_size=10,
+                             line_width=2)
+            
+            # 檢查並繪製下限警告線
+            min_warning_temp = settings.get('min_temp')
+            if min_warning_temp is not None:
+                fig.add_hline(y=min_warning_temp, line_dash="dash", line_color="red", 
+                             annotation_text=f"下限警告 ({min_warning_temp:.2f}°C)", 
+                             annotation_position="right",    
+                             annotation_font_size=10,
+                             line_width=2)
         
         # 更新圖表布局
         fig.update_layout(
@@ -1417,12 +1439,12 @@ def _show_fridge_temperature_history_tab(machine_id: int, machine_name: str):
         st.plotly_chart(fig, use_container_width=True)
         
         # 顯示數據表格（可選）
-        with st.expander("📋 查看詳細數據", expanded=False):
-            df_display = df.copy()
-            df_display['時間'] = df_display['時間'].apply(lambda x: format_datetime_display(x))
-            df_display = df_display.rename(columns={'時間': '記錄時間', '溫度': '溫度 (°C)'})
-            df_display['溫度 (°C)'] = df_display['溫度 (°C)'].apply(lambda x: f"{x:.2f}")
-            st.dataframe(df_display, width='stretch', hide_index=True)
+        # with st.expander("📋 查看詳細數據", expanded=False):
+        #     df_display = df.copy()
+        #     df_display['時間'] = df_display['時間'].apply(lambda x: format_datetime_display(x))
+        #     df_display = df_display.rename(columns={'時間': '記錄時間', '溫度': '溫度 (°C)'})
+        #     df_display['溫度 (°C)'] = df_display['溫度 (°C)'].apply(lambda x: f"{x:.2f}")
+        #     st.dataframe(df_display, width='stretch', hide_index=True)
     except Exception as e:
         ui_logger.error(f"Error showing fridge temperature history tab: {str(e)}")
         st.error(f"❌ 顯示冰箱溫度歷史時發生錯誤: {str(e)}")

@@ -1,4 +1,5 @@
 import time
+import math
 import streamlit as st
 import pandas as pd
 from datetime import datetime
@@ -24,18 +25,40 @@ def calculate_final_price(price: float, discount_rate: Optional[float]) -> float
 
 def format_discount_text(discount_rate: Optional[float]) -> str:
     """
-    格式化折扣顯示文字
+    格式化折扣顯示文字（台灣折扣表示方式）
     
     Args:
-        discount_rate: 折扣率（0.0-1.0），None 表示無折扣
+        discount_rate: 折扣率（0.0-1.0），表示實際支付比例，None 表示無折扣
+        例如：0.7 表示支付70% → "7折"，0.95 表示支付95% → "95折"，0.65 表示支付65% → "65折"
     
     Returns:
-        str: 折扣文字（如 "8折"、"無折扣"）
+        str: 折扣文字（如 "7折"、"95折"、"65折"、"無折扣"）
+    
+    台灣折扣表示：
+    - 5折 = 支付50% (discount_rate=0.5)
+    - 7折 = 支付70% (discount_rate=0.7)
+    - 65折 = 支付65% (discount_rate=0.65)
+    - 95折 = 支付95% (discount_rate=0.95)
     """
     if discount_rate is None:
         return '無折扣'
-    discount_percentage = round((1 - discount_rate) * 100)
-    return f'{discount_percentage}折'
+    
+    # 將折扣率轉換為百分比
+    percentage = discount_rate * 100
+    
+    # 如果結果是整數（如 50, 70），顯示為 "5折"、"7折"
+    # 如果是小數（如 65, 95），顯示為 "65折"、"95折"
+    if percentage.is_integer():
+        # 整數情況：如果 >= 10，直接顯示；如果 < 10，也直接顯示（如 5折）
+        discount_value = int(percentage)
+        # 如果 >= 10 且是 10 的倍數，除以 10（如 50 → 5, 70 → 7）
+        if discount_value >= 10 and discount_value % 10 == 0:
+            discount_value = discount_value // 10
+        return f'{discount_value}折'
+    else:
+        # 小數情況：四捨五入到整數
+        discount_value = round(percentage)
+        return f'{discount_value}折'
 
 
 def format_price_display(price: float, discount_rate: Optional[float] = None) -> str:
@@ -51,10 +74,10 @@ def format_price_display(price: float, discount_rate: Optional[float] = None) ->
     """
     final_price = calculate_final_price(price, discount_rate)
     if discount_rate is None:
-        return f"NT$ {final_price:.1f}"
+        return f"NTD {final_price:.1f}"
     else:
         discount_text = format_discount_text(discount_rate)
-        return f"NT$ {price:.1f} → NT$ {final_price:.1f} ({discount_text})"
+        return f"NTD {price:.1f} → NTD {final_price:.1f} ({discount_text})"
 
 
 def get_machine_type_from_product_code(product_code: Optional[str]) -> str:
@@ -262,9 +285,9 @@ def show_machine_type_items_list(machine_items: List[Dict], machine_type: str):
         # 格式化價格顯示
         if discount_rate is not None:
             discount_text = format_discount_text(discount_rate)
-            price_display = f"NT$ {price:.0f} → NT$ {final_price:.0f} ({discount_text})"
+            price_display = f"NTD {price:.0f} → NTD {final_price:.0f} ({discount_text})"
         else:
-            price_display = f"NT$ {final_price:.0f}"
+            price_display = f"NTD {final_price:.0f}"
         
         with st.expander(f"{'✅' if item.get('is_active', False) else '❌'} {item.get('name', 'Unknown')} - {price_display}", expanded=False):
             show_menu_item_details(item, i)
@@ -419,6 +442,8 @@ def show_menu_item_details(item: Dict, index: int):
             discount_text = format_discount_text(discount_rate)
             st.write(f"**原價**: ~~NT$ {price:.1f}~~")
             st.write(f"**折扣後價格**: **NT$ {final_price:.1f}** ({discount_text})")
+            final_price_int = math.ceil(final_price)
+            st.write(f"**整數顯示折扣後價格**: NT$ {final_price_int}")
             st.markdown(f"<span style='color: red; font-weight: bold;'>💰 省 NT$ {price - final_price:.1f}</span>", unsafe_allow_html=True)
         else:
             st.write(f"**價格**: NT$ {final_price:.1f}")
