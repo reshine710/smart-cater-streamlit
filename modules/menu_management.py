@@ -464,7 +464,7 @@ def show_menu_item_details(item: Dict, index: int):
             # 使用 st.dialog 確認對話框
             if st.button(f"🗑️ 刪除項目", 
                        key=f"delete_{item_id}_{index}",
-                       type="secondary",
+                       type="primary",
                        help="此操作無法復原，請謹慎使用"):
                 show_delete_confirmation_dialog(item)
 
@@ -750,7 +750,7 @@ def show_recipe_management_dialog(item: Dict):
         col1, col2, col3 = st.columns(3)
         
         with col1:
-            if st.button("💾 儲存配方設定", width="stretch", type="primary"):
+            if st.button("💾 儲存設定", width="stretch", type="primary"):
                 # 構建更新資料
                 update_data = {
                     "heating_method": selected_heating_method,
@@ -773,7 +773,7 @@ def show_recipe_management_dialog(item: Dict):
                     ui_logger.error(f"Failed to save recipe settings for {item_name} (ID: {item_id})")
         
         with col2:
-            if st.button("🔄 重設為預設值", width="stretch"):
+            if st.button("🔄 重設為預設", width="stretch"):
                 # 根據加熱方式設定預設值
                 if selected_heating_method == 'steam':
                     default_config = {
