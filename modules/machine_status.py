@@ -1254,25 +1254,25 @@ def _show_fridge_temperature_history_tab(machine_id: int, machine_name: str):
             return
         
         # 查詢數據（初始載入或點擊查詢按鈕時載入）
-        # 使用 session_state 來追蹤是否已初始載入，避免重複查詢
-        init_key = f'fridge_temp_init_{machine_id}'
-        if query_button or init_key not in st.session_state:
+        # 使用 session_state 來保存歷史數據，避免 checkbox 改變時重新查詢
+        start_date_str = start_date.strftime('%Y-%m-%d')
+        end_date_str = end_date.strftime('%Y-%m-%d')
+        data_cache_key = f'fridge_temp_data_{machine_id}_{start_date_str}_{end_date_str}'
+        
+        # 檢查是否需要重新查詢（點擊查詢按鈕或數據不存在）
+        if query_button or data_cache_key not in st.session_state:
             with st.spinner("正在載入冰箱溫度歷史數據..."):
-                start_date_str = start_date.strftime('%Y-%m-%d')
-                end_date_str = end_date.strftime('%Y-%m-%d')
-                
                 history_data = st.session_state.api.get_fridge_temperature_history(
                     machine_id=machine_id,
                     start_date=start_date_str,
                     end_date=end_date_str,
                     limit=1000
                 )
-                # 標記已初始載入
-                st.session_state[init_key] = True
+                # 保存到 session_state
+                st.session_state[data_cache_key] = history_data
         else:
-            # 如果已初始載入但沒有點擊查詢按鈕，顯示提示
-            st.info("💡 請選擇日期範圍並點擊「查詢」按鈕以重新載入數據")
-            history_data = {"records": [], "total": 0}
+            # 從 session_state 讀取已保存的數據
+            history_data = st.session_state[data_cache_key]
         
         # 處理和顯示數據
         records = history_data.get('records', [])
@@ -1366,10 +1366,15 @@ def _show_fridge_temperature_history_tab(machine_id: int, machine_name: str):
         st.markdown("### 📊 溫度趨勢圖")
         
         # 添加顯示警告線的選項（預設為不顯示）
+        # 使用 session_state 來保存狀態，避免重新執行時狀態丟失
+        checkbox_key = f"show_warning_lines_{machine_id}"
+        if checkbox_key not in st.session_state:
+            st.session_state[checkbox_key] = False
+        
         show_warning_lines = st.checkbox(
             "顯示警告溫度上下限",
-            value=False,
-            key=f"show_warning_lines_{machine_id}",
+            value=st.session_state[checkbox_key],
+            key=checkbox_key,
             help="勾選後會在圖表中顯示紅色虛線標記的警告溫度上下限"
         )
         
