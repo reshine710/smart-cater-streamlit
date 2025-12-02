@@ -837,29 +837,69 @@ def show_create_recommendation_form():
     """顯示創建推薦表單"""
     st.subheader("➕ 創建AI推薦")
     
-    # 初始化菜單項目數量（在表單外部）
+    # 初始化項目數量（在表單外部，根據推薦類型使用不同的數量）
     if 'menu_item_count' not in st.session_state:
         st.session_state.menu_item_count = 3
+    if 'restock_item_count' not in st.session_state:
+        st.session_state.restock_item_count = 3
     
-    # 菜單項目控制按鈕（在表單外部）
-    st.markdown("**🍽️ 菜單項目配置**")
-    col_add, col_remove, col_info = st.columns([1, 1, 2])
+    # 初始化推薦類型選擇狀態
+    if 'current_recommendation_type' not in st.session_state:
+        st.session_state.current_recommendation_type = "DYNAMIC_MENU"
     
-    with col_add:
-        if st.button("➕ 增加項目", key="add_menu_item", help="增加一個菜單項目"):
-            st.session_state.menu_item_count += 1
-            st.rerun()
+    # 先顯示推薦類型選擇（用於決定顯示哪種控制面板）
+    preview_rec_type = st.selectbox(
+        "選擇推薦類型", 
+        ["DYNAMIC_MENU", "RESTOCK"], 
+        index=0 if st.session_state.current_recommendation_type == "DYNAMIC_MENU" else 1,
+        key="preview_recommendation_type_select", 
+        help="選擇推薦類型以顯示相應的配置選項",
+        format_func=lambda x: "🍽️ 動態菜單" if x == "DYNAMIC_MENU" else "📦 補貨建議",
+        on_change=lambda: setattr(st.session_state, 'current_recommendation_type', st.session_state.preview_recommendation_type_select)
+    )
     
-    with col_remove:
-        if st.session_state.menu_item_count > 1:
-            if st.button("➖ 減少項目", key="remove_menu_item", help="減少一個菜單項目"):
-                st.session_state.menu_item_count -= 1
+    # 同步推薦類型狀態
+    st.session_state.current_recommendation_type = preview_rec_type
+    
+    # 根據推薦類型顯示不同的項目控制面板
+    if preview_rec_type == "DYNAMIC_MENU":
+        st.markdown("**🍽️ 菜單項目配置**")
+        col_add, col_remove, col_info = st.columns([1, 1, 2])
+        
+        with col_add:
+            if st.button("➕ 增加項目", key="add_menu_item", help="增加一個菜單項目"):
+                st.session_state.menu_item_count += 1
                 st.rerun()
-        else:
-            st.button("➖ 減少項目", key="remove_menu_item_disabled", disabled=True, help="至少需要一個菜單項目")
-    
-    with col_info:
-        st.info(f"目前有 {st.session_state.menu_item_count} 個菜單項目")
+        
+        with col_remove:
+            if st.session_state.menu_item_count > 1:
+                if st.button("➖ 減少項目", key="remove_menu_item", help="減少一個菜單項目"):
+                    st.session_state.menu_item_count -= 1
+                    st.rerun()
+            else:
+                st.button("➖ 減少項目", key="remove_menu_item_disabled", disabled=True, help="至少需要一個菜單項目")
+        
+        with col_info:
+            st.info(f"目前有 {st.session_state.menu_item_count} 個菜單項目")
+    else:  # RESTOCK
+        st.markdown("**📦 補貨建議項目配置**")
+        col_add, col_remove, col_info = st.columns([1, 1, 2])
+        
+        with col_add:
+            if st.button("➕ 增加項目", key="add_restock_item", help="增加一個補貨建議項目"):
+                st.session_state.restock_item_count += 1
+                st.rerun()
+        
+        with col_remove:
+            if st.session_state.restock_item_count > 1:
+                if st.button("➖ 減少項目", key="remove_restock_item", help="減少一個補貨建議項目"):
+                    st.session_state.restock_item_count -= 1
+                    st.rerun()
+            else:
+                st.button("➖ 減少項目", key="remove_restock_item_disabled", disabled=True, help="至少需要一個補貨建議項目")
+        
+        with col_info:
+            st.info(f"目前有 {st.session_state.restock_item_count} 個補貨建議項目")
     
     st.markdown("---")
     
@@ -867,9 +907,24 @@ def show_create_recommendation_form():
         col1, col2 = st.columns(2)
         
         with col1:
-            rec_id = st.text_input("推薦ID", value=f"AI-REC-{datetime.now().strftime('%Y%m%d')}-001")
-            ai_model_version = st.text_input("AI模型版本", value="v2.1.3-dynamic-menu")
-            rec_type = st.selectbox("推薦類型", ["DYNAMIC_MENU", "RESTOCK"], key="recommendation_type_select")
+            # 顯示當前選擇的推薦類型（只讀顯示，實際值來自外部選擇）
+            rec_type_display = "🍽️ 動態菜單" if st.session_state.current_recommendation_type == "DYNAMIC_MENU" else "📦 補貨建議"
+            st.info(f"**推薦類型**: {rec_type_display}")
+            
+            # 根據推薦類型設定預設的AI模型版本和推薦ID
+            if st.session_state.current_recommendation_type == "DYNAMIC_MENU":
+                default_model_version = "v2.1.3-dynamic-menu"
+                default_rec_id = f"AI-REC-{datetime.now().strftime('%Y%m%d')}-001"
+            else:
+                default_model_version = "v1.5.2-restock-optimizer"
+                default_rec_id = f"RESTOCK-{datetime.now().strftime('%Y%m%d')}-001"
+            
+            # 使用動態key，當推薦類型改變時自動使用新預設值
+            rec_id_key = f"rec_id_input_{st.session_state.current_recommendation_type}"
+            model_version_key = f"ai_model_version_input_{st.session_state.current_recommendation_type}"
+            
+            rec_id = st.text_input("推薦ID", value=default_rec_id, key=rec_id_key)
+            ai_model_version = st.text_input("AI模型版本", value=default_model_version, key=model_version_key)
             
             # 獲取實際機台列表
             available_machines = []
@@ -900,19 +955,27 @@ def show_create_recommendation_form():
                 "目標機台", 
                 available_machines, 
                 default=available_machines[:1] if available_machines else ["1"],
-                help="選擇要應用推薦的機台"
+                help="選擇要應用推薦的機台",
+                key="target_machines_multiselect"
             )
         
         with col2:
-            valid_from_date = st.date_input("有效開始日期", datetime.now().date())
-            valid_from_time = st.time_input("有效開始時間", datetime.now().time())
-            valid_until_date = st.date_input("有效結束日期", (datetime.now() + timedelta(hours=24)).date())
-            valid_until_time = st.time_input("有效結束時間", (datetime.now() + timedelta(hours=24)).time())
-            confidence_score = st.slider("信心分數", 0.0, 1.0, 0.85, 0.01)
-            notes = st.text_area("備註", placeholder="推薦說明...")
+            valid_from_date = st.date_input("有效開始日期", datetime.now().date(), key="valid_from_date_input")
+            valid_from_time = st.time_input("有效開始時間", datetime.now().time(), key="valid_from_time_input")
+            valid_until_date = st.date_input("有效結束日期", (datetime.now() + timedelta(hours=24)).date(), key="valid_until_date_input")
+            valid_until_time = st.time_input("有效結束時間", (datetime.now() + timedelta(hours=24)).time(), key="valid_until_time_input")
+            confidence_score = st.slider("信心分數", 0.0, 1.0, 0.85, 0.01, key="confidence_score_slider")
+            notes = st.text_area("備註", placeholder="推薦說明...", key="notes_textarea")
         
         # 推薦內容配置
         st.markdown("**📋 推薦內容配置**")
+        
+        # 初始化變數，確保在提交時可以訪問
+        menu_items = []
+        restock_suggestions = []
+        
+        # 使用外部選擇的推薦類型來決定顯示的配置內容
+        rec_type = st.session_state.current_recommendation_type
         
         if rec_type == "DYNAMIC_MENU":
             st.markdown("**動態菜單配置**")
@@ -929,10 +992,8 @@ def show_create_recommendation_form():
             except Exception as e:
                 st.warning(f"無法獲取菜單項目: {str(e)}")
             
-            # 動態菜單項目輸入（包含補貨資訊）
-            
             # 動態生成菜單項目輸入表單
-            menu_items = []
+            menu_items = []  # 重新初始化以確保清空
             for i in range(st.session_state.menu_item_count):
                 st.markdown(f"**餐點 {i+1}**")
                 col_meal, col_price, col_priority = st.columns(3)
@@ -991,11 +1052,81 @@ def show_create_recommendation_form():
                 
                 st.markdown("---")
         
+        elif rec_type == "RESTOCK":
+            st.markdown("**補貨建議配置**")
+            
+            # 獲取現有菜單項目
+            available_menu_items = []
+            try:
+                if hasattr(st.session_state, 'api') and st.session_state.api:
+                    menu_data = st.session_state.api.get_menu_items()
+                    if menu_data and 'items' in menu_data:
+                        available_menu_items = menu_data['items']
+                    elif isinstance(menu_data, list):
+                        available_menu_items = menu_data
+            except Exception as e:
+                st.warning(f"無法獲取菜單項目: {str(e)}")
+            
+            # 動態生成補貨建議輸入表單
+            restock_suggestions = []  # 重新初始化以確保清空
+            for i in range(st.session_state.restock_item_count):
+                st.markdown(f"**補貨建議 {i+1}**")
+                col_meal, col_quantity, col_urgency = st.columns(3)
+                
+                with col_meal:
+                    if available_menu_items:
+                        # 創建選項列表，格式為 "ID - 名稱"
+                        menu_options = []
+                        menu_option_map = {}
+                        
+                        for item in available_menu_items:
+                            item_id = str(item.get('id', ''))
+                            item_name = item.get('name', 'Unknown')
+                            option_text = f"{item_id} - {item_name}"
+                            menu_options.append(option_text)
+                            menu_option_map[option_text] = item_id
+                        
+                        # 預設選擇第一個選項
+                        default_index = i if i < len(menu_options) else 0
+                        
+                        selected_option = st.selectbox(
+                            f"選擇餐點", 
+                            options=menu_options,
+                            index=default_index,
+                            key=f"restock_meal_{i}",
+                            help="從現有菜單項目中選擇"
+                        )
+                        
+                        # 從選項中提取餐點ID
+                        meal_id = menu_option_map.get(selected_option, chr(65+i))
+                    else:
+                        # 如果無法獲取菜單項目，使用文字輸入
+                        meal_id = st.text_input(f"餐點ID", value=chr(65+i), key=f"restock_meal_{i}")
+                
+                with col_quantity:
+                    suggested_quantity = st.number_input(f"建議補貨數量", value=10 + i*5, min_value=0, key=f"restock_quantity_{i}")
+                
+                with col_urgency:
+                    urgency_level = st.number_input(f"緊急程度", value=3, min_value=1, max_value=5, key=f"urgency_level_{i}", help="1-5級，數字越大越緊急")
+                
+                if meal_id:
+                    restock_suggestions.append({
+                        "meal_id": meal_id,
+                        "suggested_quantity": suggested_quantity,
+                        "urgency_level": urgency_level
+                    })
+                
+                st.markdown("---")
+        
         submitted = st.form_submit_button("🚀 創建推薦", type="primary")
         
         if submitted:
             if not rec_id or not target_machines:
                 st.error("❌ 請填寫必填欄位")
+            elif rec_type == "DYNAMIC_MENU" and not menu_items:
+                st.error("❌ 動態菜單推薦至少需要一個菜單項目")
+            elif rec_type == "RESTOCK" and not restock_suggestions:
+                st.error("❌ 補貨建議至少需要一個補貨項目")
             else:
                 # 提取機台代碼（從 "代碼 - 名稱" 格式中提取）
                 machine_codes = []
@@ -1020,9 +1151,14 @@ def show_create_recommendation_form():
                     "confidence_score": confidence_score
                 }
                 
+                # 根據推薦類型構造不同的 payload
                 if rec_type == "DYNAMIC_MENU":
                     recommendation_data["payload"] = {
                         "suggested_menu": menu_items
+                    }
+                elif rec_type == "RESTOCK":
+                    recommendation_data["payload"] = {
+                        "restock_suggestions": restock_suggestions
                     }
                 
                 # 創建推薦
