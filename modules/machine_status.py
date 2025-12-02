@@ -323,6 +323,150 @@ def render_machine_card(machine: Dict, status_config: Dict):
                         # 使用 markdown 來顯示帶顏色的文字
                         st.markdown(f"<span style='color: {fridge_temp_color};'>{fridge_temp_display}</span>", unsafe_allow_html=True)
             
+            # 冰箱溫度即時顯示（24小時折線圖）
+            st.markdown("**冰箱溫度24小時監控**")
+            try:
+                # 計算過去24小時的時間範圍
+                now_tw = get_taiwan_now()
+                start_time = now_tw - timedelta(hours=24)
+                # 擴大查詢範圍：從開始時間的前一天到今天的後一天，確保包含所有可能的記錄
+                start_date_str = (start_time - timedelta(days=1)).strftime('%Y-%m-%d')
+                end_date_str = (now_tw + timedelta(days=1)).strftime('%Y-%m-%d')
+                
+                # 獲取過去24小時的冰箱溫度歷史數據
+                if hasattr(st.session_state, 'api') and st.session_state.api:
+                    # 使用 session_state 緩存數據，但使用更精確的緩存鍵（包含小時）
+                    # 每小時更新一次緩存
+                    cache_key = f'fridge_temp_24h_{machine_id}_{now_tw.strftime("%Y%m%d%H")}'
+                    
+                    if cache_key not in st.session_state:
+                        with st.spinner("正在載入24小時溫度數據..."):
+                            history_data = st.session_state.api.get_fridge_temperature_history(
+                                machine_id=machine_id,
+                                start_date=start_date_str,
+                                end_date=end_date_str,
+                                limit=1000
+                            )
+                            st.session_state[cache_key] = history_data
+                            ui_logger.debug(f"Loaded fridge temperature history for machine {machine_id}: {history_data.get('total', 0)} total records")
+                    else:
+                        history_data = st.session_state[cache_key]
+                    
+                    # 處理和顯示數據
+                    # 檢查 API 響應格式
+                    if not isinstance(history_data, dict):
+                        ui_logger.warning(f"Unexpected API response format for machine {machine_id}: {type(history_data)}")
+                        history_data = {"records": [], "total": 0}
+                    
+                    records = history_data.get('records', [])
+                    
+                    if not records:
+                        # 如果 records 為空，嘗試其他可能的字段名
+                        if 'data' in history_data:
+                            records = history_data.get('data', [])
+                        elif isinstance(history_data, list):
+                            records = history_data
+                    
+                    ui_logger.debug(f"Processing {len(records)} records for machine {machine_id}")
+                    
+                    if records:
+                        # 準備圖表數據
+                        df_records = []
+                        for record in records:
+                            # 處理不同的字段名可能
+                            recorded_at = record.get('recorded_at') or record.get('created_at') or record.get('timestamp')
+                            fridge_temp = record.get('fridge_temp') or record.get('temperature') or record.get('temp')
+                            
+                            if recorded_at and fridge_temp is not None:
+                                try:
+                                    # 解析時間（處理 ISO 8601 格式）
+                                    if isinstance(recorded_at, str):
+                                        # 處理多種時間格式
+                                        if recorded_at.endswith('Z'):
+                                            recorded_at = recorded_at.replace('Z', '+00:00')
+                                        elif '+' not in recorded_at and 'T' in recorded_at:
+                                            # 如果沒有時區信息，假設為 UTC
+                                            recorded_at = recorded_at + '+00:00'
+                                        record_time = datetime.fromisoformat(recorded_at)
+                                    elif isinstance(recorded_at, datetime):
+                                        record_time = recorded_at
+                                    else:
+                                        continue
+                                    
+                                    # 轉換為台灣時區
+                                    record_time_tw = convert_to_taiwan_time(record_time)
+                                    
+                                    # 只保留過去24小時內的數據
+                                    if record_time_tw >= start_time:
+                                        df_records.append({
+                                            '時間': record_time_tw,
+                                            '溫度': float(fridge_temp)
+                                        })
+                                except Exception as e:
+                                    ui_logger.warning(f"Error parsing record time for machine {machine_id}: {e}, record: {record}")
+                                    continue
+                        
+                        ui_logger.debug(f"Filtered to {len(df_records)} records within 24 hours for machine {machine_id}")
+                        
+                        if df_records:
+                            # 創建 DataFrame
+                            df = pd.DataFrame(df_records)
+                            df = df.sort_values('時間')  # 按時間排序
+                            
+                            # 繪製折線圖
+                            fig = go.Figure()
+                            
+                            # 添加溫度折線
+                            fig.add_trace(go.Scatter(
+                                x=df['時間'],
+                                y=df['溫度'],
+                                mode='lines+markers',
+                                name='',
+                                showlegend=False,
+                                line=dict(color='#1f77b4', width=2),
+                                marker=dict(size=4),
+                                hovertemplate='<b>時間</b>: %{x}<br><b>溫度</b>: %{y:.2f}°C<extra></extra>'
+                            ))
+                            
+                            # 更新圖表布局
+                            fig.update_layout(
+                                title="",
+                                xaxis_title="",
+                                yaxis_title="",
+                                hovermode='x unified',
+                                height=300,
+                                showlegend=False,
+                                xaxis=dict(
+                                    showgrid=True,
+                                    gridwidth=1,
+                                    gridcolor='lightgray'
+                                ),
+                                yaxis=dict(
+                                    showgrid=True,
+                                    gridwidth=1,
+                                    gridcolor='lightgray',
+                                    showticklabels=False
+                                ),
+                                plot_bgcolor='white',
+                                margin=dict(t=20, b=40, l=20, r=20)
+                            )
+                            
+                            # 顯示圖表
+                            st.plotly_chart(fig, use_container_width=True)
+                        else:
+                            # 顯示調試信息（僅在開發模式下）
+                            total_records = len(records)
+                            st.info(f"📭 過去24小時內沒有冰箱溫度記錄（API 返回 {total_records} 筆記錄，但都不在24小時範圍內）")
+                            ui_logger.info(f"Machine {machine_id} has {total_records} records but none within 24 hours. Start time: {start_time}, Now: {now_tw}")
+                    else:
+                        st.info("📭 過去24小時內沒有冰箱溫度記錄（API 未返回任何記錄）")
+                        ui_logger.info(f"Machine {machine_id} has no fridge temperature records from API")
+                else:
+                    st.warning("⚠️ API 客戶端不可用，無法載入溫度數據")
+            except Exception as e:
+                ui_logger.error(f"Error displaying 24h fridge temperature chart for machine {machine_id}: {str(e)}", exc_info=True)
+                st.warning(f"⚠️ 載入溫度數據時發生錯誤: {str(e)}")
+            
             # 操作按鈕（僅管理員）
             is_admin = st.session_state.get('is_admin', False)
             # if is_admin:
@@ -1483,35 +1627,35 @@ def _show_fridge_temperature_history_tab(machine_id: int, machine_name: str):
             return
         
         # 顯示統計資訊
-        st.markdown("---")
-        col_stat1, col_stat2, col_stat3, col_stat4 = st.columns(4)
+        # st.markdown("---")
+        # col_stat1, col_stat2, col_stat3, col_stat4 = st.columns(4)
         
-        with col_stat1:
-            st.metric("📊 總記錄數", total)
+        # with col_stat1:
+        #     st.metric("📊 總記錄數", total)
         
-        # 計算統計數據
-        temps = [record.get('fridge_temp') for record in records if record.get('fridge_temp') is not None]
+        # # 計算統計數據
+        # temps = [record.get('fridge_temp') for record in records if record.get('fridge_temp') is not None]
         
-        with col_stat2:
-            if temps:
-                avg_temp = sum(temps) / len(temps)
-                st.metric("📈 平均溫度", f"{avg_temp:.2f}°C")
-            else:
-                st.metric("📈 平均溫度", "N/A")
+        # with col_stat2:
+        #     if temps:
+        #         avg_temp = sum(temps) / len(temps)
+        #         st.metric("📈 平均溫度", f"{avg_temp:.2f}°C")
+        #     else:
+        #         st.metric("📈 平均溫度", "N/A")
         
-        with col_stat3:
-            if temps:
-                max_temp = max(temps)
-                st.metric("🔥 最高溫度", f"{max_temp:.2f}°C")
-            else:
-                st.metric("🔥 最高溫度", "N/A")
+        # with col_stat3:
+        #     if temps:
+        #         max_temp = max(temps)
+        #         st.metric("🔥 最高溫度", f"{max_temp:.2f}°C")
+        #     else:
+        #         st.metric("🔥 最高溫度", "N/A")
         
-        with col_stat4:
-            if temps:
-                min_temp = min(temps)
-                st.metric("❄️ 最低溫度", f"{min_temp:.2f}°C")
-            else:
-                st.metric("❄️ 最低溫度", "N/A")
+        # with col_stat4:
+        #     if temps:
+        #         min_temp = min(temps)
+        #         st.metric("❄️ 最低溫度", f"{min_temp:.2f}°C")
+        #     else:
+        #         st.metric("❄️ 最低溫度", "N/A")
         
         st.markdown("---")
         

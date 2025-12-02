@@ -549,7 +549,7 @@ def main():
         
         # 版本號顯示
         st.markdown("---")
-        st.caption("🖥️ 前端版本：v0.5.1")
+        st.caption("🖥️ 前端版本：v0.5.2")
         st.caption(f"⚙️ 後端版本：{backend_version if api_connected else '未連接'}")
         
     # 顯示頁面內容
