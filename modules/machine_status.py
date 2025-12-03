@@ -10,7 +10,13 @@ import plotly.express as px
 from logger_config import mqtt_logger, ui_logger, system_logger
 from typing import Optional, List, Dict, Tuple
 from utils import format_datetime_display
-from modules.menu_management import calculate_final_price, format_discount_text
+from modules.menu_management import (
+    calculate_final_price, 
+    format_discount_text,
+    get_machine_type_from_product_code,
+    categorize_menu_items_by_machine_type,
+    get_available_machine_types
+)
 
 # 台灣時區 (UTC+8)
 TAIWAN_TZ = timezone(timedelta(hours=8))
@@ -566,26 +572,20 @@ def render_machine_card(machine: Dict, status_config: Dict):
             # 编辑机台按钮（仅管理员）
             if is_admin:
                 st.markdown("**機台管理**")
-                if st.button("✏️ 編輯機台資訊", key=f"edit_machine_{machine_id}"):
+                if st.button("✏️ 編輯機台資訊", key=f"edit_machine_{machine_id}", use_container_width=True):
                     show_edit_machine_dialog(machine)
             
             # 菜單查看按鈕（所有用戶）
             st.markdown("**菜單資訊**")
-            col_menu1, col_menu2 = st.columns(2)
-            with col_menu1:
-                if st.button("📋 當前菜單", key=f"view_menu_{machine_id}", use_container_width=True, type="primary"):
-                    show_machine_menu_dialog(machine_id, machine_name)
-            with col_menu2:
-                # 編輯菜單按鈕（僅管理員可見）
-                if st.session_state.get('is_admin', False):
-                    if st.button("✏️ 編輯菜單", key=f"edit_menu_{machine_id}", use_container_width=True):
-                        # 獲取當前菜單項目
-                        menu_data = st.session_state.api.get_machine_current_menu_items(machine_id)
-                        if menu_data and menu_data.get('success'):
-                            current_menu_items = menu_data.get('data', {}).get('current_menu_items', [])
-                            show_edit_machine_menu_dialog(machine_id, machine_name, current_menu_items)
-                        else:
-                            st.error("❌ 無法獲取機台菜單，請稍後再試")
+            # 按鈕從上而下垂直排列
+            if st.button("📋 當前菜單", key=f"view_menu_{machine_id}", use_container_width=True, type="primary"):
+                show_machine_menu_dialog(machine_id, machine_name)
+            # 編輯菜單按鈕（僅管理員可見）
+            if st.session_state.get('is_admin', False):
+                if st.button("📋 設定菜單項目", key=f"edit_menu_items_{machine_id}", use_container_width=True):
+                    show_edit_machine_menu_items_dialog(machine_id, machine_name)
+                if st.button("💰 設定折扣率", key=f"edit_menu_discount_{machine_id}", use_container_width=True):
+                    show_edit_machine_menu_discount_dialog(machine_id, machine_name)
 
 def format_fridge_temp(fridge_temp: Optional[float]) -> Tuple[str, str]:
     """
@@ -1355,8 +1355,349 @@ def show_machine_menu_dialog(machine_id: int, machine_name: str):
     show_machine_menu_dialog_content(machine_id, machine_name)
 
 
+def show_edit_machine_menu_items_dialog(machine_id: int, machine_name: str):
+    """顯示編輯機台菜單項目對話框（頁面一：設定菜單項目）"""
+    
+    @st.dialog(f"📋 設定菜單項目 - {machine_name}")
+    def edit_items_dialog():
+        st.markdown(f"### 🍽️ {machine_name} 菜單項目設定")
+        st.info("💡 提示：最多可設定 6 個菜單項目，請先選擇機台類型，然後選擇要放上的菜單品項")
+        
+        # 獲取所有可用的菜單項目
+        all_menu_items = st.session_state.api.get_menu_items()
+        if not all_menu_items:
+            st.error("❌ 沒有可用的菜單項目，請先在菜單管理中新增項目")
+            if st.button("❌ 關閉", width="stretch"):
+                st.rerun()
+            return
+        
+        # 過濾出啟用的菜單項目
+        active_menu_items = [item for item in all_menu_items if item.get('is_active', False)]
+        if not active_menu_items:
+            st.warning("⚠️ 沒有啟用的菜單項目")
+            if st.button("❌ 關閉", width="stretch"):
+                st.rerun()
+            return
+        
+        # 按機型分類菜單項目
+        categorized = categorize_menu_items_by_machine_type(active_menu_items)
+        available_types = get_available_machine_types(categorized)
+        
+        if not available_types:
+            st.error("❌ 無法分類菜單項目，請檢查商品代碼格式")
+            if st.button("❌ 關閉", width="stretch"):
+                st.rerun()
+            return
+        
+        st.markdown("---")
+        
+        # 步驟1：選擇機台類型
+        st.markdown("### 步驟 1：選擇機台類型")
+        
+        # 獲取當前機台的菜單項目，用於預設選擇機型
+        menu_data = st.session_state.api.get_machine_current_menu_items(machine_id)
+        current_menu_items = []
+        default_machine_type_index = 0
+        if menu_data and menu_data.get('success'):
+            current_menu_items = menu_data.get('data', {}).get('current_menu_items', [])
+            # 如果當前有菜單項目，嘗試根據第一個項目的機型來預設選擇
+            if current_menu_items:
+                first_item_id = current_menu_items[0].get('menu_item_id')
+                if first_item_id:
+                    first_item = next((item for item in all_menu_items if item.get('id') == first_item_id), None)
+                    if first_item:
+                        first_item_type = get_machine_type_from_product_code(first_item.get('product_code'))
+                        if first_item_type in available_types:
+                            default_machine_type_index = available_types.index(first_item_type)
+        
+        selected_machine_type = st.selectbox(
+            "選擇機台類型",
+            options=available_types,
+            index=default_machine_type_index,
+            format_func=lambda x: f"{x}機型" if x != '其他' else "📦 其他",
+            help="選擇要設定的機台類型，系統會顯示該機型可用的菜單項目",
+            key=f"machine_type_select_{machine_id}"
+        )
+        
+        # 獲取該機型的菜單項目
+        machine_type_items = categorized.get(selected_machine_type, [])
+        
+        if not machine_type_items:
+            st.warning(f"⚠️ {selected_machine_type}機型目前沒有可用的菜單項目")
+            if st.button("❌ 關閉", width="stretch"):
+                st.rerun()
+            return
+        
+        st.markdown("---")
+        
+        # 步驟2：選擇菜單項目
+        st.markdown("### 步驟 2：選擇菜單項目（最多 6 個）")
+        
+        # 使用之前獲取的當前菜單項目（如果有的話，重新獲取以確保最新）
+        if not current_menu_items:
+            menu_data = st.session_state.api.get_machine_current_menu_items(machine_id)
+            if menu_data and menu_data.get('success'):
+                current_menu_items = menu_data.get('data', {}).get('current_menu_items', [])
+        
+        # 創建菜單項目選擇映射
+        menu_item_map = {item['id']: item for item in machine_type_items}
+        
+        max_items = 6
+        selected_menu_items = []
+        display_orders = []
+        
+        # 為每個位置創建選擇器
+        for i in range(max_items):
+            with st.container():
+                st.markdown(f"**位置 {i+1}**")
+                
+                # 獲取當前位置的菜單項目ID（如果有的話）
+                current_item_id = None
+                if i < len(current_menu_items):
+                    current_item_id = current_menu_items[i].get('menu_item_id')
+                
+                # 創建選項列表（包含「不選擇」選項）
+                menu_options = [None] + machine_type_items
+                default_index = 0  # 預設為「不選擇」
+                
+                if current_item_id and current_item_id in menu_item_map:
+                    try:
+                        # 找到當前項目在列表中的位置（+1 因為第一個是 None）
+                        default_index = machine_type_items.index(menu_item_map[current_item_id]) + 1
+                    except ValueError:
+                        default_index = 0
+                
+                selected_item = st.selectbox(
+                    f"選擇菜單項目",
+                    options=menu_options,
+                    index=default_index,
+                    format_func=lambda x: "（不選擇）" if x is None else f"{x.get('name', 'Unknown')} - NT$ {x.get('price', 0):.0f} ({x.get('product_code', 'N/A')})",
+                    key=f"menu_item_select_{machine_id}_{i}"
+                )
+                
+                # 如果選擇了項目，加入列表
+                if selected_item is not None:
+                    selected_menu_items.append(selected_item['id'])
+                    display_orders.append(i + 1)
+                
+                if i < max_items - 1:
+                    st.markdown("---")
+        
+        # 驗證至少選擇一個項目
+        if not selected_menu_items:
+            st.warning("⚠️ 請至少選擇一個菜單項目")
+        
+        st.markdown("---")
+        
+        # 檢查是否有重複的菜單項目
+        duplicate_items = []
+        item_positions = {}  # {item_id: [位置列表]}
+        
+        # 收集每個項目出現的位置
+        for idx, item_id in enumerate(selected_menu_items):
+            if item_id not in item_positions:
+                item_positions[item_id] = []
+            item_positions[item_id].append(idx + 1)  # 位置從1開始
+        
+        # 找出重複的項目
+        for item_id, positions in item_positions.items():
+            if len(positions) > 1:
+                # 這個項目在多個位置出現
+                item_name = menu_item_map.get(item_id, {}).get('name', 'Unknown')
+                duplicate_items.append({
+                    'item_id': item_id,
+                    'item_name': item_name,
+                    'positions': positions
+                })
+        
+        # 顯示預覽
+        if selected_menu_items:
+            st.markdown("### 📋 預覽設定")
+            preview_df = pd.DataFrame({
+                '位置': display_orders,
+                '菜單項目': [menu_item_map[item_id].get('name', 'Unknown') for item_id in selected_menu_items],
+                '商品代碼': [menu_item_map[item_id].get('product_code', 'N/A') for item_id in selected_menu_items],
+                '價格': [f"NT$ {menu_item_map[item_id].get('price', 0):.0f}" for item_id in selected_menu_items]
+            })
+            st.dataframe(preview_df, width="stretch", hide_index=True)
+            
+            # 如果有重複項目，顯示警告
+            if duplicate_items:
+                st.markdown("---")
+                st.error("⚠️ **發現重複的菜單項目！**")
+                for dup in duplicate_items:
+                    positions_str = "、".join([f"位置 {pos}" for pos in dup['positions']])
+                    st.error(f"❌ **{dup['item_name']}** 被重複選擇在 {positions_str}")
+                st.warning("💡 提示：每個菜單項目只能選擇一次，請修改選擇後再儲存。")
+        
+        st.markdown("---")
+        
+        # 操作按鈕
+        col_save, col_cancel = st.columns(2)
+        
+        with col_save:
+            # 如果有重複項目，禁用儲存按鈕
+            save_disabled = len(duplicate_items) > 0
+            if st.button("💾 儲存菜單項目", width="stretch", type="primary", disabled=save_disabled):
+                if not selected_menu_items:
+                    st.error("❌ 請至少選擇一個菜單項目")
+                elif duplicate_items:
+                    st.error("❌ 請先修正重複的菜單項目後再儲存")
+                else:
+                    # 調用 API 更新機台菜單項目（不更新折扣率）
+                    ui_logger.info(f"Admin {st.session_state.get('username')} updating menu items for machine {machine_id}")
+                    
+                    result = st.session_state.api.update_machine_menu_items(
+                        machine_id=machine_id,
+                        menu_item_ids=selected_menu_items,
+                        display_orders=display_orders,
+                        discount_rates=None  # 不更新折扣率
+                    )
+                    
+                    if result:
+                        st.success(f"✅ {machine_name} 的菜單項目已更新！")
+                        st.toast(f"🎉 菜單項目更新成功：{machine_name}", icon="✅", duration='long')
+                        ui_logger.info(f"Menu items updated successfully for machine {machine_id}")
+                        time.sleep(1)
+                        st.rerun()
+                    else:
+                        st.error("❌ 更新失敗，請稍後再試")
+        
+        with col_cancel:
+            if st.button("❌ 取消", width="stretch"):
+                st.rerun()
+    
+    # 觸發對話框
+    edit_items_dialog()
+
+
+def show_edit_machine_menu_discount_dialog(machine_id: int, machine_name: str):
+    """顯示編輯機台菜單折扣率對話框（頁面二：設定折扣率）"""
+    
+    @st.dialog(f"💰 設定折扣率 - {machine_name}")
+    def edit_discount_dialog():
+        st.markdown(f"### 🍽️ {machine_name} 折扣率設定")
+        st.info("💡 提示：最多可設定 6 個菜單項目的折扣率，每個項目可設定獨立的折扣率")
+        
+        # 獲取當前機台的菜單項目
+        menu_data = st.session_state.api.get_machine_current_menu_items(machine_id)
+        current_menu_items = []
+        if menu_data and menu_data.get('success'):
+            current_menu_items = menu_data.get('data', {}).get('current_menu_items', [])
+        
+        if not current_menu_items:
+            st.warning("⚠️ 此機台目前沒有菜單項目，請先設定菜單項目")
+            if st.button("❌ 關閉", width="stretch"):
+                st.rerun()
+            return
+        
+        # 獲取所有菜單項目的詳細資訊（用於顯示名稱和價格）
+        all_menu_items = st.session_state.api.get_menu_items()
+        menu_item_map = {item['id']: item for item in all_menu_items}
+        
+        # 限制最多顯示 6 個項目
+        max_items = 6
+        if len(current_menu_items) > max_items:
+            st.warning(f"⚠️ 當前菜單項目有 {len(current_menu_items)} 個，最多只能設定前 {max_items} 個的折扣率")
+            current_menu_items = current_menu_items[:max_items]
+        
+        edit_count = len(current_menu_items)
+        
+        st.markdown("---")
+        st.markdown(f"### 📋 折扣率設定（共 {edit_count} 個項目）")
+        
+        selected_menu_items = []
+        display_orders = []
+        discount_rates = []
+        
+        for i in range(edit_count):
+            with st.container():
+                current_item = current_menu_items[i]
+                current_item_id = current_item.get('menu_item_id')
+                current_discount_rate = current_item.get('discount_rate')
+                
+                # 獲取菜單項目詳細資訊
+                menu_item_info = menu_item_map.get(current_item_id, {})
+                item_name = menu_item_info.get('name', 'Unknown')
+                item_price = menu_item_info.get('price', 0)
+                
+                st.markdown(f"**位置 {i+1}：{item_name}**")
+                col1, col2 = st.columns([2, 1])
+                
+                with col1:
+                    st.write(f"**原價**: NT$ {item_price:.0f}")
+                    st.write(f"**商品代碼**: {menu_item_info.get('product_code', 'N/A')}")
+                
+                with col2:
+                    discount_input = st.number_input(
+                        "折扣率",
+                        min_value=0.0,
+                        max_value=1.0,
+                        step=0.05,
+                        value=float(current_discount_rate) if current_discount_rate is not None else None,
+                        format="%.2f",
+                        help="0.0-1.0，例如：0.8=8折，0.95=95折。留空表示無折扣",
+                        key=f"discount_{machine_id}_{i}"
+                    )
+                    discount_rate = discount_input if discount_input is not None else None
+                    discount_rates.append(discount_rate)
+                    
+                    # 顯示折扣後價格預覽
+                    if discount_rate is not None:
+                        final_price = calculate_final_price(item_price, discount_rate)
+                        discount_text = format_discount_text(discount_rate)
+                        st.caption(f"**折扣後**: NT$ {final_price:.0f} ({discount_text})")
+                        st.markdown(f"<span style='color: red; font-weight: bold;'>💰 省 NT$ {item_price - final_price:.1f}</span>", unsafe_allow_html=True)
+                    else:
+                        st.caption("**無折扣**")
+                
+                # 保存菜單項目ID和顯示順序
+                selected_menu_items.append(current_item_id)
+                display_orders.append(i + 1)
+                
+                if i < edit_count - 1:
+                    st.markdown("---")
+        
+        st.markdown("---")
+        
+        # 操作按鈕
+        col_save, col_cancel = st.columns(2)
+        
+        with col_save:
+            if st.button("💾 儲存折扣設定", width="stretch", type="primary"):
+                # 驗證折扣率數量
+                if len(discount_rates) != len(selected_menu_items):
+                    st.error("❌ 折扣率設定錯誤，請重新設定")
+                else:
+                    # 調用 API 更新機台菜單折扣率（不改變菜單項目）
+                    ui_logger.info(f"Admin {st.session_state.get('username')} updating discount rates for machine {machine_id}")
+                    
+                    result = st.session_state.api.update_machine_menu_items(
+                        machine_id=machine_id,
+                        menu_item_ids=selected_menu_items,
+                        display_orders=display_orders,
+                        discount_rates=discount_rates
+                    )
+                    
+                    if result:
+                        st.success(f"✅ {machine_name} 的折扣率已更新！")
+                        st.toast(f"🎉 折扣率更新成功：{machine_name}", icon="✅", duration='long')
+                        ui_logger.info(f"Discount rates updated successfully for machine {machine_id}")
+                        time.sleep(1)
+                        st.rerun()
+                    else:
+                        st.error("❌ 更新失敗，請稍後再試")
+        
+        with col_cancel:
+            if st.button("❌ 取消", width="stretch"):
+                st.rerun()
+    
+    # 觸發對話框
+    edit_discount_dialog()
+
+
 def show_edit_machine_menu_dialog(machine_id: int, machine_name: str, current_menu_items: List[Dict]):
-    """顯示編輯機台菜單對話框"""
+    """顯示編輯機台菜單對話框（舊版，保留以備後用）"""
     
     @st.dialog(f"✏️ 編輯機台菜單 - {machine_name}")
     def edit_dialog():
