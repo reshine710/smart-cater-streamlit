@@ -187,6 +187,11 @@ def menu_management_page():
         st.info("📝 目前沒有有效的菜單項目")
         return
     
+    # 在機型分頁上方顯示全局新增功能
+    with st.expander("➕ 新增菜單項目", expanded=False):
+        show_add_menu_item_form()
+    # st.markdown("---")
+    
     # 方案C：主要機型（A-Z）使用 tabs，「其他」作為單獨 tab
     # 建立 tab 標籤列表
     tab_labels = []
@@ -232,13 +237,14 @@ def menu_management_page():
                 
                 st.markdown("---")
             
-            # 在每個機型 tab 內，顯示三個子功能：商品列表、新增項目、分析
-            sub_tab1, sub_tab2, sub_tab3 = st.tabs(["📋 商品列表", "➕ 新增項目", "📊 機型分析"])
+            # 在每個機型 tab 內，顯示三個子功能：商品列表、快速新增、分析
+            sub_tab1, sub_tab2, sub_tab3 = st.tabs(["📋 商品列表", "⚡ 快速新增", "📊 機型分析"])
             
             with sub_tab1:
                 show_machine_type_items_list(machine_items, machine_type)
             
             with sub_tab2:
+                st.info(f"💡 快速新增：此處會自動建議 {machine_type}機型 的商品代碼格式，方便快速為此機型新增商品")
                 show_add_menu_item_form(machine_type)
             
             with sub_tab3:
