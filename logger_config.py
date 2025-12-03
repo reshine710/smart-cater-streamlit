@@ -16,6 +16,33 @@ LOGS_DIR.mkdir(exist_ok=True)
 LOG_FORMAT = "%(asctime)s - %(name)s - %(levelname)s - %(funcName)s:%(lineno)d - %(message)s"
 DATE_FORMAT = "%Y-%m-%d %H:%M:%S"
 
+
+class WebSocketErrorFilter(logging.Filter):
+    """
+    過濾器：抑制 Streamlit/Tornado WebSocket 關閉時的無害錯誤
+    
+    這些錯誤通常在應用關閉時發生，是因為 WebSocket 連接已關閉
+    但仍有異步任務試圖寫入消息。這些錯誤不會影響應用功能。
+    """
+    
+    def filter(self, record):
+        # 檢查是否為 WebSocket 相關的錯誤
+        message = record.getMessage()
+        
+        # 過濾 WebSocket 關閉錯誤
+        websocket_error_patterns = [
+            "WebSocketClosedError",
+            "Stream is closed",
+            "Task exception was never retrieved",
+            "WebSocketProtocol13.write_message",
+        ]
+        
+        for pattern in websocket_error_patterns:
+            if pattern in message:
+                return False  # 過濾掉此日誌
+        
+        return True  # 保留其他日誌
+
 def setup_logger(name: str, level: str = "INFO") -> logging.Logger:
     """
     設置 logger
@@ -38,10 +65,14 @@ def setup_logger(name: str, level: str = "INFO") -> logging.Logger:
     # 創建格式化器
     formatter = logging.Formatter(LOG_FORMAT, DATE_FORMAT)
     
+    # 創建 WebSocket 錯誤過濾器
+    websocket_filter = WebSocketErrorFilter()
+    
     # 控制台 handler
     console_handler = logging.StreamHandler(sys.stdout)
     console_handler.setLevel(logging.DEBUG)
     console_handler.setFormatter(formatter)
+    console_handler.addFilter(websocket_filter)  # 應用過濾器
     logger.addHandler(console_handler)
     
     # 文件 handler - 所有日誌
@@ -52,6 +83,7 @@ def setup_logger(name: str, level: str = "INFO") -> logging.Logger:
     )
     file_handler.setLevel(logging.DEBUG)
     file_handler.setFormatter(formatter)
+    file_handler.addFilter(websocket_filter)  # 應用過濾器
     logger.addHandler(file_handler)
     
     # 錯誤文件 handler - 只記錄錯誤
@@ -61,6 +93,7 @@ def setup_logger(name: str, level: str = "INFO") -> logging.Logger:
     )
     error_handler.setLevel(logging.ERROR)
     error_handler.setFormatter(formatter)
+    error_handler.addFilter(websocket_filter)  # 應用過濾器
     logger.addHandler(error_handler)
     
     return logger
@@ -83,3 +116,25 @@ auth_logger = get_logger("auth")
 mqtt_logger = get_logger("mqtt")
 ui_logger = get_logger("ui")
 system_logger = get_logger("system")
+
+# 配置 Tornado 相關 logger，避免顯示 WebSocket 關閉錯誤
+# 設置 Tornado logger 的級別為 WARNING，過濾掉 INFO 和 DEBUG 級別的無害錯誤
+tornado_logger = logging.getLogger("tornado")
+tornado_logger.setLevel(logging.WARNING)
+
+tornado_access_logger = logging.getLogger("tornado.access")
+tornado_access_logger.setLevel(logging.WARNING)
+
+tornado_application_logger = logging.getLogger("tornado.application")
+tornado_application_logger.setLevel(logging.WARNING)
+
+tornado_general_logger = logging.getLogger("tornado.general")
+tornado_general_logger.setLevel(logging.WARNING)
+
+# 為根 logger 的 stderr handler 添加過濾器（捕獲未處理的異常）
+root_logger = logging.getLogger()
+websocket_filter = WebSocketErrorFilter()
+
+# 為所有現有的 handler 添加過濾器
+for handler in root_logger.handlers:
+    handler.addFilter(websocket_filter)

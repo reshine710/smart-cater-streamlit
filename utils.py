@@ -1121,11 +1121,25 @@ class VendingMachineAPI:
             return []
     
     def _extract_heating_time(self, heating_params) -> int:
-        """從 heating_params 中提取加熱時間"""
+        """從 heating_params 中提取加熱時間（支援舊格式和新的五段式格式）"""
         if not heating_params:
             return 0
         if isinstance(heating_params, dict):
-            return heating_params.get('time_seconds', 0)
+            # 舊格式：直接有 time_seconds
+            if 'time_seconds' in heating_params:
+                return heating_params.get('time_seconds', 0)
+            
+            # 新格式：五段式結構
+            # 檢查是否為混合模式
+            if 'microwave' in heating_params and 'steam' in heating_params:
+                # 混合模式：取兩者總時間的最大值
+                microwave_time = sum(p.get('time', 0) for p in heating_params.get('microwave', {}).values())
+                steam_time = sum(p.get('time', 0) for p in heating_params.get('steam', {}).values())
+                return max(microwave_time, steam_time)
+            else:
+                # 單一模式：計算所有段的時間總和
+                total_time = sum(p.get('time', 0) for p in heating_params.values() if isinstance(p, dict))
+                return total_time
         return 0
     
     

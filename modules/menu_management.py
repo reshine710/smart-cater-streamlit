@@ -317,10 +317,15 @@ def show_add_menu_item_form(suggested_machine_type: Optional[str] = None):
             new_image_url = st.text_input("圖片網址", placeholder="https://example.com/image.jpg", key=f"img{prefix}")
         
         with col2:
+            # 暫時隱藏混合模式選項，不開放給用戶使用
             new_heating_method = st.selectbox("加熱方式 *", ["none", "microwave", "steam"], 
-                                            format_func=lambda x: {"none": "無需加熱", "microwave": "微波加熱", "steam": "蒸氣加熱"}[x],
+                                            format_func=lambda x: {
+                                                "none": "無需加熱",
+                                                "microwave": "微波加熱",
+                                                "steam": "蒸氣加熱",
+                                                # "both": "混合加熱"  # 暫時隱藏
+                                            }[x],
                                             key=f"heating{prefix}")
-            new_heating_time = st.number_input("加熱時間 (秒)", min_value=0, max_value=300, step=5, key=f"time{prefix}")
             new_is_active = st.checkbox("立即啟用", value=True, key=f"active{prefix}")
             
             # 營養資訊
@@ -336,6 +341,10 @@ def show_add_menu_item_form(suggested_machine_type: Optional[str] = None):
         # 標籤
         tags_input = st.text_input("標籤 (用逗號分隔)", placeholder="熱門, 健康, 咖啡", key=f"tags{prefix}")
         
+        # 提示：加熱參數可在創建後編輯
+        if new_heating_method != 'none':
+            st.info("💡 提示：加熱參數將使用預設值，創建後可在編輯頁面調整五段式加熱參數")
+        
         submitted = st.form_submit_button("✨ 創建菜單項目", width="stretch")
         
         if submitted:
@@ -345,6 +354,43 @@ def show_add_menu_item_form(suggested_machine_type: Optional[str] = None):
                 # 處理標籤
                 tags = [tag.strip() for tag in tags_input.split(',') if tag.strip()] if tags_input else []
                 
+                # 根據加熱方式設定預設的五段式參數
+                heating_params = None
+                if new_heating_method == 'microwave':
+                    heating_params = {
+                        "first_process": {"time": 70, "power1": 70, "power2": 70, "power3": 70},
+                        "second_process": {"time": 25, "power1": 85, "power2": 85, "power3": 85},
+                        "third_process": {"time": 40, "power1": 0, "power2": 0, "power3": 0},
+                        "fourth_process": {"time": 50, "power1": 100, "power2": 100, "power3": 100},
+                        "fifth_process": {"time": 50, "power1": 100, "power2": 100, "power3": 100}
+                    }
+                elif new_heating_method == 'steam':
+                    heating_params = {
+                        "first_process": {"time": 60, "power1": 0, "power2": 0, "power3": 0},
+                        "second_process": {"time": 30, "power1": 0, "power2": 0, "power3": 0},
+                        "third_process": {"time": 20, "power1": 0, "power2": 0, "power3": 0},
+                        "fourth_process": {"time": 15, "power1": 0, "power2": 0, "power3": 0},
+                        "fifth_process": {"time": 10, "power1": 0, "power2": 0, "power3": 0}
+                    }
+                # 暫時隱藏混合模式，不開放給用戶使用
+                # elif new_heating_method == 'both':
+                #     heating_params = {
+                #         "microwave": {
+                #             "first_process": {"time": 70, "power1": 70, "power2": 70, "power3": 70},
+                #             "second_process": {"time": 25, "power1": 85, "power2": 85, "power3": 85},
+                #             "third_process": {"time": 40, "power1": 0, "power2": 0, "power3": 0},
+                #             "fourth_process": {"time": 50, "power1": 100, "power2": 100, "power3": 100},
+                #             "fifth_process": {"time": 50, "power1": 100, "power2": 100, "power3": 100}
+                #         },
+                #         "steam": {
+                #             "first_process": {"time": 60, "power1": 0, "power2": 0, "power3": 0},
+                #             "second_process": {"time": 30, "power1": 0, "power2": 0, "power3": 0},
+                #             "third_process": {"time": 20, "power1": 0, "power2": 0, "power3": 0},
+                #             "fourth_process": {"time": 15, "power1": 0, "power2": 0, "power3": 0},
+                #             "fifth_process": {"time": 10, "power1": 0, "power2": 0, "power3": 0}
+                #         }
+                #     }
+                
                 # 構建菜單項目數據
                 menu_item_data = {
                     "name": new_name,
@@ -353,7 +399,7 @@ def show_add_menu_item_form(suggested_machine_type: Optional[str] = None):
                     "price": float(new_price),
                     "image_url": new_image_url or "https://via.placeholder.com/300x200?text=No+Image",
                     "heating_method": new_heating_method,
-                    "heating_time": new_heating_time,
+                    "heating_params": heating_params,
                     "is_active": new_is_active,
                     "nutrition_info": {
                         "calories": int(calories),
@@ -385,8 +431,21 @@ def show_menu_item_details(item: Dict, index: int):
         st.write(f"**商品代碼**: {item.get('product_code', '未設定')}")
         st.write(f"**描述**: {item.get('description', '無描述')}")
         st.write(f"**加熱方式**: {format_heating_method(item.get('heating_method', 'none'))}")
-        if item.get('heating_time', 0) > 0:
-            st.write(f"**加熱時間**: {item.get('heating_time')} 秒")
+        # 計算總加熱時間（從五段式參數）
+        heating_params = item.get('heating_params') or {}
+        if heating_params and isinstance(heating_params, dict):
+            total_time = 0
+            heating_method = item.get('heating_method', 'none')
+            if heating_method == 'both':
+                # 混合模式：取兩者總時間的最大值
+                microwave_time = sum(p.get('time', 0) for p in heating_params.get('microwave', {}).values())
+                steam_time = sum(p.get('time', 0) for p in heating_params.get('steam', {}).values())
+                total_time = max(microwave_time, steam_time)
+            elif heating_method in ['microwave', 'steam']:
+                total_time = sum(p.get('time', 0) for p in heating_params.values())
+            
+            if total_time > 0:
+                st.write(f"**總加熱時間**: {total_time} 秒")
         
         # 顯示標籤
         tags = item.get('tags', [])
@@ -539,25 +598,79 @@ def show_edit_menu_item_form(item: Dict):
         
         with col2:
             current_heating = item.get('heating_method', 'none')
-            heating_options = ["none", "microwave", "steam"]
-            heating_index = heating_options.index(current_heating) if current_heating in heating_options else 0
+            # 暫時隱藏混合模式選項，不開放給用戶使用
+            heating_options = ["none", "microwave", "steam"]  # "both" 暫時隱藏
+            # 如果現有資料是混合模式，顯示提示但不允許選擇
+            if current_heating == 'both':
+                st.warning("⚠️ 此項目目前使用混合加熱模式（暫時不支援編輯）")
+                heating_index = 0  # 預設選擇第一個選項
+            else:
+                heating_index = heating_options.index(current_heating) if current_heating in heating_options else 0
             updated_heating_method = st.selectbox("加熱方式", heating_options, index=heating_index,
-                                                format_func=lambda x: {"none": "無需加熱", "microwave": "微波加熱", "steam": "蒸氣加熱"}[x])
-            updated_heating_time = st.number_input("加熱時間 (秒)", value=item.get('heating_time', 0), min_value=0, max_value=300)
+                                                format_func=lambda x: {
+                                                    "none": "無需加熱",
+                                                    "microwave": "微波加熱",
+                                                    "steam": "蒸氣加熱",
+                                                    # "both": "混合加熱"  # 暫時隱藏
+                                                }[x])
+            st.info("💡 提示：加熱參數請在「配方設定」頁面或點擊「配方設定」按鈕進行詳細設定")
             updated_image_url = st.text_input("圖片網址", value=item.get('image_url', ''))
         
         col_save, col_cancel = st.columns(2)
         with col_save:
             if st.button("💾 儲存更改", width="stretch"):
+                # 如果加熱方式改變，設定預設的五段式參數
+                heating_params = None
+                if updated_heating_method == 'microwave':
+                    heating_params = {
+                        "first_process": {"time": 70, "power1": 70, "power2": 70, "power3": 70},
+                        "second_process": {"time": 25, "power1": 85, "power2": 85, "power3": 85},
+                        "third_process": {"time": 40, "power1": 0, "power2": 0, "power3": 0},
+                        "fourth_process": {"time": 50, "power1": 100, "power2": 100, "power3": 100},
+                        "fifth_process": {"time": 50, "power1": 100, "power2": 100, "power3": 100}
+                    }
+                elif updated_heating_method == 'steam':
+                    heating_params = {
+                        "first_process": {"time": 60, "power1": 0, "power2": 0, "power3": 0},
+                        "second_process": {"time": 30, "power1": 0, "power2": 0, "power3": 0},
+                        "third_process": {"time": 20, "power1": 0, "power2": 0, "power3": 0},
+                        "fourth_process": {"time": 15, "power1": 0, "power2": 0, "power3": 0},
+                        "fifth_process": {"time": 10, "power1": 0, "power2": 0, "power3": 0}
+                    }
+                # 暫時隱藏混合模式，不開放給用戶使用
+                # elif updated_heating_method == 'both':
+                #     heating_params = {
+                #         "microwave": {
+                #             "first_process": {"time": 70, "power1": 70, "power2": 70, "power3": 70},
+                #             "second_process": {"time": 25, "power1": 85, "power2": 85, "power3": 85},
+                #             "third_process": {"time": 40, "power1": 0, "power2": 0, "power3": 0},
+                #             "fourth_process": {"time": 50, "power1": 100, "power2": 100, "power3": 100},
+                #             "fifth_process": {"time": 50, "power1": 100, "power2": 100, "power3": 100}
+                #         },
+                #         "steam": {
+                #             "first_process": {"time": 60, "power1": 0, "power2": 0, "power3": 0},
+                #             "second_process": {"time": 30, "power1": 0, "power2": 0, "power3": 0},
+                #             "third_process": {"time": 20, "power1": 0, "power2": 0, "power3": 0},
+                #             "fourth_process": {"time": 15, "power1": 0, "power2": 0, "power3": 0},
+                #             "fifth_process": {"time": 10, "power1": 0, "power2": 0, "power3": 0}
+                #         }
+                #     }
+                
+                # 如果加熱方式改變，更新加熱參數；否則保持原有參數
                 update_data = {
                     "name": updated_name,
                     "product_code": updated_product_code.strip() if updated_product_code else None,
                     "description": updated_description,
                     "price": float(updated_price),
                     "heating_method": updated_heating_method,
-                    "heating_time": updated_heating_time,
                     "image_url": updated_image_url
                 }
+                
+                # 只有在加熱方式改變時才更新加熱參數
+                if current_heating != updated_heating_method and heating_params is not None:
+                    update_data["heating_params"] = heating_params
+                elif updated_heating_method == 'none':
+                    update_data["heating_params"] = None
                 
                 ui_logger.info(f"Admin {st.session_state.get('username')} updating menu item: {item['id']}")
                 
@@ -664,85 +777,66 @@ def show_recipe_management_dialog(item: Dict):
         
         # 加熱方式選擇器
         st.subheader("⚙️ 加熱方式設定")
-        heating_options = ["none", "microwave", "steam"]
-        heating_index = heating_options.index(current_heating_method) if current_heating_method in heating_options else 0
+        # 暫時隱藏混合模式選項，不開放給用戶使用
+        heating_options = ["none", "microwave", "steam"]  # "both" 暫時隱藏
+        # 如果現有資料是混合模式，顯示提示但不允許選擇
+        if current_heating_method == 'both':
+            st.warning("⚠️ 此項目目前使用混合加熱模式（暫時不支援編輯）")
+            heating_index = 0  # 預設選擇第一個選項
+        else:
+            heating_index = heating_options.index(current_heating_method) if current_heating_method in heating_options else 0
         selected_heating_method = st.selectbox(
             "🔥 選擇加熱方式",
             heating_options,
             index=heating_index,
-            format_func=lambda x: {"none": "❄️ 無需加熱", "microwave": "🔥 微波加熱", "steam": "💨 蒸氣加熱"}[x],
+            format_func=lambda x: {
+                "none": "❄️ 無需加熱",
+                "microwave": "🔥 微波加熱",
+                "steam": "💨 蒸氣加熱",
+                # "both": "🔥💨 混合加熱"  # 暫時隱藏
+            }[x],
             help="選擇此商品的加熱方式，切換後可設定對應的加熱參數"
         )
         
         st.markdown("---")
         
         # 動態參數設定區
-        st.subheader("📋 加熱參數設定")
+        st.subheader("📋 加熱參數設定（五段式）")
         
-        recipe_config = {}
-        current_heating_time = heating_params.get('time_seconds', 0) if isinstance(heating_params, dict) else 0
-        
-        if selected_heating_method == 'steam':
-            st.success("💨 蒸氣加熱參數設定")
-            
-            # 從現有參數讀取，如果加熱方式改變則使用預設值
-            if current_heating_method == 'steam' and heating_params:
-                current_temp = heating_params.get('temperature', 100)
-                current_pressure = heating_params.get('pressure_bar', 1.5)
-                current_time = heating_params.get('time_seconds', 120)
-            else:
-                current_temp = 100
-                current_pressure = 1.5
-                current_time = 120
-            
-            steam_temp = st.slider("蒸氣溫度 (°C)", 80, 120, current_temp, help="建議範圍：80-120°C")
-            steam_time = st.slider("加熱時間 (秒)", 30, 300, current_time, step=5, help="建議範圍：30-300秒")
-            steam_pressure = st.slider("蒸氣壓力 (bar)", 1.0, 3.0, current_pressure, 0.1, help="建議範圍：1.0-3.0 bar")
-            
-            recipe_config = {
-                "heating_method": "steam",
-                "temperature": steam_temp,
-                "time_seconds": steam_time,
-                "pressure_bar": steam_pressure
-            }
-            
-        elif selected_heating_method == 'microwave':
-            st.success("🔥 微波加熱參數設定")
-            
-            # 從現有參數讀取，如果加熱方式改變則使用預設值
-            if current_heating_method == 'microwave' and heating_params:
-                current_power = heating_params.get('power_percent', 80)
-                current_time = heating_params.get('time_seconds', 90)
-            else:
-                current_power = 80
-                current_time = 90
-            
-            microwave_power = st.slider("微波功率 (%)", 30, 100, current_power, step=5, help="建議範圍：30-100%")
-            microwave_time = st.slider("加熱時間 (秒)", 30, 180, current_time, step=5, help="建議範圍：30-180秒")
-            
-            recipe_config = {
-                "heating_method": "microwave",
-                "power_percent": microwave_power,
-                "time_seconds": microwave_time
-            }
-            
-        else:  # none
+        # 使用五段式加熱參數設定
+        if selected_heating_method == 'none':
             st.info("❄️ 無需加熱")
             st.write("此項目無需加熱，可直接供應。")
-            recipe_config = {
-                "heating_method": "none",
-                "time_seconds": 0
-            }
+            recipe_config = None
+        else:
+            # 從現有參數讀取（如果加熱方式相同）
+            current_params_for_rendering = None
+            if current_heating_method == selected_heating_method and heating_params:
+                current_params_for_rendering = heating_params
+            
+            recipe_config = render_five_stage_heating_params(
+                selected_heating_method,
+                current_params_for_rendering,
+                key_prefix=f"edit_{item_id}"
+            )
         
-        # 參數預覽
+        # 計算並顯示總加熱時間
         st.markdown("---")
-        st.subheader("🔮 參數預覽")
-        st.code(f"{recipe_config}", language="json")
-        
-        # 顯示現有參數（如果存在且與新設定不同）
-        if heating_params and isinstance(heating_params, dict) and current_heating_method == selected_heating_method:
-            st.info("📋 目前設定參數:")
-            st.json(heating_params)
+        if recipe_config is not None:
+            # 計算總時間
+            total_time = 0
+            # 暫時隱藏混合模式處理
+            # if selected_heating_method == 'both':
+            #     # 混合模式：取兩者總時間的最大值
+            #     microwave_time = sum(p.get('time', 0) for p in recipe_config.get('microwave', {}).values())
+            #     steam_time = sum(p.get('time', 0) for p in recipe_config.get('steam', {}).values())
+            #     total_time = max(microwave_time, steam_time)
+            # else:
+            total_time = sum(p.get('time', 0) for p in recipe_config.values())
+            
+            st.info(f"⏱️ 總加熱時間：{total_time} 秒")
+        else:
+            st.info("❄️ 無需加熱參數")
         
         st.markdown("---")
         
@@ -774,25 +868,43 @@ def show_recipe_management_dialog(item: Dict):
         
         with col2:
             if st.button("🔄 重設為預設", width="stretch"):
-                # 根據加熱方式設定預設值
+                # 根據加熱方式設定預設值（五段式結構）
                 if selected_heating_method == 'steam':
                     default_config = {
-                        "heating_method": "steam",
-                        "temperature": 100,
-                        "time_seconds": 120,
-                        "pressure_bar": 1.5
+                        "first_process": {"time": 60, "power1": 0, "power2": 0, "power3": 0},
+                        "second_process": {"time": 30, "power1": 0, "power2": 0, "power3": 0},
+                        "third_process": {"time": 20, "power1": 0, "power2": 0, "power3": 0},
+                        "fourth_process": {"time": 15, "power1": 0, "power2": 0, "power3": 0},
+                        "fifth_process": {"time": 10, "power1": 0, "power2": 0, "power3": 0}
                     }
                 elif selected_heating_method == 'microwave':
                     default_config = {
-                        "heating_method": "microwave",
-                        "power_percent": 80,
-                        "time_seconds": 90
+                        "first_process": {"time": 70, "power1": 70, "power2": 70, "power3": 70},
+                        "second_process": {"time": 25, "power1": 85, "power2": 85, "power3": 85},
+                        "third_process": {"time": 40, "power1": 0, "power2": 0, "power3": 0},
+                        "fourth_process": {"time": 50, "power1": 100, "power2": 100, "power3": 100},
+                        "fifth_process": {"time": 50, "power1": 100, "power2": 100, "power3": 100}
                     }
-                else:
-                    default_config = {
-                        "heating_method": "none",
-                        "time_seconds": 0
-                    }
+                # 暫時隱藏混合模式，不開放給用戶使用
+                # elif selected_heating_method == 'both':
+                #     default_config = {
+                #         "microwave": {
+                #             "first_process": {"time": 70, "power1": 70, "power2": 70, "power3": 70},
+                #             "second_process": {"time": 25, "power1": 85, "power2": 85, "power3": 85},
+                #             "third_process": {"time": 40, "power1": 0, "power2": 0, "power3": 0},
+                #             "fourth_process": {"time": 50, "power1": 100, "power2": 100, "power3": 100},
+                #             "fifth_process": {"time": 50, "power1": 100, "power2": 100, "power3": 100}
+                #         },
+                #         "steam": {
+                #             "first_process": {"time": 60, "power1": 0, "power2": 0, "power3": 0},
+                #             "second_process": {"time": 30, "power1": 0, "power2": 0, "power3": 0},
+                #             "third_process": {"time": 20, "power1": 0, "power2": 0, "power3": 0},
+                #             "fourth_process": {"time": 15, "power1": 0, "power2": 0, "power3": 0},
+                #             "fifth_process": {"time": 10, "power1": 0, "power2": 0, "power3": 0}
+                #         }
+                #     }
+                else:  # none
+                    default_config = None
                 
                 update_data = {
                     "heating_method": selected_heating_method,
@@ -951,11 +1063,169 @@ def show_menu_analytics(menu_items: List[Dict]):
         st.dataframe(df, width="stretch", hide_index=True)
 
 
+def render_five_stage_heating_params(
+    heating_method: str,
+    current_params: Optional[Dict] = None,
+    key_prefix: str = ""
+) -> Dict:
+    """
+    渲染五段式加熱參數輸入表單
+    
+    Args:
+        heating_method: 加熱方式 ('microwave', 'steam', 'both')
+        current_params: 現有的加熱參數
+        key_prefix: Streamlit widget key 前綴
+    
+    Returns:
+        Dict: 五段式加熱參數結構
+    """
+    if heating_method == 'none':
+        return None
+    
+    # 預設值
+    default_params = {
+        'first_process': {'time': 70, 'power1': 70, 'power2': 70, 'power3': 70},
+        'second_process': {'time': 25, 'power1': 85, 'power2': 85, 'power3': 85},
+        'third_process': {'time': 40, 'power1': 0, 'power2': 0, 'power3': 0},
+        'fourth_process': {'time': 50, 'power1': 100, 'power2': 100, 'power3': 100},
+        'fifth_process': {'time': 50, 'power1': 100, 'power2': 100, 'power3': 100}
+    }
+    
+    default_steam_params = {
+        'first_process': {'time': 60, 'power1': 0, 'power2': 0, 'power3': 0},
+        'second_process': {'time': 30, 'power1': 0, 'power2': 0, 'power3': 0},
+        'third_process': {'time': 20, 'power1': 0, 'power2': 0, 'power3': 0},
+        'fourth_process': {'time': 15, 'power1': 0, 'power2': 0, 'power3': 0},
+        'fifth_process': {'time': 10, 'power1': 0, 'power2': 0, 'power3': 0}
+    }
+    
+    def render_single_mode_params(mode: str, params_key: str, default: Dict):
+        """渲染單一模式的五段式參數"""
+        st.write(f"**{params_key} 參數設定**")
+        
+        process_names = {
+            'first_process': '第一段',
+            'second_process': '第二段',
+            'third_process': '第三段',
+            'fourth_process': '第四段',
+            'fifth_process': '第五段'
+        }
+        
+        result = {}
+        
+        for process_key in ['first_process', 'second_process', 'third_process', 'fourth_process', 'fifth_process']:
+            process_name = process_names[process_key]
+            
+            # 從現有參數讀取，如果沒有則使用預設值
+            if current_params and process_key in current_params:
+                current_process = current_params[process_key]
+            else:
+                current_process = default[process_key]
+            
+            with st.expander(f"📌 {process_name} ({process_key})", expanded=(process_key == 'first_process')):
+                col1, col2, col3, col4 = st.columns(4)
+                
+                with col1:
+                    time_val = st.number_input(
+                        "時間 (秒)",
+                        min_value=0,
+                        max_value=9999,
+                        value=int(current_process.get('time', default[process_key]['time'])),
+                        step=1,
+                        key=f"{key_prefix}_{mode}_{process_key}_time",
+                        help="加熱時間，範圍：0-9999 秒"
+                    )
+                
+                with col2:
+                    power1_val = st.number_input(
+                        "功率1 (%)",
+                        min_value=0,
+                        max_value=100,
+                        value=int(current_process.get('power1', default[process_key]['power1'])),
+                        step=1,
+                        key=f"{key_prefix}_{mode}_{process_key}_power1",
+                        help="加熱管1功率，範圍：0-100"
+                    )
+                
+                with col3:
+                    power2_val = st.number_input(
+                        "功率2 (%)",
+                        min_value=0,
+                        max_value=100,
+                        value=int(current_process.get('power2', default[process_key]['power2'])),
+                        step=1,
+                        key=f"{key_prefix}_{mode}_{process_key}_power2",
+                        help="加熱管2功率，範圍：0-100"
+                    )
+                
+                with col4:
+                    power3_val = st.number_input(
+                        "功率3 (%)",
+                        min_value=0,
+                        max_value=100,
+                        value=int(current_process.get('power3', default[process_key]['power3'])),
+                        step=1,
+                        key=f"{key_prefix}_{mode}_{process_key}_power3",
+                        help="加熱管3功率，範圍：0-100"
+                    )
+                
+                result[process_key] = {
+                    'time': time_val,
+                    'power1': power1_val,
+                    'power2': power2_val,
+                    'power3': power3_val
+                }
+        
+        return result
+    
+    # 暫時隱藏混合模式，不開放給用戶使用
+    # 如果現有資料是混合模式，顯示提示但不允許編輯
+    if heating_method == 'both':
+        st.warning("⚠️ 此項目目前使用混合加熱模式，暫時不支援編輯。如需修改，請先將加熱方式改為其他模式。")
+        if current_params and isinstance(current_params, dict):
+            st.info("📋 目前混合加熱參數:")
+            st.json(current_params)
+        return None  # 返回 None 表示無法編輯
+    
+    # 暫時隱藏混合模式，不開放給用戶使用
+    # if heating_method == 'both':
+    #     # 混合模式：需要設定微波和蒸氣兩種參數
+    #     st.info("🔥💨 混合加熱模式：需要同時設定微波和蒸氣參數")
+    #     
+    #     # 從現有參數讀取
+    #     current_microwave = current_params.get('microwave', {}) if current_params else {}
+    #     current_steam = current_params.get('steam', {}) if current_params else {}
+    #     
+    #     st.subheader("🔥 微波加熱參數")
+    #     microwave_params = render_single_mode_params('microwave', '微波', default_params)
+    #     
+    #     st.markdown("---")
+    #     
+    #     st.subheader("💨 蒸氣加熱參數")
+    #     steam_params = render_single_mode_params('steam', '蒸氣', default_steam_params)
+    #     
+    #     return {
+    #         'microwave': microwave_params,
+    #         'steam': steam_params
+    #     }
+    
+    if heating_method == 'microwave':
+        st.info("🔥 微波加熱模式：每段需設定時間和三個加熱管功率")
+        return render_single_mode_params('microwave', '微波', default_params)
+    
+    elif heating_method == 'steam':
+        st.info("💨 蒸氣加熱模式：每段需設定時間，功率通常設為 0")
+        return render_single_mode_params('steam', '蒸氣', default_steam_params)
+    
+    return None
+
+
 def format_heating_method(method: str) -> str:
     """格式化加熱方式顯示"""
     method_map = {
         "none": "無需加熱",
         "microwave": "微波加熱",
-        "steam": "蒸氣加熱"
+        "steam": "蒸氣加熱",
+        "both": "混合加熱"
     }
     return method_map.get(method, method)

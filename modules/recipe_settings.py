@@ -1,6 +1,8 @@
 import streamlit as st
 import time
+from typing import Dict, Optional
 from logger_config import ui_logger, system_logger
+from modules.menu_management import render_five_stage_heating_params, format_heating_method
 
 def recipe_settings_page():
     """配方設定頁面"""
@@ -30,12 +32,14 @@ def recipe_settings_page():
     )
     
     if selected_item:
+        item_id = selected_item.get('id')
         item_name = selected_item.get('name', 'Unknown')
         heating_method = selected_item.get('heating_method', 'none')
         heating_params = selected_item.get('heating_params') or {}
-        current_heating_time = heating_params.get('time_seconds', 0) if isinstance(heating_params, dict) else 0
+        if not isinstance(heating_params, dict):
+            heating_params = {}
         
-        st.subheader(f"🍽️ {item_name} 加熱參數設定")
+        st.subheader(f"🍽️ {item_name} 加熱參數設定（五段式）")
         
         # 顯示項目基本資訊
         col_info1, col_info2, col_info3 = st.columns(3)
@@ -54,53 +58,17 @@ def recipe_settings_page():
         with col1:
             st.subheader("⚙️ 加熱參數設定")
             
-            # 顯示現有參數
-            if heating_params and isinstance(heating_params, dict):
-                st.info("📋 目前設定參數:")
-                st.json(heating_params)
-            else:
-                st.info("📝 尚未設定加熱參數")
-            
-            if heating_method == 'steam':
-                st.success("💨 蒸氣加熱參數設定")
-                current_temp = heating_params.get('temperature', 100)
-                current_pressure = heating_params.get('pressure_bar', 1.5)
-                
-                steam_temp = st.slider("蒸氣溫度 (°C)", 80, 120, current_temp)
-                steam_time = st.slider("加熱時間 (秒)", 30, 300, current_heating_time or 120)
-                steam_pressure = st.slider("蒸氣壓力 (bar)", 1.0, 3.0, current_pressure, 0.1)
-                
-                recipe_config = {
-                    "heating_method": "steam",
-                    "temperature": steam_temp,
-                    "time_seconds": steam_time,
-                    "pressure_bar": steam_pressure
-                }
-                
-                st.code(f"新參數配置:\n{recipe_config}", language="json")
-            
-            elif heating_method == 'microwave':
-                st.success("🔥 微波加熱參數設定")
-                current_power = heating_params.get('power_percent', 80)
-                
-                microwave_power = st.slider("微波功率 (%)", 30, 100, current_power)
-                microwave_time = st.slider("加熱時間 (秒)", 30, 180, current_heating_time or 90)
-                
-                recipe_config = {
-                    "heating_method": "microwave",
-                    "power_percent": microwave_power,
-                    "time_seconds": microwave_time
-                }
-                
-                st.code(f"新參數配置:\n{recipe_config}", language="json")
-            
-            else:  # none
+            # 使用五段式加熱參數設定
+            if heating_method == 'none':
                 st.info("❄️ 無需加熱")
                 st.write("此項目無需加熱，可直接供應。")
-                recipe_config = {
-                    "heating_method": "none",
-                    "time_seconds": 0
-                }
+                recipe_config = None
+            else:
+                recipe_config = render_five_stage_heating_params(
+                    heating_method,
+                    heating_params if heating_params else None,
+                    key_prefix=f"recipe_{item_id}"
+                )
         
         with col2:
             st.subheader("🔮 項目預覽")
@@ -142,10 +110,21 @@ def recipe_settings_page():
             st.markdown("---")
             
             # 加熱參數預覽
-            if heating_method != 'none':
+            if heating_method != 'none' and recipe_config:
                 st.info(f"🔥 加熱方式：{format_heating_method(heating_method)}")
-                heating_time = recipe_config.get('time_seconds', current_heating_time or 60)
-                st.info(f"⏱️ 預計加熱時間：{heating_time} 秒")
+                
+                # 計算總時間
+                total_time = 0
+                # 暫時隱藏混合模式處理
+                # if heating_method == 'both':
+                #     # 混合模式：取兩者總時間的最大值
+                #     microwave_time = sum(p.get('time', 0) for p in recipe_config.get('microwave', {}).values())
+                #     steam_time = sum(p.get('time', 0) for p in recipe_config.get('steam', {}).values())
+                #     total_time = max(microwave_time, steam_time)
+                # else:
+                total_time = sum(p.get('time', 0) for p in recipe_config.values())
+                
+                st.info(f"⏱️ 預計總加熱時間：{total_time} 秒")
             else:
                 st.info("🍽️ 此項目無需加熱，可直接享用")
         
@@ -155,19 +134,88 @@ def recipe_settings_page():
         col1, col2, col3 = st.columns(3)
         
         with col1:
-            if st.button("💾 儲存配方設定", width="stretch"):
-                # TODO: 實現將配方設定儲存到 API 的功能
-                # 可以調用 API 更新 heating_params
-                ui_logger.info(f"Recipe settings saved for {item_name} by {st.session_state.get('username')}")
-                ui_logger.debug(f"New heating params: {recipe_config}")
-                st.success(f"✅ 已儲存 {item_name} 的配方設定")
-                st.info("💡 提示：配方設定已更新，將在下次重新載入時生效")
+            if st.button("💾 儲存配方設定", width="stretch", type="primary"):
+                if not item_id:
+                    st.error("❌ 無法取得菜單項目 ID")
+                else:
+                    update_data = {
+                        "heating_method": heating_method,
+                        "heating_params": recipe_config
+                    }
+                    
+                    ui_logger.info(f"Recipe settings saved for {item_name} (ID: {item_id}) by {st.session_state.get('username')}")
+                    ui_logger.debug(f"Update data: {update_data}")
+                    
+                    # 調用 API 更新
+                    result = st.session_state.api.update_menu_item(item_id, update_data)
+                    if result:
+                        st.success(f"✅ 已儲存 {item_name} 的配方設定")
+                        st.toast(f"🎉 配方設定已更新：{item_name}", icon="✅", duration='long')
+                        ui_logger.info(f"Recipe settings saved successfully for {item_name} (ID: {item_id})")
+                        time.sleep(1)
+                        st.rerun()
+                    else:
+                        st.error("❌ 儲存失敗，請稍後再試")
+                        ui_logger.error(f"Failed to save recipe settings for {item_name} (ID: {item_id})")
                 
         with col2:
             if st.button("🔄 重設為預設值", width="stretch"):
-                ui_logger.info(f"Recipe settings reset for {item_name} by {st.session_state.get('username')}")
-                st.info(f"🔄 {item_name} 的配方設定已重設")
-                st.rerun()
+                if not item_id:
+                    st.error("❌ 無法取得菜單項目 ID")
+                else:
+                    # 根據加熱方式設定預設值（五段式結構）
+                    if heating_method == 'steam':
+                        default_config = {
+                            "first_process": {"time": 60, "power1": 0, "power2": 0, "power3": 0},
+                            "second_process": {"time": 30, "power1": 0, "power2": 0, "power3": 0},
+                            "third_process": {"time": 20, "power1": 0, "power2": 0, "power3": 0},
+                            "fourth_process": {"time": 15, "power1": 0, "power2": 0, "power3": 0},
+                            "fifth_process": {"time": 10, "power1": 0, "power2": 0, "power3": 0}
+                        }
+                    elif heating_method == 'microwave':
+                        default_config = {
+                            "first_process": {"time": 70, "power1": 70, "power2": 70, "power3": 70},
+                            "second_process": {"time": 25, "power1": 85, "power2": 85, "power3": 85},
+                            "third_process": {"time": 40, "power1": 0, "power2": 0, "power3": 0},
+                            "fourth_process": {"time": 50, "power1": 100, "power2": 100, "power3": 100},
+                            "fifth_process": {"time": 50, "power1": 100, "power2": 100, "power3": 100}
+                        }
+                    # 暫時隱藏混合模式，不開放給用戶使用
+                    # elif heating_method == 'both':
+                    #     default_config = {
+                    #         "microwave": {
+                    #             "first_process": {"time": 70, "power1": 70, "power2": 70, "power3": 70},
+                    #             "second_process": {"time": 25, "power1": 85, "power2": 85, "power3": 85},
+                    #             "third_process": {"time": 40, "power1": 0, "power2": 0, "power3": 0},
+                    #             "fourth_process": {"time": 50, "power1": 100, "power2": 100, "power3": 100},
+                    #             "fifth_process": {"time": 50, "power1": 100, "power2": 100, "power3": 100}
+                    #         },
+                    #         "steam": {
+                    #             "first_process": {"time": 60, "power1": 0, "power2": 0, "power3": 0},
+                    #             "second_process": {"time": 30, "power1": 0, "power2": 0, "power3": 0},
+                    #             "third_process": {"time": 20, "power1": 0, "power2": 0, "power3": 0},
+                    #             "fourth_process": {"time": 15, "power1": 0, "power2": 0, "power3": 0},
+                    #             "fifth_process": {"time": 10, "power1": 0, "power2": 0, "power3": 0}
+                    #         }
+                    #     }
+                    else:  # none
+                        default_config = None
+                    
+                    update_data = {
+                        "heating_method": heating_method,
+                        "heating_params": default_config
+                    }
+                    
+                    ui_logger.info(f"Recipe settings reset for {item_name} (ID: {item_id}) by {st.session_state.get('username')}")
+                    
+                    result = st.session_state.api.update_menu_item(item_id, update_data)
+                    if result:
+                        st.success(f"✅ {item_name} 的配方設定已重設為預設值")
+                        st.toast(f"🔄 配方設定已重設：{item_name}", icon="✅", duration='long')
+                        time.sleep(1)
+                        st.rerun()
+                    else:
+                        st.error("❌ 重設失敗，請稍後再試")
         
         with col3:
             if st.button("📋 查看詳細資訊", width="stretch"):
@@ -197,11 +245,4 @@ def recipe_settings_page():
             st.dataframe(df, width="stretch", hide_index=True)
 
 
-def format_heating_method(method: str) -> str:
-    """格式化加熱方式顯示"""
-    method_map = {
-        "none": "無需加熱",
-        "microwave": "微波加熱",
-        "steam": "蒸氣加熱"
-    }
-    return method_map.get(method, method)
+# format_heating_method 已從 menu_management 導入，無需重複定義

@@ -1261,14 +1261,10 @@ def show_machine_menu_dialog_content(machine_id: int, machine_name: str):
                     
                     # 格式化加熱方式
                     if 'heating_method' in menu_df_display.columns:
-                        heating_icons = {
-                            'microwave': '🔥 微波',
-                            'steam': '💨 蒸煮',
-                            'fry': '🍳 油炸',
-                            'bake': '🔥 烘烤'
-                        }
+                        # 使用統一的格式化函數
+                        from modules.menu_management import format_heating_method
                         menu_df_display['heating_method'] = menu_df_display['heating_method'].apply(
-                            lambda x: heating_icons.get(x, f"🔥 {x}")
+                            lambda x: format_heating_method(x) if x else "無需加熱"
                         )
                     
                     # 重新命名欄位為中文
