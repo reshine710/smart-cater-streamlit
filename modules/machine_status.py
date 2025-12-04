@@ -451,10 +451,10 @@ def render_machine_card(machine: Dict, status_config: Dict):
                                     showgrid=True,
                                     gridwidth=1,
                                     gridcolor='lightgray',
-                                    showticklabels=False
+                                    showticklabels=True
                                 ),
                                 plot_bgcolor='white',
-                                margin=dict(t=20, b=40, l=20, r=20)
+                                margin=dict(t=20, b=40, l=0, r=5)
                             )
                             
                             # 顯示圖表
