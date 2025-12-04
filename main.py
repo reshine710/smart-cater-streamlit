@@ -545,7 +545,7 @@ def main():
         
         # AI 通知自動刷新
         st.markdown("---")
-        render_notification_auto_refresh(refresh_interval=300)  # 改為300秒（5分鐘）以減少API調用頻率
+        render_notification_auto_refresh(refresh_interval=600)  # 改為600秒（10分鐘）以減少API調用頻率
         
         # 版本號顯示
         st.markdown("---")

@@ -419,46 +419,61 @@ def render_machine_card(machine: Dict, status_config: Dict):
                             df = pd.DataFrame(df_records)
                             df = df.sort_values('時間')  # 按時間排序
                             
-                            # 繪製折線圖
+                            # 計算溫度的最小值和最大值，用於設置 Y 軸範圍
+                            temp_min = df['溫度'].min()
+                            temp_max = df['溫度'].max()
+                            
+                            # 添加適當的邊距（上下各加 5% 的範圍）
+                            temp_range = temp_max - temp_min
+                            if temp_range == 0:
+                                # 如果所有值都相同，設置一個小的範圍
+                                y_min = temp_min - 1
+                                y_max = temp_max + 1
+                            else:
+                                padding = temp_range * 0.05  # 5% 的邊距
+                                y_min = temp_min - padding
+                                y_max = temp_max + padding
+                            
+                            # 使用 plotly 繪製折線圖（可以精確控制 Y 軸範圍）
                             fig = go.Figure()
                             
                             # 添加溫度折線
                             fig.add_trace(go.Scatter(
                                 x=df['時間'],
                                 y=df['溫度'],
-                                mode='lines+markers',
-                                name='',
-                                showlegend=False,
+                                mode='lines',
+                                name='溫度',
                                 line=dict(color='#1f77b4', width=2),
-                                marker=dict(size=4),
-                                hovertemplate='<b>時間</b>: %{x}<br><b>溫度</b>: %{y:.2f}°C<extra></extra>'
+                                showlegend=False
                             ))
                             
                             # 更新圖表布局
+                            # 移除硬編碼的顏色，讓圖表自動跟隨 Streamlit 主題（light/dark）
                             fig.update_layout(
                                 title="",
                                 xaxis_title="",
-                                yaxis_title="",
+                                # yaxis_title="",
                                 hovermode='x unified',
                                 height=300,
                                 showlegend=False,
                                 xaxis=dict(
                                     showgrid=True,
-                                    gridwidth=1,
-                                    gridcolor='lightgray'
+                                    gridwidth=1
+                                    # 不設置 gridcolor，讓它自動跟隨主題
                                 ),
                                 yaxis=dict(
                                     showgrid=True,
                                     gridwidth=1,
-                                    gridcolor='lightgray',
-                                    showticklabels=True
+                                    showticklabels=True,
+                                    range=[y_min, y_max]  # 設置 Y 軸範圍，剛好顯示最高與最低值
+                                    # 不設置 gridcolor，讓它自動跟隨主題
                                 ),
-                                plot_bgcolor='white',
+                                # 不設置 plot_bgcolor，讓它自動跟隨主題
                                 margin=dict(t=20, b=40, l=0, r=5)
                             )
                             
-                            # 顯示圖表
-                            st.plotly_chart(fig, use_container_width=True)
+                            # 顯示圖表，使用 Streamlit 主題（自動跟隨 light/dark）
+                            st.plotly_chart(fig, use_container_width=True, theme="streamlit")
                         else:
                             # 顯示調試信息（僅在開發模式下）
                             total_records = len(records)

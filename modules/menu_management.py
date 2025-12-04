@@ -1128,7 +1128,7 @@ def render_five_stage_heating_params(
             else:
                 current_process = default[process_key]
             
-            with st.expander(f"📌 {process_name} ({process_key})", expanded=(process_key == 'first_process')):
+            with st.expander(f"📌 {process_name}", expanded=(process_key == 'first_process')):
                 col1, col2, col3, col4 = st.columns(4)
                 
                 with col1:
@@ -1144,7 +1144,7 @@ def render_five_stage_heating_params(
                 
                 with col2:
                     power1_val = st.number_input(
-                        "功率1 (%)",
+                        "加熱棒1 (%)",
                         min_value=0,
                         max_value=100,
                         value=int(current_process.get('power1', default[process_key]['power1'])),
@@ -1155,7 +1155,7 @@ def render_five_stage_heating_params(
                 
                 with col3:
                     power2_val = st.number_input(
-                        "功率2 (%)",
+                        "加熱棒2 (%)",
                         min_value=0,
                         max_value=100,
                         value=int(current_process.get('power2', default[process_key]['power2'])),
@@ -1166,7 +1166,7 @@ def render_five_stage_heating_params(
                 
                 with col4:
                     power3_val = st.number_input(
-                        "功率3 (%)",
+                        "加熱棒3 (%)",
                         min_value=0,
                         max_value=100,
                         value=int(current_process.get('power3', default[process_key]['power3'])),
