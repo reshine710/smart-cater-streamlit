@@ -4,6 +4,7 @@ from datetime import datetime
 from typing import Dict, List
 from logger_config import api_logger, ui_logger
 from utils import format_datetime_display
+from utils.permissions import can_create, can_update, can_delete, is_admin_or_above, show_permission_error
 
 def location_management_page():
     """地點管理頁面"""
@@ -19,21 +20,31 @@ def location_management_page():
 
     st.markdown("---")
     
-    # 檢查管理員權限
-    if not st.session_state.get('is_admin', False):
-        st.error("❌ 權限不足：此功能僅限管理員使用")
-        ui_logger.warning(f"Non-admin user {st.session_state.get('username', 'Unknown')} attempted to access location management")
-        return
+    # 所有使用者都可以查看地點列表和統計
+    # 管理員或以上可以新增地點
+    tab_labels = ["📋 地點列表", "📊 地點統計"]
+    if can_create():
+        tab_labels.insert(1, "➕ 新增地點")
     
-    tab1, tab2, tab3 = st.tabs(["📋 地點列表", "➕ 新增地點", "📊 地點統計"])
+    tabs = st.tabs(tab_labels)
     
-    with tab1:
+    tab_index = 0
+    with tabs[tab_index]:
         show_locations_list()
     
-    with tab2:
-        show_create_location_form()
+    if can_create():
+        tab_index += 1
+        with tabs[tab_index]:
+            show_create_location_form()
+        tab_index += 1
+    else:
+        # 如果沒有創建權限，顯示提示
+        if is_admin_or_above():
+            pass  # 不應該到這裡
+        else:
+            st.info("💡 此功能需要管理員權限")
     
-    with tab3:
+    with tabs[tab_index]:
         show_location_statistics()
 
 def show_locations_list():
@@ -93,28 +104,30 @@ def show_location_details(location: Dict, index: int):
     with col3:
         location_id = location.get('id')
         if location_id:
-            # 編輯按鈕
-            if st.button("✏️ 編輯", key=f"edit_location_{location_id}_{index}"):
-                show_edit_location_form(location)
+            # 編輯按鈕（管理員或以上可見）
+            if can_update():
+                if st.button("✏️ 編輯", key=f"edit_location_{location_id}_{index}"):
+                    show_edit_location_form(location)
             
-            # 刪除按鈕
-            st.markdown("---")
-            st.write("**⚠️ 危險操作**")
-            
-            if st.button(f"🗑️ 刪除地點", 
-                       key=f"delete_location_{location_id}_{index}",
-                       type="secondary",
-                       help="此操作無法復原，請謹慎使用"):
-                # 顯示確認對話框
-                if f"confirm_delete_location_{location_id}" not in st.session_state:
-                    st.session_state[f"confirm_delete_location_{location_id}"] = False
+            # 刪除按鈕（僅超級管理員可見）
+            if can_delete():
+                st.markdown("---")
+                st.write("**⚠️ 危險操作**")
                 
-                if not st.session_state[f"confirm_delete_location_{location_id}"]:
-                    st.session_state[f"confirm_delete_location_{location_id}"] = True
-                    st.rerun()
+                if st.button(f"🗑️ 刪除地點", 
+                           key=f"delete_location_{location_id}_{index}",
+                           type="secondary",
+                           help="此操作無法復原，請謹慎使用"):
+                    # 顯示確認對話框
+                    if f"confirm_delete_location_{location_id}" not in st.session_state:
+                        st.session_state[f"confirm_delete_location_{location_id}"] = False
+                    
+                    if not st.session_state.get(f"confirm_delete_location_{location_id}", False):
+                        st.session_state[f"confirm_delete_location_{location_id}"] = True
+                        st.rerun()
             
             # 確認刪除對話框
-            if st.session_state.get(f"confirm_delete_location_{location_id}", False):
+            if can_delete() and st.session_state.get(f"confirm_delete_location_{location_id}", False):
                 st.error(f"⚠️ 確定要刪除地點 **{location.get('name', 'Unknown')}** 嗎？")
                 st.write("此操作將永久刪除地點資料，無法復原！")
                 

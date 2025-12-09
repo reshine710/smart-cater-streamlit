@@ -10,9 +10,10 @@ def recipe_settings_page():
     st.title("🧾 配方設定")
     st.markdown("---")
     
-    # 檢查管理員權限
-    if not st.session_state.get('is_admin', False):
-        st.error("❌ 權限不足：此功能僅限管理員使用")
+    # 檢查管理員權限（管理員或以上可訪問）
+    from utils.permissions import is_admin_or_above, show_permission_error
+    if not is_admin_or_above():
+        show_permission_error('update')
         ui_logger.warning(f"Non-admin user {st.session_state.get('username', 'Unknown')} attempted to access recipe settings")
         return
     

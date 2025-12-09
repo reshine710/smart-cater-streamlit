@@ -161,9 +161,10 @@ def menu_management_page():
     st.title("🍽️ 菜單管理")
     st.markdown("---")
     
-    # 檢查管理員權限
-    if not st.session_state.get('is_admin', False):
-        st.error("❌ 權限不足：此功能僅限管理員使用")
+    # 檢查管理員權限（管理員或以上可訪問）
+    from utils.permissions import is_admin_or_above, show_permission_error
+    if not is_admin_or_above():
+        show_permission_error('create')
         ui_logger.warning(f"Non-admin user {st.session_state.get('username', 'Unknown')} attempted to access menu management")
         return
     
@@ -522,16 +523,18 @@ def show_menu_item_details(item: Dict, index: int):
             if st.button("🧾 配方管理", key=f"recipe_{item_id}_{index}"):
                 show_recipe_management_dialog(item)
             
-            # 刪除菜單項目功能 (危險操作)
-            st.markdown("---")
-            st.write("**⚠️ 危險操作**")
-            
-            # 使用 st.dialog 確認對話框
-            if st.button(f"🗑️ 刪除項目", 
-                       key=f"delete_{item_id}_{index}",
-                       type="primary",
-                       help="此操作無法復原，請謹慎使用"):
-                show_delete_confirmation_dialog(item)
+            # 刪除菜單項目功能 (僅超級管理員可用)
+            from utils.permissions import can_delete
+            if can_delete():
+                st.markdown("---")
+                st.write("**⚠️ 危險操作**")
+                
+                # 使用 st.dialog 確認對話框
+                if st.button(f"🗑️ 刪除項目", 
+                           key=f"delete_{item_id}_{index}",
+                           type="primary",
+                           help="此操作無法復原，請謹慎使用（僅超級管理員）"):
+                    show_delete_confirmation_dialog(item)
 
 
 def show_delete_confirmation_dialog(item: Dict):
@@ -743,9 +746,10 @@ def show_recipe_management_dialog(item: Dict):
     
     @st.dialog(f"🧾 配方管理 - {item.get('name', 'Unknown')}")
     def recipe_dialog():
-        # 權限檢查
-        if not st.session_state.get('is_admin', False):
-            st.error("❌ 權限不足：此功能僅限管理員使用")
+        # 權限檢查（管理員或以上可訪問）
+        from utils.permissions import is_admin_or_above, show_permission_error
+        if not is_admin_or_above():
+            show_permission_error('update')
             ui_logger.warning(f"Non-admin user {st.session_state.get('username', 'Unknown')} attempted to access recipe management")
             if st.button("❌ 關閉", width="stretch"):
                 st.rerun()

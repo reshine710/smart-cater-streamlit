@@ -33,6 +33,30 @@ class VendingMachineAPI:
         
         api_logger.info(f"VendingMachineAPI initialized with base_url: {base_url}, has_token: {bool(token)}")
     
+    def _handle_403_error(self, response, default_message: str = "權限不足"):
+        """
+        統一處理 403 Forbidden 錯誤
+        
+        Args:
+            response: requests.Response 物件
+            default_message: 預設錯誤訊息
+        
+        Returns:
+            str: 錯誤訊息
+        """
+        import streamlit as st
+        try:
+            error_detail = response.json().get('detail', '')
+            # 檢查錯誤訊息中是否包含角色要求
+            if '超級管理員' in error_detail or 'super_admin' in error_detail.lower():
+                return "❌ 權限不足：此操作需要超級管理員權限"
+            elif '管理員' in error_detail or 'admin' in error_detail.lower():
+                return "❌ 權限不足：此操作需要管理員權限"
+            else:
+                return f"❌ 權限不足：{error_detail if error_detail else default_message}"
+        except:
+            return f"❌ 權限不足：{default_message}"
+    
     # ===== AI 通知收件者管理 =====
     def get_ai_notification_recipients(self, is_active: Optional[bool] = None, page: int = 1, limit: int = 50) -> Dict:
         """取得 AI 通知收件者列表（支援分頁與狀態過濾）"""
@@ -317,8 +341,17 @@ class VendingMachineAPI:
                 # 獲取使用者資訊，傳遞 username 以便離線模式使用
                 user_info = self.get_current_user(token_data["access_token"], username)
                 
+                # 提取 role 欄位，如果沒有則根據 is_admin 推斷（向後兼容）
+                role = user_info.get('role')
+                if not role or role not in ['super_admin', 'admin', 'user']:
+                    if user_info.get('is_admin', False):
+                        role = 'super_admin'  # 預設為 super_admin
+                    else:
+                        role = 'user'
+                user_info['role'] = role
+                
                 # 記錄登入成功資訊
-                auth_logger.info(f"Login successful - User: {user_info.get('username', 'Unknown')}, is_admin: {user_info.get('is_admin', False)}, user_id: {user_info.get('id', 'N/A')}")
+                auth_logger.info(f"Login successful - User: {user_info.get('username', 'Unknown')}, role: {role}, is_admin: {user_info.get('is_admin', False)}, user_id: {user_info.get('id', 'N/A')}")
                 auth_logger.debug(f"Token received, full user info: {user_info}")
                 
                 return {
@@ -360,6 +393,7 @@ class VendingMachineAPI:
                     "full_name": "Test Admin (Offline)",
                     "is_active": True,
                     "is_admin": True,
+                    "role": "super_admin",  # 離線模式預設為 super_admin
                     "created_at": datetime.now().isoformat()
                 }
             }
@@ -375,6 +409,7 @@ class VendingMachineAPI:
                     "full_name": "Test User (Offline)",
                     "is_active": True,
                     "is_admin": False,
+                    "role": "user",
                     "created_at": datetime.now().isoformat()
                 }
             }
@@ -1062,10 +1097,15 @@ class VendingMachineAPI:
                 import streamlit as st
                 st.error("❌ 機台不存在")
                 return False
-            elif response.status_code in [401, 403]:
+            elif response.status_code == 401:
                 api_logger.warning("Unauthorized access to machine deletion API")
                 import streamlit as st
-                st.error("❌ 權限不足，僅管理員可刪除機台")
+                st.error("❌ 未授權：請重新登入")
+                return False
+            elif response.status_code == 403:
+                api_logger.warning("Forbidden access to machine deletion API")
+                import streamlit as st
+                st.error(self._handle_403_error(response, "僅超級管理員可刪除機台"))
                 return False
             elif response.status_code == 500:
                 # 處理伺服器內部錯誤，通常是資料庫約束問題
@@ -1695,6 +1735,7 @@ class VendingMachineAPI:
                 "full_name": "Test Admin (離線模式)" if username == "testadmin" else "Jimmy Shen (離線模式)",
                 "is_active": True,
                 "is_admin": True,
+                "role": "super_admin",  # 離線模式預設為 super_admin
                 "created_at": datetime.now().isoformat(),
                 "updated_at": datetime.now().isoformat(),
                 "_offline_mode": True  # 標記這是離線模式
@@ -1710,6 +1751,7 @@ class VendingMachineAPI:
                 "full_name": f"Test User (離線模式)",
                 "is_active": True,
                 "is_admin": False,
+                "role": "user",
                 "created_at": datetime.now().isoformat(),
                 "updated_at": datetime.now().isoformat(),
                 "_offline_mode": True  # 標記這是離線模式
@@ -1796,10 +1838,15 @@ class VendingMachineAPI:
                 import streamlit as st
                 st.error("❌ 菜單項目不存在")
                 return False
-            elif response.status_code in [401, 403]:
+            elif response.status_code == 401:
                 api_logger.warning("Unauthorized access to menu item deletion API")
                 import streamlit as st
-                st.error("❌ 權限不足，僅管理員可刪除菜單項目")
+                st.error("❌ 未授權：請重新登入")
+                return False
+            elif response.status_code == 403:
+                api_logger.warning("Forbidden access to menu item deletion API")
+                import streamlit as st
+                st.error(self._handle_403_error(response, "僅超級管理員可刪除菜單項目"))
                 return False
             elif response.status_code == 409:
                 api_logger.warning("Cannot delete menu item - has related orders")
@@ -2125,10 +2172,15 @@ class VendingMachineAPI:
                 except:
                     st.error("❌ 創建地點失敗：資料格式不正確")
                 return {}
-            elif response.status_code in [401, 403]:
+            elif response.status_code == 401:
                 api_logger.warning("Unauthorized access to location creation API")
                 import streamlit as st
-                st.error("❌ 權限不足，僅管理員可創建地點")
+                st.error("❌ 未授權：請重新登入")
+                return {}
+            elif response.status_code == 403:
+                api_logger.warning("Forbidden access to location creation API")
+                import streamlit as st
+                st.error(self._handle_403_error(response, "僅管理員可創建地點"))
                 return {}
             else:
                 api_logger.warning(f"Failed to create location - Status code: {response.status_code}")
@@ -2160,10 +2212,15 @@ class VendingMachineAPI:
                 import streamlit as st
                 st.error("❌ 地點不存在")
                 return False
-            elif response.status_code in [401, 403]:
+            elif response.status_code == 401:
                 api_logger.warning("Unauthorized access to location deletion API")
                 import streamlit as st
-                st.error("❌ 權限不足，僅管理員可刪除地點")
+                st.error("❌ 未授權：請重新登入")
+                return False
+            elif response.status_code == 403:
+                api_logger.warning("Forbidden access to location deletion API")
+                import streamlit as st
+                st.error(self._handle_403_error(response, "僅超級管理員可刪除地點"))
                 return False
             elif response.status_code == 409:
                 api_logger.warning("Cannot delete location - has related machines")
@@ -2215,10 +2272,15 @@ class VendingMachineAPI:
                 except:
                     st.error("❌ 更新地點失敗：資料格式不正確")
                 return False
-            elif response.status_code in [401, 403]:
+            elif response.status_code == 401:
                 api_logger.warning("Unauthorized access to location update API")
                 import streamlit as st
-                st.error("❌ 權限不足，僅管理員可更新地點")
+                st.error("❌ 未授權：請重新登入")
+                return False
+            elif response.status_code == 403:
+                api_logger.warning("Forbidden access to location update API")
+                import streamlit as st
+                st.error(self._handle_403_error(response, "僅管理員可更新地點"))
                 return False
             elif response.status_code == 500:
                 api_logger.warning("Server error updating location")

@@ -488,8 +488,9 @@ def render_machine_card(machine: Dict, status_config: Dict):
                 ui_logger.error(f"Error displaying 24h fridge temperature chart for machine {machine_id}: {str(e)}", exc_info=True)
                 st.warning(f"⚠️ 載入溫度數據時發生錯誤: {str(e)}")
             
-            # 操作按鈕（僅管理員）
-            is_admin = st.session_state.get('is_admin', False)
+            # 操作按鈕（管理員或以上）
+            from utils.permissions import is_admin_or_above
+            is_admin = is_admin_or_above()
             # if is_admin:
             #     st.markdown("**操作**")
             #     op_col1, op_col2 = st.columns(2)
@@ -584,7 +585,7 @@ def render_machine_card(machine: Dict, status_config: Dict):
                 #     pass
             
             
-            # 编辑机台按钮（仅管理员）
+            # 編輯機台按鈕（管理員或以上）
             if is_admin:
                 st.markdown("**機台管理**")
                 if st.button("✏️ 編輯機台資訊", key=f"edit_machine_{machine_id}", use_container_width=True):
@@ -595,8 +596,9 @@ def render_machine_card(machine: Dict, status_config: Dict):
             # 按鈕從上而下垂直排列
             if st.button("📋 當前菜單", key=f"view_menu_{machine_id}", use_container_width=True, type="primary"):
                 show_machine_menu_dialog(machine_id, machine_name)
-            # 編輯菜單按鈕（僅管理員可見）
-            if st.session_state.get('is_admin', False):
+            # 編輯菜單按鈕（管理員或以上可見）
+            from utils.permissions import is_admin_or_above
+            if is_admin_or_above():
                 if st.button("📋 設定菜單項目", key=f"edit_menu_items_{machine_id}", use_container_width=True):
                     show_edit_machine_menu_items_dialog(machine_id, machine_name)
                 if st.button("💰 設定折扣率", key=f"edit_menu_discount_{machine_id}", use_container_width=True):
@@ -846,9 +848,9 @@ def machine_status_page():
     
     st.markdown("---")
     
-    # 管理員功能：新增機台
-    is_admin = st.session_state.get('is_admin', False)
-    if is_admin:
+    # 管理員或以上功能：新增機台
+    from utils.permissions import can_create
+    if can_create():
         st.subheader("➕ 新增機台")
         
         with st.expander("📝 創建新機台", expanded=False):
@@ -1041,7 +1043,8 @@ def machine_status_page():
             
             with col3:
                 # 機台操作按鈕 (使用 REST API)
-                is_admin = st.session_state.get('is_admin', False)
+                from utils.permissions import is_admin_or_above, can_delete
+                is_admin = is_admin_or_above()
                 # if is_admin:
                 #     # 狀態切換
                 #     current_status = machine.get('status', 'offline').lower()
@@ -1133,19 +1136,19 @@ def machine_status_page():
                 # else:
                 #     st.caption("🔒 機台操作功能僅限管理員使用")
                 
-                # 刪除機台功能 (僅管理員可用)
-                if is_admin:
+                # 刪除機台功能 (僅超級管理員可用)
+                if can_delete():
                     # st.markdown("---")
                     
                     # 使用 st.dialog 確認對話框
                     if st.button(f"🗑️ 刪除機台", 
                                key=f"delete_{machine_id}",
                                type="primary",
-                               help="此操作無法復原，請謹慎使用"):
+                               help="此操作無法復原，請謹慎使用（僅超級管理員）"):
                         show_delete_machine_confirmation_dialog(machine)
-                else:
-                    # 非管理員用戶顯示提示
-                    st.caption("🔒 刪除機台功能僅限管理員使用")
+                elif is_admin:
+                    # 管理員顯示提示
+                    st.caption("🔒 刪除機台功能僅限超級管理員使用")
                 
     # ============================================================================
     # MQTT 即時監控區塊已隱藏，相關程式碼已移至檔案末尾
@@ -1885,8 +1888,9 @@ def show_fridge_temperature_history_dialog_content(machine_id: int, machine_name
             st.error("❌ API 客戶端不可用")
             return
         
-        # 檢查是否為管理員
-        is_admin = st.session_state.get('is_admin', False)
+        # 檢查是否為管理員或以上
+        from utils.permissions import is_admin_or_above
+        is_admin = is_admin_or_above()
         
         # 創建標籤頁
         if is_admin:
@@ -1903,7 +1907,7 @@ def show_fridge_temperature_history_dialog_content(machine_id: int, machine_name
             # 非管理員直接顯示歷史記錄
             _show_fridge_temperature_history_tab(machine_id, machine_name)
         
-        # 標籤頁 2: 溫度告警設定（僅管理員）
+        # 標籤頁 2: 溫度告警設定（管理員或以上）
         if is_admin:
             with tab2:
                 _show_fridge_temperature_settings_tab(machine_id, machine_name, machine_code)

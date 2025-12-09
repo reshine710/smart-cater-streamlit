@@ -43,12 +43,23 @@ def login_function(username, password):
             st.session_state.token = result['access_token']
             st.session_state.username = result['user_info'].get('username', '')
             st.session_state.user_info = result['user_info']
-            st.session_state.is_admin = result['user_info'].get('is_admin', False)
+            st.session_state.is_admin = result['user_info'].get('is_admin', False)  # 保留向後兼容
+            
+            # 設定 role（優先使用 role，向後兼容 is_admin）
+            role = result['user_info'].get('role')
+            if not role or role not in ['super_admin', 'admin', 'user']:
+                # 向後兼容：根據 is_admin 推斷
+                if result['user_info'].get('is_admin', False):
+                    role = 'super_admin'
+                else:
+                    role = 'user'
+            st.session_state.role = role
+            
             print(result['user_info'])
             
-            system_logger.info(f"Session state updated for user: {st.session_state.username}, admin: {st.session_state.is_admin}")
+            system_logger.info(f"Session state updated for user: {st.session_state.username}, role: {role}, admin: {st.session_state.is_admin}")
             user_info = result['user_info']
-            auth_logger.info(f"UI Login successful - User ID: {user_info.get('id', 'N/A')}, Username: {user_info.get('username', 'Unknown')}, is_admin: {user_info.get('is_admin', False)}")
+            auth_logger.info(f"UI Login successful - User ID: {user_info.get('id', 'N/A')}, Username: {user_info.get('username', 'Unknown')}, role: {role}, is_admin: {user_info.get('is_admin', False)}")
             ui_logger.debug(f"Login result: {result}")
             
             st.session_state.api = VendingMachineAPI(API_BASE_URL, result["access_token"])
@@ -58,17 +69,19 @@ def login_function(username, password):
             
             # 根據角色顯示不同的成功訊息
             is_offline = result['user_info'].get('_offline_mode', False)
+            from utils.permissions import get_role_label
+            role_label = get_role_label(role)
             
-            if st.session_state.is_admin:
+            if role in ['super_admin', 'admin']:
                 if is_offline:
-                    st.warning(f"🔌 管理員登入成功（離線模式）！歡迎 {username}")
+                    st.warning(f"🔌 {role_label}登入成功（離線模式）！歡迎 {username}")
                 else:
-                    st.success(f"🎉 管理員登入成功！歡迎 {username}")
+                    st.success(f"🎉 {role_label}登入成功！歡迎 {username}")
             else:
                 if is_offline:
-                    st.warning(f"🔌 使用者登入成功（離線模式）！歡迎 {username}")
+                    st.warning(f"🔌 {role_label}登入成功（離線模式）！歡迎 {username}")
                 else:
-                    st.success(f"✅ 使用者登入成功！歡迎 {username}")
+                    st.success(f"✅ {role_label}登入成功！歡迎 {username}")
             
             # st.rerun()
         else:
@@ -154,7 +167,7 @@ def logout():
     auth_logger.info(f"User logout: {username}")
     
     # 清除所有認證相關狀態
-    auth_keys = ['logged_in', 'token', 'username', 'user_info', 'is_admin']
+    auth_keys = ['logged_in', 'token', 'username', 'user_info', 'is_admin', 'role']
     for key in auth_keys:
         if key in st.session_state:
             del st.session_state[key]
@@ -176,8 +189,14 @@ def logout():
 
 
 def show_user_management():
-    """使用者管理頁面（僅管理員可見）"""
-    ui_logger.info(f"Admin {st.session_state.get('username', 'Unknown')} accessing user management")
+    """使用者管理頁面（僅超級管理員可見）"""
+    from utils.permissions import is_super_admin, show_permission_error
+    if not is_super_admin():
+        show_permission_error('manage_users')
+        ui_logger.warning(f"Non-super-admin user {st.session_state.get('username', 'Unknown')} attempted to access user management")
+        return
+    
+    ui_logger.info(f"Super admin {st.session_state.get('username', 'Unknown')} accessing user management")
     st.header("👥 使用者管理")
     st.markdown("---")
     # 分頁：使用者管理 / AI 通知收件者
@@ -252,9 +271,10 @@ def show_user_management():
     
     with tab_ai_recipients:
         st.subheader("🔔 AI 通知收件者管理")
-        # 權限保護（雙重保護）
-        if not st.session_state.get('is_admin', False):
-            st.error("❌ 權限不足：此功能僅限管理員使用")
+        # 權限保護（僅管理員或以上可訪問）
+        from utils.permissions import is_admin_or_above, show_permission_error
+        if not is_admin_or_above():
+            show_permission_error('create')
             return
         
         # 上方操作列：狀態篩選、分頁、測試寄送
@@ -445,15 +465,20 @@ def main():
         # 使用者資訊
         user_info = st.session_state.get('user_info', {})
         username = user_info.get('username', st.session_state.get('username', 'Unknown'))
-        is_admin = st.session_state.get('is_admin', False)
+        role = st.session_state.get('role', 'user')
+        is_admin = st.session_state.get('is_admin', False)  # 保留向後兼容
         
-        ui_logger.debug(f"Sidebar - User: {username}, Admin: {is_admin}")
+        ui_logger.debug(f"Sidebar - User: {username}, Role: {role}, Admin: {is_admin}")
         
-        # 顯示使用者角色
-        if is_admin:
-            st.success("👑 管理員")
+        # 顯示使用者角色（使用新的權限系統）
+        from utils.permissions import get_role_label
+        role_label = get_role_label(role)
+        if role == 'super_admin':
+            st.success(role_label)
+        elif role == 'admin':
+            st.info(role_label)
         else:
-            st.info("👤 一般使用者")
+            st.info(role_label)
         
         # 顯示使用者詳細資訊
         if user_info:
@@ -467,7 +492,7 @@ def main():
                 st.write(f"**姓名**: {user_info.get('full_name', 'N/A')}")
                 st.write(f"**電子郵件**: {user_info.get('email', 'N/A')}")
                 st.write(f"**帳號狀態**: {'啟用' if user_info.get('is_active', False) else '停用'}")
-                st.write(f"**權限等級**: {'管理員' if user_info.get('is_admin', False) else '一般使用者'}")
+                st.write(f"**權限等級**: {role_label}")
                 
                 # 顯示連接狀態
                 if is_offline:
@@ -491,12 +516,18 @@ def main():
         
         ui_logger.debug(f"Available pages for user {username}: {list(pages.keys())}")
         
-        # 管理員專用功能
-        if is_admin:
+        # 管理員或以上可訪問的管理功能
+        from utils.permissions import is_admin_or_above
+        if is_admin_or_above():
             pages["📍 地點管理"] = "location_management"
-            pages["👥 使用者管理"] = "user_management"
             pages["📦 訂單管理"] = "order_management"
             ui_logger.debug(f"Admin pages added for user {username}")
+        
+        # 僅超級管理員可訪問
+        from utils.permissions import is_super_admin
+        if is_super_admin():
+            pages["👥 使用者管理"] = "user_management"
+            ui_logger.debug(f"Super admin pages added for user {username}")
         
         # 初始化頁面狀態
         if 'current_page' not in st.session_state:
