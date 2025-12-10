@@ -10,291 +10,816 @@ from utils.permissions import can_create, can_update, can_delete, is_admin_or_ab
 
 
 def inventory_management_page():
-    """機台庫存管理主頁面"""
+    """機台庫存管理主頁面 - 卡片式設計（僅顯示）"""
     ui_logger.info(f"User {st.session_state.get('username', 'Unknown')} accessing inventory management page")
-    st.title("📦 機台庫存管理")
+    st.title("📦 庫存管理")
     
-    # 機台選擇器
+    # 獲取所有機台
     machines = st.session_state.api.get_machines()
     if not machines:
         st.warning("⚠️ 目前沒有可用的機台")
         return
     
-    # 建立機台選項字典
+    # 使用 Tabs 分開不同層級的視圖
+    tab1, tab2 = st.tabs(["📊 全域戰情看板", "🔍 單機台檢視"])
+    
+    with tab1:
+        show_inventory_dashboard(machines)
+    
+    with tab2:
+        show_machine_detail_view(machines)
+
+
+def show_inventory_dashboard(machines: List[Dict]):
+    """顯示全域戰情看板"""
+    st.markdown("### 全網運營概況")
+    
+    # 注入全局 CSS 樣式（與機台狀態頁面一致）
+    st.markdown("""
+    <style>
+    .machine-card {
+        width: 100%;
+        height: 180px;
+        border-radius: 10px;
+        padding: 15px;
+        margin: 10px 0;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+        align-items: center;
+        overflow: hidden;
+        box-sizing: border-box;
+    }
+    .machine-card-content {
+        text-align: center;
+        width: 100%;
+    }
+    .machine-card-title {
+        margin: 0;
+        font-size: 1.1em;
+        font-weight: bold;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        width: 100%;
+    }
+    .machine-card-subtitle {
+        margin: 5px 0 0 0;
+        font-size: 0.9em;
+        color: #666;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        width: 100%;
+    }
+    .machine-card-info {
+        margin: 5px 0 0 0;
+        font-size: 0.85em;
+        color: #888;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        width: 100%;
+    }
+    </style>
+    """, unsafe_allow_html=True)
+    
+    # 獲取所有機台的庫存數據
+    machine_data = []
+    critical_count = 0
+    warning_count = 0
+    good_count = 0
+    
+    with st.spinner("正在載入機台庫存數據..."):
+        for machine in machines:
+            machine_id = machine.get('id')
+            if not machine_id:
+                continue
+            
+            inventory_data = st.session_state.api.get_machine_inventory(machine_id)
+            if not inventory_data:
+                continue
+            
+            items = inventory_data.get('inventory_items') or inventory_data.get('items') or []
+            total_items = inventory_data.get('total_items', len(items))
+            low_stock_count = inventory_data.get('low_stock_items', 0)
+            out_of_stock_count = inventory_data.get('out_of_stock_items', 0)
+            
+            # 計算健康度（基於缺貨和低庫存比例）
+            if total_items > 0:
+                problem_ratio = (out_of_stock_count + low_stock_count) / total_items
+                health_score = 1.0 - problem_ratio
+            else:
+                health_score = 0.0
+            
+            # 判斷狀態
+            if out_of_stock_count > 0 or health_score < 0.2:
+                status = "Critical"
+                critical_count += 1
+            elif low_stock_count > 0 or health_score < 0.5:
+                status = "Warning"
+                warning_count += 1
+            else:
+                status = "Good"
+                good_count += 1
+            
+            machine_name = machine.get('name', 'Unknown')
+            machine_code = machine.get('machine_code', 'N/A')
+            
+            # 處理位置資訊（與機台狀態頁面一致）
+            location = machine.get('location', {})
+            if isinstance(location, dict):
+                location_name = location.get('name', '未知位置')
+            else:
+                location_name = str(location) if location else '未知位置'
+            
+            machine_data.append({
+                "Machine ID": machine_code,
+                "機台名稱": machine_name,
+                "Location": location_name if location_name != '未知位置' else "未設定",
+                "Status": status,
+                "Stockout_Items": out_of_stock_count,
+                "Low_Stock_Items": low_stock_count,
+                "Total_Items": total_items,
+                "Health_Score": health_score
+            })
+    
+    # 頂部 KPI
+    col1, col2, col3 = st.columns(3)
+    
+    with col1:
+        st.metric(
+            "🔴 急需補貨機台", 
+            f"{critical_count} 台", 
+            delta=f"{critical_count} 待處理" if critical_count > 0 else None,
+            delta_color="inverse"
+        )
+    
+    with col2:
+        st.metric(
+            "🟡 警戒中機台", 
+            f"{warning_count} 台",
+            delta=f"{warning_count} 需關注" if warning_count > 0 else None
+        )
+    
+    with col3:
+        st.metric(
+            "🟢 正常運作", 
+            f"{good_count} 台"
+        )
+    
+    st.divider()
+    
+    st.markdown("### 📋 機台庫存狀態 (優先處理紅燈機台)")
+    
+    if machine_data:
+        # 按狀態分組
+        status_groups = {
+            "Critical": [],
+            "Warning": [],
+            "Good": []
+        }
+        
+        for data in machine_data:
+            status = data.get("Status", "Good")
+            if status in status_groups:
+                status_groups[status].append(data)
+        
+        # 狀態配置
+        status_configs = {
+            "Critical": {
+                "icon": "🔴",
+                "title": "急需補貨",
+                "bg_color": "#f8d7da",
+                "border_color": "#dc3545"
+            },
+            "Warning": {
+                "icon": "🟡",
+                "title": "警戒中",
+                "bg_color": "#fff3cd",
+                "border_color": "#ffc107"
+            },
+            "Good": {
+                "icon": "🟢",
+                "title": "正常運作",
+                "bg_color": "#d4edda",
+                "border_color": "#28a745"
+            }
+        }
+        
+        # 顯示卡片（按狀態分組）
+        for status, machines_in_status in status_groups.items():
+            if not machines_in_status:
+                continue
+            
+            config = status_configs[status]
+            st.markdown(f"### {config['icon']} {config['title']} ({len(machines_in_status)}台)")
+            
+            # 創建響應式網格布局（每行3個卡片）
+            cols_per_row = 3
+            for i in range(0, len(machines_in_status), cols_per_row):
+                cols = st.columns(cols_per_row)
+                
+                for j, machine_info in enumerate(machines_in_status[i:i+cols_per_row]):
+                    with cols[j]:
+                        # 從 machines 列表中找到對應的 machine_id
+                        machine_code = machine_info.get("Machine ID", "N/A")
+                        machine_id = None
+                        for m in machines:
+                            if m.get('machine_code') == machine_code:
+                                machine_id = m.get('id')
+                                break
+                        render_inventory_machine_card(machine_info, config, machine_id)
+    else:
+        st.info("📝 目前沒有機台庫存數據")
+
+
+@st.dialog("🔍 機台庫存透視", width="large")
+def show_machine_inventory_dialog(machine_id: int, machine_name: str, machine_code: str, location: str):
+    """顯示機台庫存詳細透視 dialog"""
+    st.markdown(f"### {machine_name} ({machine_code})")
+    if location and location != "未設定":
+        st.markdown(f"**地點**: {location}")
+    
+    st.divider()
+    
+    # 過濾器
+    filter_mode = st.radio(
+        "顯示模式:", 
+        ["全部顯示", "只看缺貨/警告"], 
+        horizontal=True,
+        key=f"dialog_filter_{machine_id}"
+    )
+    
+    st.info("💡 提示：介面模擬真實機台排列，紅色代表庫存為 0，黃色代表低於安全庫存，綠色代表正常。")
+    
+    # 獲取庫存數據
+    inventory_data = st.session_state.api.get_machine_inventory(machine_id)
+    
+    if not inventory_data:
+        st.error("❌ 無法獲取庫存資料")
+        return
+    
+    items = inventory_data.get('inventory_items') or inventory_data.get('items') or []
+    
+    if not items:
+        st.info("📝 此機台目前沒有庫存項目")
+        return
+    
+    # 處理商品數據
+    products = []
+    for item in items:
+        menu_item = item.get('menu_item', {})
+        current_stock = item.get('current_stock', 0) or 0
+        min_threshold = item.get('min_threshold', 0) or 0
+        max_capacity = item.get('max_capacity', 1) or 1
+        
+        # 判斷狀態
+        if current_stock == 0:
+            color = "🔴"
+            msg = "缺貨 (Stockout)"
+        elif current_stock <= min_threshold:
+            color = "🟡"
+            msg = "低庫存 (Low)"
+        else:
+            color = "🟢"
+            msg = "正常 (OK)"
+        
+        # 處理 product_code（如果為 None 或空字符串則使用默認值）
+        product_code = menu_item.get('product_code') or 'N/A'
+        product_name = menu_item.get('name', 'Unknown')
+        
+        products.append({
+            "id": item.get('id'),
+            "slot": product_code,  # 使用商品代碼作為貨道號
+            "name": product_name,
+            "current": current_stock,
+            "min": min_threshold,
+            "max": max_capacity,
+            "color": color,
+            "msg": msg,
+            "item": item  # 保存完整項目數據用於操作
+        })
+    
+    # 過濾商品
+    if filter_mode == "只看缺貨/警告":
+        products = [p for p in products if p['color'] in ["🔴", "🟡"]]
+    
+    if not products:
+        st.success("✅ 所有商品庫存充足！")
+        return
+    
+    # 網格佈局：每行 4 個商品
+    cols_per_row = 4
+    
+    for i in range(0, len(products), cols_per_row):
+        cols = st.columns(cols_per_row)
+        batch = products[i:i+cols_per_row]
+        
+        for idx, product in enumerate(batch):
+            with cols[idx]:
+                # 卡片式設計
+                with st.container(border=True):
+                    # 標題區：燈號 + 貨道號
+                    st.markdown(f"**{product['color']} {product['slot']}** {product['name']}")
+                    
+                    # 計算比例給進度條用
+                    progress = product['current'] / product['max'] if product['max'] > 0 else 0
+                    
+                    # 進度條
+                    st.progress(progress)
+                    
+                    # 關鍵數字
+                    st.caption(f"庫存: {product['current']} / 最大: {product['max']}")
+                    st.caption(f"警戒線: {product['min']}")
+                    
+                    # 狀態文字和補貨建議
+                    if product['color'] == "🔴":
+                        st.error(f"缺貨! 需補 {product['max']} 個")
+                    elif product['color'] == "🟡":
+                        restock_qty = product['max'] - product['current']
+                        st.warning(f"請補貨 (建議補 {restock_qty} 個)")
+                    else:
+                        st.success("庫存充足")
+
+
+def render_inventory_machine_card(machine_info: Dict, status_config: Dict, machine_id: int = None):
+    """渲染單個機台庫存卡片（與機台狀態頁面一致的樣式）"""
+    machine_code = machine_info.get("Machine ID", "N/A")
+    machine_name = machine_info.get("機台名稱", "Unknown")
+    location = machine_info.get("Location", "未設定")
+    status = machine_info.get("Status", "Good")
+    stockout_items = machine_info.get("Stockout_Items", 0)
+    low_stock_items = machine_info.get("Low_Stock_Items", 0)
+    total_items = machine_info.get("Total_Items", 0)
+    health_score = machine_info.get("Health_Score", 0.0)
+    health_percentage = int(health_score * 100)
+    
+    # 創建卡片容器（與機台狀態頁面一致的結構）
+    with st.container():
+        # 使用 CSS 類別 + 動態樣式（背景色和邊框色）
+        card_style = f"""
+        <div class="machine-card" style="
+            background-color: {status_config['bg_color']};
+            border: 2px solid {status_config['border_color']};
+        ">
+            <div class="machine-card-content">
+                <h4 class="machine-card-title" style="color: {status_config['border_color']};">
+                    {status_config['icon']} {machine_name}
+                </h4>
+                <p class="machine-card-subtitle">
+                    {machine_code}
+                </p>
+                <p class="machine-card-info">
+                    📍 {location}
+                </p>
+                <p class="machine-card-info" style="margin-top: 8px;">
+                    📦 總項目: {total_items} | 缺貨: {stockout_items} | 低庫存: {low_stock_items}
+                </p>
+                <p class="machine-card-info" style="margin-top: 5px; font-weight: bold;">
+                    健康度: {health_percentage}%
+                </p>
+            </div>
+        </div>
+        """
+        
+        st.markdown(card_style, unsafe_allow_html=True)
+        
+        # 點擊按鈕來顯示詳細透視畫面
+        if machine_id:
+            if st.button("🔍 查看詳細", key=f"view_detail_{machine_id}", use_container_width=True):
+                show_machine_inventory_dialog(machine_id, machine_name, machine_code, location)
+            
+            # 管理庫存按鈕（僅管理員）
+            if can_create() or can_update():
+                if st.button("📦 管理庫存", key=f"manage_inventory_{machine_id}", use_container_width=True):
+                    show_inventory_management_dialog(machine_id, machine_name, machine_code)
+
+
+def show_machine_detail_view(machines: List[Dict]):
+    """顯示單機台詳細檢視"""
+    st.markdown("### 🔍 機台透視")
+    
+    # 機台選擇器
     machine_options = {}
-    machine_id_to_code = {}  # 用於調試顯示
+    machine_id_to_info = {}
     for machine in machines:
+        machine_id = machine.get('id')
         machine_name = machine.get('name', 'Unknown')
         machine_code = machine.get('machine_code', 'N/A')
-        machine_id = machine.get('id')
+        
+        # 處理位置資訊（與機台狀態頁面一致）
+        location = machine.get('location', {})
+        if isinstance(location, dict):
+            location_name = location.get('name', '未知位置')
+        else:
+            location_name = str(location) if location else '未知位置'
+        
         if machine_id:
-            machine_options[f"{machine_name} ({machine_code})"] = machine_id
-            machine_id_to_code[machine_id] = machine_code
+            display_name = f"{machine_name} ({machine_code})"
+            if location_name and location_name != '未知位置':
+                display_name += f" - {location_name}"
+            machine_options[display_name] = machine_id
+            machine_id_to_info[machine_id] = {
+                'name': machine_name,
+                'code': machine_code,
+                'location': location_name if location_name != '未知位置' else "未設定"
+            }
     
     if not machine_options:
         st.warning("⚠️ 無法取得機台資訊")
         return
     
     # 機台選擇
-    col_select, col_refresh = st.columns([3, 1])
+    col_select, col_refresh = st.columns([4, 1])
     with col_select:
         selected_machine_name = st.selectbox(
             "選擇機台",
             options=list(machine_options.keys()),
-            key="inventory_machine_selector"
+            key="detail_machine_selector"
         )
         selected_machine_id = machine_options[selected_machine_name]
-        selected_machine_code = machine_id_to_code.get(selected_machine_id, 'N/A')
-    
-    # 調試資訊（顯示當前選擇的機台）
-    ui_logger.debug(f"Selected machine: ID={selected_machine_id}, Code={selected_machine_code}, Name={selected_machine_name}")
+        machine_info = machine_id_to_info[selected_machine_id]
     
     with col_refresh:
         st.markdown("<div style='height: 38px;'></div>", unsafe_allow_html=True)
-        if st.button("🔄 重新整理", type="secondary", width='stretch', key="refresh_inventory"):
+        if st.button("🔄 重新整理", type="secondary", width='stretch', key="refresh_detail"):
             st.rerun()
     
-    st.markdown("---")
+    st.markdown(f"**機台**: {machine_info['name']} ({machine_info['code']})")
+    if machine_info['location']:
+        st.markdown(f"**地點**: {machine_info['location']}")
     
-    # Tab 結構
-    tab_labels = ["📋 庫存總覽", "📊 庫存統計"]
-    if can_create():  # 管理員
-        tab_labels.insert(1, "➕ 新增庫存項目")
-    if can_update():  # 管理員
-        tab_labels.insert(-1, "✏️ 庫存操作")
+    # 管理按鈕（僅管理員）
+    if can_create() or can_update():
+        st.divider()
+        col_add, col_edit, col_delete = st.columns(3)
+        
+        with col_add:
+            if st.button("➕ 新增庫存項目", use_container_width=True, key="add_inventory_btn"):
+                show_simple_inventory_form(selected_machine_id, mode="create")
+        
+        with col_edit:
+            if st.button("✏️ 編輯庫存項目", use_container_width=True, key="edit_inventory_btn"):
+                show_simple_inventory_form(selected_machine_id, mode="edit")
+        
+        with col_delete:
+            if can_delete():
+                if st.button("🗑️ 刪除庫存項目", use_container_width=True, key="delete_inventory_btn"):
+                    show_simple_inventory_form(selected_machine_id, mode="delete")
+            else:
+                st.button("🗑️ 刪除庫存項目", use_container_width=True, key="delete_inventory_btn_disabled", disabled=True)
     
-    tabs = st.tabs(tab_labels)
+    st.divider()
     
-    # Tab 1: 庫存總覽
-    tab_index = 0
-    with tabs[tab_index]:
-        show_inventory_overview(selected_machine_id, selected_machine_code)
+    # 過濾器
+    filter_mode = st.radio(
+        "顯示模式:", 
+        ["全部顯示", "只看缺貨/警告"], 
+        horizontal=True,
+        key="detail_filter_mode"
+    )
     
-    # Tab 2: 新增庫存項目（僅管理員）
-    if can_create():
-        tab_index += 1
-        with tabs[tab_index]:
-            show_add_inventory_item_form(selected_machine_id)
-        tab_index += 1
+    st.info("💡 提示：介面模擬真實機台排列，紅色代表庫存為 0，黃色代表低於安全庫存，綠色代表正常。")
     
-    # Tab 3: 庫存操作（僅管理員）
-    if can_update():
-        with tabs[tab_index]:
-            show_inventory_operations(selected_machine_id)
-        tab_index += 1
+    # 獲取庫存數據
+    inventory_data = st.session_state.api.get_machine_inventory(selected_machine_id)
     
-    # Tab 4: 庫存統計
-    with tabs[tab_index]:
-        show_inventory_statistics(selected_machine_id)
-
-
-def show_inventory_overview(machine_id: int, machine_code: str = 'N/A'):
-    """顯示庫存總覽"""
-    st.subheader("📋 庫存總覽")
-    
-    # 篩選選項
-    col_filter, col_alert = st.columns([2, 3])
-    with col_filter:
-        status_filter = st.selectbox(
-            "庫存狀態篩選",
-            ["全部", "充足", "低庫存", "缺貨"],
-            key="inventory_status_filter"
-        )
-    
-    # 獲取庫存資料（後端自動返回統計）
-    inventory_data = st.session_state.api.get_machine_inventory(machine_id)
-    
-    # 調試：顯示 API 返回的原始數據（僅在開發模式下）
-    if inventory_data is None:
+    if not inventory_data:
         st.error("❌ 無法獲取庫存資料")
-        st.info("💡 可能的原因：\n- API 連接失敗\n- 機台不存在\n- 權限不足")
-        ui_logger.warning(f"Failed to get inventory for machine {machine_id}: API returned None")
         return
     
-    # 記錄 API 返回的數據結構（用於調試）
-    ui_logger.debug(f"Inventory data for machine {machine_id}: {inventory_data}")
-    
-    # 檢查數據格式
-    if not isinstance(inventory_data, dict):
-        st.error(f"❌ API 返回數據格式錯誤：期望字典，實際為 {type(inventory_data)}")
-        with st.expander("🔍 調試資訊", expanded=False):
-            st.json(inventory_data)
-        ui_logger.error(f"Invalid inventory data format for machine {machine_id}: {type(inventory_data)}")
-        return
-    
-    # 後端 API 返回的鍵名是 'inventory_items'，不是 'items'
-    # 為了向後兼容，同時檢查兩種鍵名
     items = inventory_data.get('inventory_items') or inventory_data.get('items') or []
-    
-    # 如果 items 是 None，轉為空列表
-    if items is None:
-        items = []
-        ui_logger.warning(f"Inventory items is None for machine {machine_id}, converting to empty list")
     
     if not items:
         st.info("📝 此機台目前沒有庫存項目")
         if can_create():
-            st.info("💡 請在「新增庫存項目」頁面新增庫存")
-        
-        # 顯示調試資訊（如果有統計數據但沒有項目列表）
-        if inventory_data.get('total_items', 0) > 0:
-            st.warning("⚠️ 檢測到統計數據顯示有庫存項目，但項目列表為空")
-            with st.expander("🔍 調試資訊", expanded=False):
-                st.json(inventory_data)
+            st.info("💡 請在「管理功能」中新增庫存項目")
         return
     
-    # 統計資訊（後端自動計算）
-    total_items = inventory_data.get('total_items', len(items))
-    low_stock_count = inventory_data.get('low_stock_items', 0)
-    out_of_stock_count = inventory_data.get('out_of_stock_items', 0)
-    sufficient_count = total_items - low_stock_count - out_of_stock_count
-    
-    # 統計卡片
-    col1, col2, col3, col4 = st.columns(4)
-    with col1:
-        st.metric("總項目數", total_items)
-    with col2:
-        st.metric("充足庫存", sufficient_count)
-    with col3:
-        delta_color = "inverse" if low_stock_count > 0 else "normal"
-        st.metric("低庫存", low_stock_count, delta=None, delta_color=delta_color)
-    with col4:
-        delta_color = "inverse" if out_of_stock_count > 0 else "normal"
-        st.metric("缺貨", out_of_stock_count, delta=None, delta_color=delta_color)
-    
-    st.markdown("---")
-    
-    # 低庫存告警區塊
-    if low_stock_count > 0 or out_of_stock_count > 0:
-        with col_alert:
-            st.warning(f"⚠️ 發現 {low_stock_count + out_of_stock_count} 個項目需要關注")
-            if st.button("🔍 查看低庫存項目", key="view_low_stock"):
-                low_stock_items = st.session_state.api.get_low_stock_items(machine_id)
-                if low_stock_items:
-                    show_low_stock_alert(low_stock_items)
-    
-    # 調試資訊（可展開查看原始數據）
-    with st.expander("🔍 調試資訊（點擊查看 API 返回的原始數據）", expanded=False):
-        st.write("**機台資訊：**")
-        st.write(f"- 機台 ID: {machine_id}")
-        st.write(f"- 機台代碼: {machine_code}")
-        st.write("\n**API 返回數據：**")
-        st.json(inventory_data)
-        st.write("\n**數據結構分析：**")
-        st.write(f"- 數據類型: {type(inventory_data)}")
-        st.write(f"- 是否為字典: {isinstance(inventory_data, dict)}")
-        if isinstance(inventory_data, dict):
-            st.write(f"- 包含的鍵: {list(inventory_data.keys())}")
-            # 檢查兩種可能的鍵名
-            inventory_items_key = 'inventory_items' if 'inventory_items' in inventory_data else 'items'
-            st.write(f"- 使用的鍵名: {inventory_items_key}")
-            st.write(f"- items 類型: {type(items)}")
-            st.write(f"- items 長度: {len(items)}")
-            if items:
-                st.write(f"- 第一個項目結構: {list(items[0].keys()) if isinstance(items[0], dict) else type(items[0])}")
-    
-    # 篩選庫存項目
-    filtered_items = filter_inventory_items(items, status_filter)
-    
-    # 庫存列表表格
-    show_inventory_table(filtered_items, machine_id)
-
-
-def filter_inventory_items(items: List[Dict], status_filter: str) -> List[Dict]:
-    """篩選庫存項目"""
-    if status_filter == "全部":
-        return items
-    
-    filtered = []
+    # 處理商品數據
+    products = []
     for item in items:
-        current_stock = item.get('current_stock', 0)
-        min_threshold = item.get('min_threshold', 0)
+        menu_item = item.get('menu_item', {})
+        current_stock = item.get('current_stock', 0) or 0
+        min_threshold = item.get('min_threshold', 0) or 0
+        max_capacity = item.get('max_capacity', 1) or 1
         
-        if status_filter == "缺貨" and current_stock == 0:
-            filtered.append(item)
-        elif status_filter == "低庫存" and 0 < current_stock <= min_threshold:
-            filtered.append(item)
-        elif status_filter == "充足" and current_stock > min_threshold:
-            filtered.append(item)
+        # 判斷狀態
+        if current_stock == 0:
+            color = "🔴"
+            msg = "缺貨 (Stockout)"
+        elif current_stock <= min_threshold:
+            color = "🟡"
+            msg = "低庫存 (Low)"
+        else:
+            color = "🟢"
+            msg = "正常 (OK)"
+        
+        # 處理 product_code（如果為 None 或空字符串則使用默認值）
+        product_code = menu_item.get('product_code') or 'N/A'
+        product_name = menu_item.get('name', 'Unknown')
+        
+        products.append({
+            "id": item.get('id'),
+            "slot": product_code,  # 使用商品代碼作為貨道號
+            "name": product_name,
+            "current": current_stock,
+            "min": min_threshold,
+            "max": max_capacity,
+            "color": color,
+            "msg": msg,
+            "item": item  # 保存完整項目數據用於操作
+        })
     
-    return filtered
-
-
-def show_inventory_table(items: List[Dict], machine_id: int):
-    """顯示庫存列表表格"""
-    st.subheader(f"庫存列表 ({len(items)} 個項目)")
+    # 過濾商品
+    if filter_mode == "只看缺貨/警告":
+        products = [p for p in products if p['color'] in ["🔴", "🟡"]]
     
-    if not items:
-        st.info("📝 沒有庫存項目可顯示")
+    if not products:
+        st.success("✅ 所有商品庫存充足！")
         return
     
-    # 建立 DataFrame
-    df_data = []
-    for idx, item in enumerate(items):
-        try:
-            # 安全地獲取數據，處理可能的 None 值
-            if not isinstance(item, dict):
-                ui_logger.warning(f"Item {idx} is not a dict: {type(item)}")
-                continue
-            
-            current_stock = item.get('current_stock', 0) or 0
-            min_threshold = item.get('min_threshold', 0) or 0
-            max_capacity = item.get('max_capacity', 0) or 0
-            
-            # 判斷庫存狀態
-            if current_stock == 0:
-                status = "🔴 缺貨"
-            elif current_stock <= min_threshold:
-                status = "🟡 低庫存"
-            else:
-                status = "🟢 充足"
-            
-            # 處理 menu_item（可能是字典、None 或其他格式）
-            menu_item = item.get('menu_item')
-            if menu_item is None:
-                menu_item = {}
-                ui_logger.warning(f"Item {idx} has no menu_item")
-            elif not isinstance(menu_item, dict):
-                ui_logger.warning(f"Item {idx} menu_item is not a dict: {type(menu_item)}")
-                menu_item = {}
-            
-            df_data.append({
-                'ID': item.get('id', 'N/A'),
-                '商品名稱': menu_item.get('name', 'N/A'),
-                '商品代碼': menu_item.get('product_code', 'N/A'),
-                '當前庫存': current_stock,
-                '最低閾值': min_threshold,
-                '最大容量': max_capacity,
-                '庫存狀態': status,
-                '供應商': item.get('supplier', '未設定') or '未設定',
-                '批次編號': item.get('batch_number', 'N/A') or 'N/A',
-                '到期日': format_date(item.get('expiry_date')),
-                '單位成本': f"NT$ {item.get('cost_per_unit', 0):.2f}" if item.get('cost_per_unit') else 'N/A'
-            })
-        except Exception as e:
-            ui_logger.error(f"Error processing item {idx}: {str(e)}")
-            ui_logger.debug(f"Item data: {item}")
-            continue
+    # 網格佈局：每行 4 個商品
+    cols_per_row = 4
     
-    if not df_data:
-        st.info("📝 沒有符合條件的庫存項目")
+    for i in range(0, len(products), cols_per_row):
+        cols = st.columns(cols_per_row)
+        batch = products[i:i+cols_per_row]
+        
+        for idx, product in enumerate(batch):
+            with cols[idx]:
+                # 卡片式設計
+                with st.container(border=True):
+                    # 標題區：燈號 + 貨道號
+                    st.markdown(f"**{product['color']} {product['slot']}** {product['name']}")
+                    
+                    # 計算比例給進度條用
+                    progress = product['current'] / product['max'] if product['max'] > 0 else 0
+                    
+                    # 進度條
+                    st.progress(progress)
+                    
+                    # 關鍵數字
+                    st.caption(f"庫存: {product['current']} / 最大: {product['max']}")
+                    st.caption(f"警戒線: {product['min']}")
+                    
+                    # 狀態文字和補貨建議
+                    if product['color'] == "🔴":
+                        st.error(f"缺貨! 需補 {product['max']} 個")
+                    elif product['color'] == "🟡":
+                        restock_qty = product['max'] - product['current']
+                        st.warning(f"請補貨 (建議補 {restock_qty} 個)")
+                    else:
+                        st.success("庫存充足")
+
+
+@st.dialog("📦 庫存管理", width="large")
+def show_inventory_management_dialog(machine_id: int, machine_name: str, machine_code: str):
+    """顯示庫存管理 dialog（使用 tabs 切換功能）"""
+    st.markdown(f"### {machine_name} ({machine_code})")
+    st.divider()
+    
+    # 使用 tabs 來切換不同的管理功能
+    tab1, tab2, tab3 = st.tabs(["➕ 新增庫存項目", "✏️ 編輯庫存項目", "🗑️ 刪除庫存項目"])
+    
+    with tab1:
+        if can_create():
+            show_simple_inventory_form_inline(machine_id, mode="create")
+        else:
+            st.warning("⚠️ 您沒有新增庫存項目的權限")
+    
+    with tab2:
+        if can_update():
+            show_simple_inventory_form_inline(machine_id, mode="edit")
+        else:
+            st.warning("⚠️ 您沒有編輯庫存項目的權限")
+    
+    with tab3:
+        if can_delete():
+            show_simple_inventory_form_inline(machine_id, mode="delete")
+        else:
+            st.warning("⚠️ 您沒有刪除庫存項目的權限")
+
+
+def show_simple_inventory_form_inline(machine_id: int, mode: str = "create"):
+    """簡單的庫存管理表單（內聯版本，可在 dialog 中使用）"""
+    # 獲取機台的菜單項目
+    machine_menu = st.session_state.api.get_machine_current_menu_items(machine_id)
+    menu_items = []
+    
+    if machine_menu:
+        if isinstance(machine_menu, dict):
+            menu_items = machine_menu.get('items', [])
+        elif isinstance(machine_menu, list):
+            menu_items = machine_menu
+    
+    if not menu_items:
+        # 如果沒有機台專屬菜單，獲取所有菜單項目
+        menu_items = st.session_state.api.get_menu_items()
+    
+    if not menu_items:
+        st.error("❌ 無法獲取菜單項目，請先建立菜單項目")
         return
     
-    df = pd.DataFrame(df_data)
+    # 獲取當前庫存項目
+    inventory_data = st.session_state.api.get_machine_inventory(machine_id)
+    current_items = []
+    if inventory_data:
+        items = inventory_data.get('inventory_items') or inventory_data.get('items') or []
+        current_items = items
     
-    # 顯示表格
-    st.dataframe(
-        df,
-        use_container_width=True,
-        hide_index=True
-    )
+    if mode == "create":
+        st.markdown("### ➕ 新增庫存項目")
+        
+        with st.form("create_inventory_form"):
+            # 產品選擇
+            menu_options = {}
+            for item in menu_items:
+                product_code = item.get('product_code') or 'N/A'
+                name = item.get('name', 'Unknown')
+                display_name = f"{name} ({product_code})"
+                menu_options[display_name] = item.get('id')
+            
+            # 過濾已存在的項目
+            existing_menu_ids = {item.get('menu_item', {}).get('id') for item in current_items if item.get('menu_item')}
+            available_options = {k: v for k, v in menu_options.items() if v not in existing_menu_ids}
+            
+            if not available_options:
+                st.warning("⚠️ 所有菜單項目都已添加到庫存中")
+                return
+            
+            selected_menu_name = st.selectbox(
+                "選擇產品",
+                options=list(available_options.keys()),
+                key="create_menu_select"
+            )
+            selected_menu_id = available_options[selected_menu_name]
+            
+            # 最低閾值
+            min_threshold = st.number_input(
+                "最低閾值",
+                min_value=0,
+                value=10,
+                step=1,
+                key="create_min_threshold"
+            )
+            
+            # 最大容量
+            max_capacity = st.number_input(
+                "最大容量",
+                min_value=1,
+                value=100,
+                step=1,
+                key="create_max_capacity"
+            )
+            
+            col1, col2 = st.columns(2)
+            with col1:
+                if st.form_submit_button("💾 確認新增", type="primary", use_container_width=True):
+                    data = {
+                        "menu_item_id": selected_menu_id,
+                        "min_threshold": min_threshold,
+                        "max_capacity": max_capacity
+                    }
+                    result = st.session_state.api.create_inventory_item(machine_id, data)
+                    if result:
+                        st.success("✅ 新增成功！")
+                        time.sleep(1)
+                        st.rerun()
+                    else:
+                        st.error("❌ 新增失敗")
+            
+            with col2:
+                if st.form_submit_button("❌ 取消", use_container_width=True):
+                    st.rerun()
     
-    # 顯示每個項目的詳情和操作按鈕
-    st.markdown("---")
-    st.subheader("📦 庫存項目詳情")
+    elif mode == "edit":
+        st.markdown("### ✏️ 編輯庫存項目")
+        
+        if not current_items:
+            st.info("📝 此機台目前沒有庫存項目")
+            return
+        
+        # 選擇要編輯的項目
+        item_options = {}
+        for item in current_items:
+            menu_item = item.get('menu_item', {})
+            product_code = menu_item.get('product_code') or 'N/A'
+            name = menu_item.get('name', 'Unknown')
+            display_name = f"{name} ({product_code})"
+            item_options[display_name] = item
+        
+        selected_item_name = st.selectbox(
+            "選擇要編輯的庫存項目",
+            options=list(item_options.keys()),
+            key="edit_item_select"
+        )
+        selected_item = item_options[selected_item_name]
+        
+        with st.form("edit_inventory_form"):
+            # 顯示當前產品資訊（不可編輯）
+            menu_item = selected_item.get('menu_item', {})
+            product_code = menu_item.get('product_code') or 'N/A'
+            product_name = menu_item.get('name', 'Unknown')
+            st.info(f"**產品**: {product_name} ({product_code})")
+            
+            # 最低閾值
+            min_threshold = st.number_input(
+                "最低閾值",
+                min_value=0,
+                value=int(selected_item.get('min_threshold', 0)),
+                step=1,
+                key="edit_min_threshold"
+            )
+            
+            # 最大容量
+            max_capacity = st.number_input(
+                "最大容量",
+                min_value=1,
+                value=int(selected_item.get('max_capacity', 1)),
+                step=1,
+                key="edit_max_capacity"
+            )
+            
+            col1, col2 = st.columns(2)
+            with col1:
+                if st.form_submit_button("💾 確認更新", type="primary", use_container_width=True):
+                    data = {
+                        "min_threshold": min_threshold,
+                        "max_capacity": max_capacity
+                    }
+                    item_id = selected_item.get('id')
+                    success = st.session_state.api.update_inventory_item(machine_id, item_id, data)
+                    if success:
+                        st.success("✅ 更新成功！")
+                        time.sleep(1)
+                        st.rerun()
+                    else:
+                        st.error("❌ 更新失敗")
+            
+            with col2:
+                if st.form_submit_button("❌ 取消", use_container_width=True):
+                    st.rerun()
     
-    for item in items:
-        show_inventory_item_details(item, machine_id)
+    elif mode == "delete":
+        st.markdown("### 🗑️ 刪除庫存項目")
+        
+        if not current_items:
+            st.info("📝 此機台目前沒有庫存項目")
+            return
+        
+        # 選擇要刪除的項目
+        item_options = {}
+        for item in current_items:
+            menu_item = item.get('menu_item', {})
+            product_code = menu_item.get('product_code') or 'N/A'
+            name = menu_item.get('name', 'Unknown')
+            display_name = f"{name} ({product_code})"
+            item_options[display_name] = item
+        
+        selected_item_name = st.selectbox(
+            "選擇要刪除的庫存項目",
+            options=list(item_options.keys()),
+            key="delete_item_select"
+        )
+        selected_item = item_options[selected_item_name]
+        
+        # 顯示確認資訊
+        menu_item = selected_item.get('menu_item', {})
+        product_code = menu_item.get('product_code') or 'N/A'
+        product_name = menu_item.get('name', 'Unknown')
+        current_stock = selected_item.get('current_stock', 0)
+        
+        st.warning(f"⚠️ 確定要刪除以下庫存項目嗎？")
+        st.write(f"**產品**: {product_name} ({product_code})")
+        st.write(f"**當前庫存**: {current_stock}")
+        st.write(f"**最低閾值**: {selected_item.get('min_threshold', 0)}")
+        st.write(f"**最大容量**: {selected_item.get('max_capacity', 0)}")
+        
+        col1, col2 = st.columns(2)
+        with col1:
+            if st.button("🗑️ 確認刪除", type="primary", use_container_width=True, key="confirm_delete"):
+                item_id = selected_item.get('id')
+                success = st.session_state.api.delete_inventory_item(machine_id, item_id)
+                if success:
+                    st.success("✅ 刪除成功！")
+                    time.sleep(1)
+                    st.rerun()
+                else:
+                    st.error("❌ 刪除失敗")
+        
+        with col2:
+            if st.button("❌ 取消", use_container_width=True, key="cancel_delete"):
+                st.rerun()
+
+
+@st.dialog("📦 庫存管理", width="large")
+def show_simple_inventory_form(machine_id: int, mode: str = "create"):
+    """簡單的庫存管理表單（用於單機台檢視頁面，使用 dialog）"""
+    # 直接調用內聯版本
+    show_simple_inventory_form_inline(machine_id, mode)
 
 
 def format_date(date_str: Optional[str]) -> str:
@@ -311,55 +836,6 @@ def format_date(date_str: Optional[str]) -> str:
         return str(date_str) if date_str else 'N/A'
 
 
-def show_inventory_item_details(item: Dict, machine_id: int):
-    """顯示庫存項目詳情和操作按鈕"""
-    menu_item = item.get('menu_item', {})
-    item_name = menu_item.get('name', 'N/A')
-    current_stock = item.get('current_stock', 0)
-    min_threshold = item.get('min_threshold', 0)
-    
-    # 判斷庫存狀態
-    if current_stock == 0:
-        status_icon = "🔴"
-        status_text = "缺貨"
-    elif current_stock <= min_threshold:
-        status_icon = "🟡"
-        status_text = "低庫存"
-    else:
-        status_icon = "🟢"
-        status_text = "充足"
-    
-    with st.expander(f"{status_icon} {item_name} - {status_text}", expanded=False):
-        col1, col2 = st.columns(2)
-        
-        with col1:
-            st.write(f"**商品代碼**: {menu_item.get('product_code', 'N/A')}")
-            st.write(f"**當前庫存**: {current_stock}")
-            st.write(f"**最低閾值**: {min_threshold}")
-            st.write(f"**最大容量**: {item.get('max_capacity', 0)}")
-        
-        with col2:
-            if item.get('supplier'):
-                st.write(f"**供應商**: {item['supplier']}")
-            if item.get('batch_number'):
-                st.write(f"**批次編號**: {item['batch_number']}")
-            if item.get('expiry_date'):
-                st.write(f"**到期日**: {format_date(item['expiry_date'])}")
-            if item.get('cost_per_unit'):
-                st.write(f"**單位成本**: NT$ {item['cost_per_unit']:.2f}")
-        
-        # 操作按鈕（僅管理員）
-        if can_update():
-            col_edit, col_delete = st.columns(2)
-            
-            with col_edit:
-                if st.button("✏️ 編輯設定", key=f"edit_inv_{item['id']}"):
-                    show_edit_inventory_item_dialog(item, machine_id)
-            
-            with col_delete:
-                if can_delete():  # 僅超級管理員
-                    if st.button("🗑️ 移除項目", key=f"delete_inv_{item['id']}"):
-                        show_delete_inventory_item_dialog(item, machine_id)
 
 
 def show_low_stock_alert(low_stock_items: List[Dict]):

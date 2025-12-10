@@ -1,0 +1,170 @@
+{
+  "2": {
+    "machine_name": "成大資訊工程智慧餐機",
+    "machine_code": "SC-NCU-002",
+    "analysis": {
+      "total_items": 4,
+      "items_with_code": 0,
+      "items_without_code": 4,
+      "items_with_null": 4,
+      "items_with_empty": 0,
+      "details": [
+        {
+          "product_name": "台南雙主餐套餐",
+          "product_code_raw": null,
+          "product_code_type": "NoneType",
+          "is_none": true,
+          "is_empty_string": false,
+          "is_falsy": true,
+          "display_value": "N/A"
+        },
+        {
+          "product_name": "古早味肉粽套餐",
+          "product_code_raw": null,
+          "product_code_type": "NoneType",
+          "is_none": true,
+          "is_empty_string": false,
+          "is_falsy": true,
+          "display_value": "N/A"
+        },
+        {
+          "product_name": "花枝丸套餐",
+          "product_code_raw": null,
+          "product_code_type": "NoneType",
+          "is_none": true,
+          "is_empty_string": false,
+          "is_falsy": true,
+          "display_value": "N/A"
+        },
+        {
+          "product_name": "周氏蝦捲套餐",
+          "product_code_raw": null,
+          "product_code_type": "NoneType",
+          "is_none": true,
+          "is_empty_string": false,
+          "is_falsy": true,
+          "display_value": "N/A"
+        }
+      ]
+    }
+  },
+  "1": {
+    "machine_name": "測試機台 001",
+    "machine_code": "SC-NCU-001",
+    "analysis": {
+      "total_items": 4,
+      "items_with_code": 0,
+      "items_without_code": 4,
+      "items_with_null": 4,
+      "items_with_empty": 0,
+      "details": [
+        {
+          "product_name": "古早味肉粽套餐",
+          "product_code_raw": null,
+          "product_code_type": "NoneType",
+          "is_none": true,
+          "is_empty_string": false,
+          "is_falsy": true,
+          "display_value": "N/A"
+        },
+        {
+          "product_name": "肉粽輕食套餐",
+          "product_code_raw": null,
+          "product_code_type": "NoneType",
+          "is_none": true,
+          "is_empty_string": false,
+          "is_falsy": true,
+          "display_value": "N/A"
+        },
+        {
+          "product_name": "周氏蝦捲套餐",
+          "product_code_raw": null,
+          "product_code_type": "NoneType",
+          "is_none": true,
+          "is_empty_string": false,
+          "is_falsy": true,
+          "display_value": "N/A"
+        },
+        {
+          "product_name": "肉粽套餐",
+          "product_code_raw": null,
+          "product_code_type": "NoneType",
+          "is_none": true,
+          "is_empty_string": false,
+          "is_falsy": true,
+          "display_value": "N/A"
+        }
+      ]
+    }
+  },
+  "4": {
+    "machine_name": "新光三越智慧餐機",
+    "machine_code": "SC-SKM-001",
+    "analysis": {
+      "total_items": 0,
+      "items_with_code": 0,
+      "items_without_code": 0,
+      "items_with_null": 0,
+      "items_with_empty": 0,
+      "details": []
+    }
+  },
+  "5": {
+    "machine_name": "台南公園智慧餐機",
+    "machine_code": "SC-PRK-001",
+    "analysis": {
+      "total_items": 0,
+      "items_with_code": 0,
+      "items_without_code": 0,
+      "items_with_null": 0,
+      "items_with_empty": 0,
+      "details": []
+    }
+  },
+  "8": {
+    "machine_name": "測試機台 ENV-001",
+    "machine_code": "TEST-MACHINE-ENV-001",
+    "analysis": {
+      "total_items": 0,
+      "items_with_code": 0,
+      "items_without_code": 0,
+      "items_with_null": 0,
+      "items_with_empty": 0,
+      "details": []
+    }
+  },
+  "9": {
+    "machine_name": "測試智慧餐機",
+    "machine_code": "TEST-MACHINE-001",
+    "analysis": {
+      "total_items": 0,
+      "items_with_code": 0,
+      "items_without_code": 0,
+      "items_with_null": 0,
+      "items_with_empty": 0,
+      "details": []
+    }
+  },
+  "3": {
+    "machine_name": "台南火車站智慧餐機",
+    "machine_code": "SC-TRS-001",
+    "analysis": {
+      "total_items": 1,
+      "items_with_code": 0,
+      "items_without_code": 1,
+      "items_with_null": 1,
+      "items_with_empty": 0,
+      "details": [
+        {
+          "product_name": "Test Menu Item",
+          "product_code_raw": null,
+          "product_code_type": "NoneType",
+          "is_none": true,
+          "is_empty_string": false,
+          "is_falsy": true,
+          "display_value": "N/A"
+        }
+      ]
+    }
+  }
+}
