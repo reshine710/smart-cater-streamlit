@@ -14,6 +14,24 @@ def inventory_management_page():
     ui_logger.info(f"User {st.session_state.get('username', 'Unknown')} accessing inventory management page")
     st.title("📦 庫存管理")
     
+    # 添加重新整理按鈕（與機台狀態頁面一致）
+    col_title, col_refresh = st.columns([4, 1])
+    with col_title:
+        pass  # 保留標題空間
+    with col_refresh:
+        if st.button("🔄 重新整理", key="refresh_inventory_all", type="secondary", width='stretch'):
+            # 清除可能的快取，強制重新獲取資料
+            if 'inventory_cache' in st.session_state:
+                del st.session_state.inventory_cache
+            if 'machines_cache' in st.session_state:
+                del st.session_state.machines_cache
+            ui_logger.info("User triggered refresh inventory data")
+            st.success("✅ 正在重新整理庫存資料...")
+            time.sleep(0.5)  # 短暫延遲讓用戶看到提示
+            st.rerun()
+    
+    st.markdown("---")
+    
     # 獲取所有機台
     machines = st.session_state.api.get_machines()
     if not machines:
@@ -252,7 +270,7 @@ def show_machine_inventory_dialog(machine_id: int, machine_name: str, machine_co
         key=f"dialog_filter_{machine_id}"
     )
     
-    st.info("💡 提示：介面模擬真實機台排列，紅色代表庫存為 0，黃色代表低於安全庫存，綠色代表正常。")
+    # st.info("💡 提示：介面模擬真實機台排列，紅色代表庫存為 0，黃色代表低於安全庫存，綠色代表正常。")
     
     # 獲取庫存數據
     inventory_data = st.session_state.api.get_machine_inventory(machine_id)
@@ -393,7 +411,7 @@ def render_inventory_machine_card(machine_info: Dict, status_config: Dict, machi
             
             # 管理庫存按鈕（僅管理員）
             if can_create() or can_update():
-                if st.button("📦 管理庫存", key=f"manage_inventory_{machine_id}", use_container_width=True):
+                if st.button("🛠 管理庫存", key=f"manage_inventory_{machine_id}", use_container_width=True):
                     show_inventory_management_dialog(machine_id, machine_name, machine_code)
 
 
