@@ -1060,12 +1060,20 @@ def render_order_details(order: Dict):
                 or "-"
             )
 
-            # 商品代碼
+            # 商品代碼：優先使用 product_code，如果沒有則從 menu_item_id 查詢
             item_code = (
-                item.get("meal_id")
-                or item.get("product_code")
-                or item.get("menu_item_id")
+                item.get("product_code")
+                or item.get("meal_id")
             )
+            
+            # 如果沒有 product_code，嘗試從 menu_item_id 查詢
+            if not item_code:
+                menu_item_id = item.get("menu_item_id")
+                if menu_item_id:
+                    item_code = get_product_code_by_menu_item_id(menu_item_id)
+                    # 如果還是沒有，就使用 menu_item_id 作為備用顯示
+                    if not item_code:
+                        item_code = str(menu_item_id)
 
             # 商品數量（轉成整數，避免型別問題）
             raw_qty = item.get("quantity", item.get("qty", 0))
@@ -1102,36 +1110,84 @@ def render_order_details(order: Dict):
 
     total_quantity = order_quantity if order_quantity is not None else total_quantity_from_items
 
-    # ===== 建立菜單項目映射（用於查詢中文名稱） =====
+    # ===== 建立菜單項目映射（用於查詢中文名稱和商品代碼） =====
+    def get_menu_item_mapping():
+        """建立完整的菜單項目映射（包含 id -> product_code, product_code -> name 等）"""
+        try:
+            # 快取菜單項目列表
+            if "order_menu_items_full_cache" not in st.session_state:
+                api = st.session_state.get("api")
+                if api:
+                    menu_items = api.get_menu_items() or []
+                    # 建立多個映射
+                    name_by_code = {}  # product_code/meal_id -> name
+                    code_by_id = {}    # menu_item_id -> product_code
+                    name_by_id = {}    # menu_item_id -> name
+                    
+                    for item in menu_items:
+                        item_id = item.get("id")
+                        product_code = item.get("product_code")
+                        name = item.get("name")
+                        meal_id = item.get("meal_id")
+                        
+                        # product_code -> name 映射
+                        if product_code and name:
+                            name_by_code[product_code] = name
+                        # meal_id -> name 映射
+                        if meal_id and name:
+                            name_by_code[meal_id] = name
+                        
+                        # menu_item_id -> product_code 映射（關鍵！）
+                        if item_id is not None:
+                            if product_code:
+                                code_by_id[item_id] = product_code
+                            if name:
+                                name_by_id[item_id] = name
+                    
+                    st.session_state["order_menu_items_full_cache"] = {
+                        "name_by_code": name_by_code,
+                        "code_by_id": code_by_id,
+                        "name_by_id": name_by_id
+                    }
+                else:
+                    st.session_state["order_menu_items_full_cache"] = {
+                        "name_by_code": {},
+                        "code_by_id": {},
+                        "name_by_id": {}
+                    }
+            
+            return st.session_state.get("order_menu_items_full_cache", {
+                "name_by_code": {},
+                "code_by_id": {},
+                "name_by_id": {}
+            })
+        except Exception:
+            return {
+                "name_by_code": {},
+                "code_by_id": {},
+                "name_by_id": {}
+            }
+    
     def get_menu_item_name_by_code(product_code_or_meal_id):
         """根據 product_code 或 meal_id 查詢菜單項目中文名稱"""
         if not product_code_or_meal_id:
             return None
         
         try:
-            # 快取菜單項目列表
-            if "order_menu_items_cache" not in st.session_state:
-                api = st.session_state.get("api")
-                if api:
-                    menu_items = api.get_menu_items() or []
-                    # 建立映射：product_code -> name 和 meal_id -> name
-                    mapping = {}
-                    for item in menu_items:
-                        product_code = item.get("product_code")
-                        name = item.get("name")
-                        if product_code and name:
-                            mapping[product_code] = name
-                        # 如果有 meal_id 欄位，也加入映射
-                        meal_id = item.get("meal_id")
-                        if meal_id and name:
-                            mapping[meal_id] = name
-                    st.session_state["order_menu_items_cache"] = mapping
-                else:
-                    st.session_state["order_menu_items_cache"] = {}
-            
-            menu_cache = st.session_state.get("order_menu_items_cache", {})
-            return menu_cache.get(str(product_code_or_meal_id))
+            mapping = get_menu_item_mapping()
+            return mapping["name_by_code"].get(str(product_code_or_meal_id))
         except Exception:
+            return None
+    
+    def get_product_code_by_menu_item_id(menu_item_id):
+        """根據 menu_item_id 查詢 product_code"""
+        if menu_item_id is None:
+            return None
+        
+        try:
+            mapping = get_menu_item_mapping()
+            return mapping["code_by_id"].get(int(menu_item_id)) or mapping["code_by_id"].get(str(menu_item_id))
+        except (ValueError, TypeError, KeyError):
             return None
 
     # ===== 提取購買的餐點列表（格式：中文（product_code）） =====
@@ -1150,13 +1206,25 @@ def render_order_details(order: Dict):
             item_code = (
                 item.get("product_code")
                 or item.get("meal_id")
-                or item.get("menu_item_id")
-                or None
             )
             
+            # 如果沒有 product_code，嘗試從 menu_item_id 查詢
+            if not item_code:
+                menu_item_id = item.get("menu_item_id")
+                if menu_item_id:
+                    item_code = get_product_code_by_menu_item_id(menu_item_id)
+            
             # 如果沒有中文名稱，嘗試從菜單查詢
-            if not item_name_cn and item_code:
-                item_name_cn = get_menu_item_name_by_code(item_code)
+            if not item_name_cn:
+                # 先嘗試用 item_code 查詢
+                if item_code:
+                    item_name_cn = get_menu_item_name_by_code(item_code)
+                # 如果還是沒有，嘗試用 menu_item_id 查詢名稱
+                if not item_name_cn:
+                    menu_item_id = item.get("menu_item_id")
+                    if menu_item_id:
+                        mapping = get_menu_item_mapping()
+                        item_name_cn = mapping["name_by_id"].get(int(menu_item_id)) or mapping["name_by_id"].get(str(menu_item_id))
             
             # 格式化顯示：中文（product_code）
             if item_name_cn and item_code:
@@ -1176,11 +1244,25 @@ def render_order_details(order: Dict):
         item_code = (
             order.get("product_code")
             or order.get("meal_id")
-            or None
         )
         
-        if not item_name_cn and item_code:
-            item_name_cn = get_menu_item_name_by_code(item_code)
+        # 如果沒有 product_code，嘗試從 menu_item_id 查詢
+        if not item_code:
+            menu_item_id = order.get("menu_item_id")
+            if menu_item_id:
+                item_code = get_product_code_by_menu_item_id(menu_item_id)
+        
+        # 如果沒有中文名稱，嘗試從菜單查詢
+        if not item_name_cn:
+            # 先嘗試用 item_code 查詢
+            if item_code:
+                item_name_cn = get_menu_item_name_by_code(item_code)
+            # 如果還是沒有，嘗試用 menu_item_id 查詢名稱
+            if not item_name_cn:
+                menu_item_id = order.get("menu_item_id")
+                if menu_item_id:
+                    mapping = get_menu_item_mapping()
+                    item_name_cn = mapping["name_by_id"].get(int(menu_item_id)) or mapping["name_by_id"].get(str(menu_item_id))
         
         if item_name_cn and item_code:
             purchased_items_display.append(f"{item_name_cn}（{item_code}）")
@@ -1583,7 +1665,7 @@ def render_order_delete_tab():
 
 def order_management_page():
     """訂單管理主頁面"""
-    st.header("📦 訂單管理")
+    st.header("🧮 訂單管理")
     st.markdown("---")
     
     # 創建標籤頁

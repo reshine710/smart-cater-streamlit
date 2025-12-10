@@ -14,7 +14,8 @@ from modules import (
     sales_analytics_page,
     ai_recommendations_page,
     location_management_page,
-    order_management_page
+    order_management_page,
+    inventory_management_page
 )
 
 def show_main_app():
@@ -245,29 +246,6 @@ def show_user_management():
                 st.metric("總頁數", total_pages)
         else:
             st.info("目前沒有使用者資料")
-        st.markdown("---")
-        st.subheader("🚀 快速建立測試使用者")
-        col1, col2 = st.columns(2)
-        with col1:
-            if st.button("建立測試管理員", width="stretch"):
-                ui_logger.info("Admin attempting to create test admin user")
-                if st.session_state.api.register("testadmin", "testadmin@example.com", "testpassword", "Test Admin", True):
-                    auth_logger.info("Test admin user created successfully via UI")
-                    st.success("✅ 測試管理員建立成功！")
-                    st.rerun()
-                else:
-                    auth_logger.warning("Failed to create test admin user via UI")
-                    st.error("❌ 建立失敗，可能已存在")
-        with col2:
-            if st.button("👤 建立測試使用者", key="create_user"):
-                ui_logger.info("Admin attempting to create test regular user")
-                if st.session_state.api.register("testuser2", "testuser2@example.com", "testpassword", "Test User 2", False):
-                    auth_logger.info("Test regular user created successfully via UI")
-                    st.success("✅ 測試使用者建立成功！")
-                    st.rerun()
-                else:
-                    auth_logger.warning("Failed to create test regular user via UI")
-                    st.error("❌ 建立失敗")
     
     with tab_ai_recipients:
         st.subheader("🔔 AI 通知收件者管理")
@@ -510,6 +488,7 @@ def main():
             "📊 營運儀表板": "dashboard",
             # "📈 銷售數據": "sales_data",
             "🛒 商品管理": "inventory",
+            "📦 機台庫存": "inventory_management",
             "🤖 AI智能推薦": "ai_recommendations",
             # "🧾 配方設定": "settings"
         }
@@ -520,7 +499,7 @@ def main():
         from utils.permissions import is_admin_or_above
         if is_admin_or_above():
             pages["📍 地點管理"] = "location_management"
-            pages["📦 訂單管理"] = "order_management"
+            pages["🧮 訂單管理"] = "order_management"
             ui_logger.debug(f"Admin pages added for user {username}")
         
         # 僅超級管理員可訪問
@@ -590,6 +569,8 @@ def main():
         # sales_analytics_page()
     elif page_key == "inventory":
         menu_management_page()
+    elif page_key == "inventory_management":
+        inventory_management_page()
     elif page_key == "settings":
         recipe_settings_page()
     elif page_key == "user_management":

@@ -2775,6 +2775,256 @@ class VendingMachineAPI:
             st.error(f"❌ 獲取機台菜單時發生未預期的錯誤：{str(e)}")
             return None
 
+    # ===== 庫存管理 API =====
+    def get_machine_inventory(self, machine_id: int) -> Optional[Dict]:
+        """取得機台庫存資訊（含統計）"""
+        api_logger.info(f"Getting inventory for machine {machine_id}")
+        try:
+            response = requests.get(
+                f"{self.base_url}/machines/{machine_id}/inventory",
+                headers=self._get_auth_headers(),
+                timeout=10
+            )
+            
+            api_logger.debug(f"Inventory API response status: {response.status_code}")
+            
+            if response.status_code == 200:
+                result = response.json()
+                api_logger.info(f"Successfully retrieved inventory for machine {machine_id}")
+                # 記錄返回數據的結構（用於調試）
+                if isinstance(result, dict):
+                    items_count = len(result.get('items', []))
+                    total_items = result.get('total_items', 0)
+                    api_logger.debug(f"Inventory data structure - items: {items_count}, total_items: {total_items}")
+                else:
+                    api_logger.warning(f"Inventory data is not a dict: {type(result)}")
+                return result
+            elif response.status_code == 404:
+                api_logger.warning(f"Machine {machine_id} not found")
+                import streamlit as st
+                st.error(f"❌ 機台 {machine_id} 不存在")
+                return None
+            elif response.status_code in [401, 403]:
+                api_logger.warning("Unauthorized to get machine inventory")
+                import streamlit as st
+                st.error("❌ 權限不足：無法獲取機台庫存")
+                return None
+            else:
+                api_logger.warning(f"Failed to get machine inventory - Status: {response.status_code}")
+                try:
+                    error_detail = response.json()
+                    api_logger.debug(f"Error response: {error_detail}")
+                except:
+                    api_logger.debug(f"Error response text: {response.text}")
+                return None
+        except requests.exceptions.RequestException as e:
+            api_logger.error(f"Network error getting machine inventory: {str(e)}")
+            import streamlit as st
+            st.error(f"🌐 無法連接到 API 伺服器: {str(e)}")
+            return None
+        except Exception as e:
+            api_logger.error(f"Unexpected error getting machine inventory: {str(e)}")
+            return None
+    
+    def get_low_stock_items(self, machine_id: int) -> List[Dict]:
+        """取得低庫存項目"""
+        api_logger.info(f"Getting low stock items for machine {machine_id}")
+        try:
+            response = requests.get(
+                f"{self.base_url}/machines/{machine_id}/inventory/low-stock",
+                headers=self._get_auth_headers(),
+                timeout=10
+            )
+            
+            if response.status_code == 200:
+                result = response.json()
+                api_logger.info(f"Successfully retrieved low stock items for machine {machine_id}")
+                return result if isinstance(result, list) else result.get('items', [])
+            elif response.status_code == 404:
+                api_logger.warning(f"Machine {machine_id} not found")
+                return []
+            elif response.status_code in [401, 403]:
+                api_logger.warning("Unauthorized to get low stock items")
+                return []
+            else:
+                api_logger.warning(f"Failed to get low stock items - Status: {response.status_code}")
+                return []
+        except requests.exceptions.RequestException as e:
+            api_logger.error(f"Network error getting low stock items: {str(e)}")
+            return []
+        except Exception as e:
+            api_logger.error(f"Unexpected error getting low stock items: {str(e)}")
+            return []
+    
+    def create_inventory_item(self, machine_id: int, data: Dict) -> Optional[Dict]:
+        """新增庫存項目"""
+        api_logger.info(f"Creating inventory item for machine {machine_id}")
+        try:
+            response = requests.post(
+                f"{self.base_url}/machines/{machine_id}/inventory",
+                headers=self._get_auth_headers(),
+                json=data,
+                timeout=10
+            )
+            
+            if response.status_code in [200, 201]:
+                result = response.json()
+                api_logger.info(f"Successfully created inventory item for machine {machine_id}")
+                return result
+            elif response.status_code == 400:
+                error_detail = response.json().get('detail', '輸入錯誤')
+                api_logger.warning(f"Bad request creating inventory item: {error_detail}")
+                import streamlit as st
+                st.error(f"❌ 輸入錯誤: {error_detail}")
+                return None
+            elif response.status_code in [401, 403]:
+                error_msg = self._handle_403_error(response, "此操作需要管理員權限")
+                api_logger.warning("Unauthorized to create inventory item")
+                import streamlit as st
+                st.error(error_msg)
+                return None
+            else:
+                api_logger.warning(f"Failed to create inventory item - Status: {response.status_code}")
+                import streamlit as st
+                st.error(f"❌ 新增庫存項目失敗 - 狀態碼: {response.status_code}")
+                return None
+        except requests.exceptions.RequestException as e:
+            api_logger.error(f"Network error creating inventory item: {str(e)}")
+            import streamlit as st
+            st.error(f"🌐 無法連接到 API 伺服器: {str(e)}")
+            return None
+        except Exception as e:
+            api_logger.error(f"Unexpected error creating inventory item: {str(e)}")
+            return None
+    
+    def update_inventory_item(self, machine_id: int, item_id: int, data: Dict) -> bool:
+        """更新庫存項目設定"""
+        api_logger.info(f"Updating inventory item {item_id} for machine {machine_id}")
+        try:
+            response = requests.put(
+                f"{self.base_url}/machines/{machine_id}/inventory/{item_id}",
+                headers=self._get_auth_headers(),
+                json=data,
+                timeout=10
+            )
+            
+            if response.status_code in [200, 204]:
+                api_logger.info(f"Successfully updated inventory item {item_id}")
+                return True
+            elif response.status_code == 400:
+                error_detail = response.json().get('detail', '輸入錯誤')
+                api_logger.warning(f"Bad request updating inventory item: {error_detail}")
+                import streamlit as st
+                st.error(f"❌ 輸入錯誤: {error_detail}")
+                return False
+            elif response.status_code in [401, 403]:
+                error_msg = self._handle_403_error(response, "此操作需要管理員權限")
+                api_logger.warning("Unauthorized to update inventory item")
+                import streamlit as st
+                st.error(error_msg)
+                return False
+            elif response.status_code == 404:
+                api_logger.warning(f"Inventory item {item_id} not found")
+                import streamlit as st
+                st.error("❌ 找不到指定的庫存項目")
+                return False
+            else:
+                api_logger.warning(f"Failed to update inventory item - Status: {response.status_code}")
+                import streamlit as st
+                st.error(f"❌ 更新庫存項目失敗 - 狀態碼: {response.status_code}")
+                return False
+        except requests.exceptions.RequestException as e:
+            api_logger.error(f"Network error updating inventory item: {str(e)}")
+            import streamlit as st
+            st.error(f"🌐 無法連接到 API 伺服器: {str(e)}")
+            return False
+        except Exception as e:
+            api_logger.error(f"Unexpected error updating inventory item: {str(e)}")
+            return False
+    
+    def update_inventory_stock(self, machine_id: int, item_id: int, data: Dict) -> bool:
+        """更新庫存數量（補貨/銷售/調整）"""
+        api_logger.info(f"Updating stock for inventory item {item_id} in machine {machine_id}")
+        try:
+            response = requests.patch(
+                f"{self.base_url}/machines/{machine_id}/inventory/{item_id}/stock",
+                headers=self._get_auth_headers(),
+                json=data,
+                timeout=10
+            )
+            
+            if response.status_code in [200, 204]:
+                api_logger.info(f"Successfully updated stock for inventory item {item_id}")
+                return True
+            elif response.status_code == 400:
+                error_detail = response.json().get('detail', '輸入錯誤')
+                api_logger.warning(f"Bad request updating stock: {error_detail}")
+                import streamlit as st
+                st.error(f"❌ 輸入錯誤: {error_detail}")
+                return False
+            elif response.status_code in [401, 403]:
+                error_msg = self._handle_403_error(response, "此操作需要管理員權限")
+                api_logger.warning("Unauthorized to update stock")
+                import streamlit as st
+                st.error(error_msg)
+                return False
+            elif response.status_code == 404:
+                api_logger.warning(f"Inventory item {item_id} not found")
+                import streamlit as st
+                st.error("❌ 找不到指定的庫存項目")
+                return False
+            else:
+                api_logger.warning(f"Failed to update stock - Status: {response.status_code}")
+                import streamlit as st
+                st.error(f"❌ 更新庫存數量失敗 - 狀態碼: {response.status_code}")
+                return False
+        except requests.exceptions.RequestException as e:
+            api_logger.error(f"Network error updating stock: {str(e)}")
+            import streamlit as st
+            st.error(f"🌐 無法連接到 API 伺服器: {str(e)}")
+            return False
+        except Exception as e:
+            api_logger.error(f"Unexpected error updating stock: {str(e)}")
+            return False
+    
+    def delete_inventory_item(self, machine_id: int, item_id: int) -> bool:
+        """移除庫存項目（僅超級管理員）"""
+        api_logger.info(f"Deleting inventory item {item_id} from machine {machine_id}")
+        try:
+            response = requests.delete(
+                f"{self.base_url}/machines/{machine_id}/inventory/{item_id}",
+                headers=self._get_auth_headers(),
+                timeout=10
+            )
+            
+            if response.status_code in [200, 204]:
+                api_logger.info(f"Successfully deleted inventory item {item_id}")
+                return True
+            elif response.status_code in [401, 403]:
+                error_msg = self._handle_403_error(response, "此操作需要超級管理員權限")
+                api_logger.warning("Unauthorized to delete inventory item")
+                import streamlit as st
+                st.error(error_msg)
+                return False
+            elif response.status_code == 404:
+                api_logger.warning(f"Inventory item {item_id} not found")
+                import streamlit as st
+                st.error("❌ 找不到指定的庫存項目")
+                return False
+            else:
+                api_logger.warning(f"Failed to delete inventory item - Status: {response.status_code}")
+                import streamlit as st
+                st.error(f"❌ 移除庫存項目失敗 - 狀態碼: {response.status_code}")
+                return False
+        except requests.exceptions.RequestException as e:
+            api_logger.error(f"Network error deleting inventory item: {str(e)}")
+            import streamlit as st
+            st.error(f"🌐 無法連接到 API 伺服器: {str(e)}")
+            return False
+        except Exception as e:
+            api_logger.error(f"Unexpected error deleting inventory item: {str(e)}")
+            return False
+
     def _get_ai_auth_headers(self) -> dict:
         """獲取AI API認證標頭"""
         # 使用固定的AI API Key，實際應用中應該從環境變數或配置檔案讀取
