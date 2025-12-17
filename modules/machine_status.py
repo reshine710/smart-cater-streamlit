@@ -106,6 +106,23 @@ def show_machine_overview(machines: List[Dict]):
         white-space: nowrap;
         width: 100%;
     }
+    .machine-card-fridge-temp {
+        margin: 8px 0 0 0;
+        font-size: 0.8em;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        width: 100%;
+    }
+    .machine-card-inventory {
+        margin: 8px 0 0 0;
+        font-size: 0.8em;
+        color: #666;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        width: 100%;
+    }
     </style>
     """, unsafe_allow_html=True)
     
@@ -257,6 +274,28 @@ def render_machine_card(machine: Dict, status_config: Dict):
         fridge_temp = None
     fridge_temp_text, fridge_temp_color = format_fridge_temp(fridge_temp)
     
+    # 獲取前三個最低庫存品項的燈號
+    inventory_display = "📦 當前庫存: "
+    inventory_has_data = False
+    try:
+        if isinstance(machine_id, int):
+            top_stock_items = get_top_low_stock_items(machine_id, limit=3)
+            if top_stock_items:
+                # 將燈號連接成字串
+                indicators = ''.join([item['indicator'] for item in top_stock_items])
+                inventory_display += indicators
+                inventory_has_data = True
+            else:
+                inventory_display += "無資料"
+        else:
+            inventory_display += "無資料"
+    except Exception as e:
+        ui_logger.debug(f"Error displaying inventory for machine {machine_id}: {str(e)}")
+        inventory_display += "無資料"
+    
+    # 設定庫存顯示顏色：無資料時使用與「冰箱溫度: 未回報」相同的顏色 (#999999)
+    inventory_color = "#999999" if not inventory_has_data else "#666"
+    
     # 創建卡片容器
     with st.container():
         # 使用 CSS 類別 + 動態樣式（背景色和邊框色）
@@ -277,6 +316,9 @@ def render_machine_card(machine: Dict, status_config: Dict):
                 </p>
                 <p class="machine-card-fridge-temp" style="color: {fridge_temp_color};">
                     {fridge_temp_text}
+                </p>
+                <p class="machine-card-inventory" style="color: {inventory_color};">
+                    {inventory_display}
                 </p>
             </div>
         </div>
@@ -632,6 +674,92 @@ def format_fridge_temp(fridge_temp: Optional[float]) -> Tuple[str, str]:
         color = "#F44336"
     
     return f"❄️ 冰箱溫度: {temp_str}", color
+
+def get_stock_indicator(current_stock: int, min_threshold: int) -> str:
+    """
+    根據庫存數量和閾值返回對應的燈號
+    
+    Args:
+        current_stock: 當前庫存數量
+        min_threshold: 最小閾值
+    
+    Returns:
+        str: 🔴 (庫存為零), 🟡 (小於最小閾值), 或 🟢 (庫存充足)
+    """
+    if current_stock == 0:
+        return "🔴"
+    elif current_stock <= min_threshold:
+        return "🟡"
+    else:
+        return "🟢"
+
+def get_top_low_stock_items(machine_id: int, limit: int = 3) -> List[Dict]:
+    """
+    獲取機台前 N 個最低庫存的品項
+    
+    Args:
+        machine_id: 機台 ID
+        limit: 要返回的品項數量（預設為 3）
+    
+    Returns:
+        List[Dict]: 包含燈號和庫存資訊的列表，每個項目格式為：
+            {
+                'indicator': str,  # 燈號 (🔴, 🟡, 或 🟢)
+                'current_stock': int,
+                'min_threshold': int
+            }
+    """
+    try:
+        # 檢查 API 是否可用
+        if not hasattr(st.session_state, 'api') or not st.session_state.api:
+            return []
+        
+        # 獲取機台庫存資料
+        inventory_data = st.session_state.api.get_machine_inventory(machine_id)
+        
+        if not inventory_data:
+            return []
+        
+        # 提取庫存項目列表（支援不同的欄位名稱）
+        items = inventory_data.get('inventory_items') or inventory_data.get('items') or []
+        
+        if not items:
+            return []
+        
+        # 處理和過濾庫存項目
+        stock_items = []
+        for item in items:
+            current_stock = item.get('current_stock')
+            min_threshold = item.get('min_threshold', 0)
+            
+            # 只處理有效的庫存項目（current_stock 必須是數字）
+            if current_stock is not None and isinstance(current_stock, (int, float)):
+                stock_items.append({
+                    'current_stock': int(current_stock),
+                    'min_threshold': int(min_threshold) if min_threshold else 0
+                })
+        
+        if not stock_items:
+            return []
+        
+        # 按 current_stock 升序排序（最低庫存在前）
+        stock_items.sort(key=lambda x: x['current_stock'])
+        
+        # 取前 N 個並添加燈號
+        result = []
+        for item in stock_items[:limit]:
+            indicator = get_stock_indicator(item['current_stock'], item['min_threshold'])
+            result.append({
+                'indicator': indicator,
+                'current_stock': item['current_stock'],
+                'min_threshold': item['min_threshold']
+            })
+        
+        return result
+        
+    except Exception as e:
+        ui_logger.error(f"Error getting top low stock items for machine {machine_id}: {str(e)}")
+        return []
 
 def format_last_heartbeat_time(machine: Dict) -> str:
     """
