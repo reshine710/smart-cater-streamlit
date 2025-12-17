@@ -285,21 +285,23 @@ def show_machine_type_items_list(machine_items: List[Dict], machine_type: str):
     elif status_filter == "停用":
         filtered_items = [item for item in filtered_items if not item.get('is_active', False)]
     
+    # 按照 product_code 排序
+    filtered_items = sorted(filtered_items, key=lambda x: x.get('product_code', '') or '')
+    
     st.write(f"顯示 {len(filtered_items)} 個項目 (共 {len(machine_items)} 個)")
     
     # 顯示商品列表
     for i, item in enumerate(filtered_items):
         # 顯示原價（折扣率現在按機台管理，不在菜單項目中）
         price = item.get('price', 0)
-        price_display = f"NTD {price:.0f}"
+        price_value = int(price) if price else 0
         
-        # 獲取商品代號，如果有則在名稱後加上括號顯示
-        product_code = item.get('product_code', '')
-        name_display = item.get('name', 'Unknown')
-        if product_code:
-            name_display = f"{name_display} ({product_code})"
+        # 獲取商品代號和餐點名稱，按照新格式：<product code>_<餐點中文名稱>_NTD <價錢>
+        product_code = item.get('product_code', '') or ''
+        name = item.get('name', 'Unknown')
+        name_display = f"{product_code}_{name}_NTD {price_value}" if product_code else f"{name}_NTD {price_value}"
         
-        with st.expander(f"{'✅' if item.get('is_active', False) else '❌'} {name_display} - {price_display}", expanded=False):
+        with st.expander(f"{'✅' if item.get('is_active', False) else '❌'} {name_display}", expanded=False):
             show_menu_item_details(item, i)
 
 
