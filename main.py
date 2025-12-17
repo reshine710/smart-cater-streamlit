@@ -559,8 +559,17 @@ def main():
         
         # 版本號顯示
         st.markdown("---")
-        st.caption("🖥️ 前端版本：v0.5.4")
-        st.caption(f"⚙️ 後端版本：{backend_version if api_connected else '未連接'}")
+        st.caption("🖥️ 前端版本：v0.6.1")
+        # 格式化後端版本號顯示
+        if api_connected:
+            # 確保版本號有 v 前綴
+            if backend_version and backend_version != 'Unknown':
+                formatted_version = backend_version if backend_version.startswith('v') else f"v{backend_version}"
+            else:
+                formatted_version = "v0.5.1"  # 預設版本
+        else:
+            formatted_version = "v0.5.1"  # 未連接時顯示預設版本
+        st.caption(f"⚙️ 後端版本：{formatted_version}")
         
     # 顯示頁面內容
     if page_key == "machine_status":
