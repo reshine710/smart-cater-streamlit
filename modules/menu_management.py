@@ -32,16 +32,21 @@ def format_discount_text(discount_rate: Optional[float]) -> str:
         例如：0.7 表示支付70% → "7折"，0.95 表示支付95% → "95折"，0.65 表示支付65% → "65折"
     
     Returns:
-        str: 折扣文字（如 "7折"、"95折"、"65折"、"無折扣"）
+        str: 折扣文字（如 "7折"、"95折"、"65折"、"原價"、"無折扣"）
     
     台灣折扣表示：
     - 5折 = 支付50% (discount_rate=0.5)
     - 7折 = 支付70% (discount_rate=0.7)
     - 65折 = 支付65% (discount_rate=0.65)
     - 95折 = 支付95% (discount_rate=0.95)
+    - 原價 = 支付100% (discount_rate=1.0)
     """
     if discount_rate is None:
         return '無折扣'
+    
+    # 如果折扣率為 1.0（原價），直接返回「原價」
+    if discount_rate >= 1.0:
+        return '原價'
     
     # 將折扣率轉換為百分比
     percentage = discount_rate * 100
