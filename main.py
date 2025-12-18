@@ -3,6 +3,7 @@ import pandas as pd
 from utils import init_session_state, VendingMachineAPI, API_BASE_URL
 from datetime import datetime
 from logger_config import auth_logger, ui_logger, system_logger
+import warnings
 from idle_logout import init_idle_tracking, check_idle_timeout, update_activity_time, render_idle_status_widget
 from idle_tracker_component import render_idle_tracker
 from ai_notification import render_ai_notification_widget, render_notification_auto_refresh
@@ -622,6 +623,16 @@ def check_api_connection() -> tuple:
 
 
 if __name__ == "__main__":
+    # 關閉特定 Plotly 棄用警告，避免干擾畫面顯示
+    try:
+        warnings.filterwarnings(
+            "ignore",
+            message="The keyword arguments have been deprecated and will be removed in a future release. Use `config` instead to specify Plotly configuration options.",
+        )
+    except Exception:
+        # 若過濾設定失敗，僅記錄日誌，不影響主程式
+        system_logger.debug("Failed to apply Plotly deprecation warning filter")
+
     system_logger.info("Application starting...")
     main()
     system_logger.info("Application session ended")

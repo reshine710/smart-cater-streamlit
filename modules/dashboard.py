@@ -4,6 +4,7 @@ import numpy as np
 import plotly.express as px
 from datetime import datetime, timedelta
 import random
+import warnings
 
 DAY_THRESHOLD = 3
 
@@ -296,7 +297,14 @@ def dashboard_page():
                             )
                         )
                         
-                        st.plotly_chart(fig)
+                        # Plotly 目前會對部份關鍵字參數發出棄用警告，這裡局部關閉該警告避免顯示在畫面上
+                        with warnings.catch_warnings():
+                            warnings.filterwarnings(
+                                "ignore",
+                                message=r"The keyword arguments have been deprecated and will be removed in a future release.*",
+                                category=UserWarning,
+                            )
+                            st.plotly_chart(fig)
                 except Exception as e:
                     st.error(f"時間戳解析錯誤: {str(e)}")
                     # 顯示原始時間戳格式以便調試
@@ -357,12 +365,26 @@ def dashboard_page():
                 if quantity_field:
                     item_sales = df_sales.groupby(label_field)[quantity_field].sum().reset_index()
                     fig = px.pie(item_sales, values=quantity_field, names=label_field, title='商品銷量分布')
-                    st.plotly_chart(fig)
+                    # 局部關閉 Plotly 棄用警告，避免黃色提示干擾畫面
+                    with warnings.catch_warnings():
+                        warnings.filterwarnings(
+                            "ignore",
+                            message=r"The keyword arguments have been deprecated and will be removed in a future release.*",
+                            category=UserWarning,
+                        )
+                        st.plotly_chart(fig)
                 else:
                     # 如果沒有數量欄位，按交易次數統計
                     item_sales = df_sales.groupby(label_field).size().reset_index(name='count')
                     fig = px.pie(item_sales, values='count', names=label_field, title='商品交易次數分布')
-                    st.plotly_chart(fig)
+                    # 局部關閉 Plotly 棄用警告，避免黃色提示干擾畫面
+                    with warnings.catch_warnings():
+                        warnings.filterwarnings(
+                            "ignore",
+                            message=r"The keyword arguments have been deprecated and will be removed in a future release.*",
+                            category=UserWarning,
+                        )
+                        st.plotly_chart(fig)
             else:
                 st.info("📊 無法找到商品名稱欄位，無法顯示銷量圖")
         else:
@@ -556,7 +578,8 @@ def dashboard_page():
                             "total_quantity": "銷售數量",
                         }
                     )
-                    st.dataframe(display_df, width='stretch')
+                    # 不顯示索引欄位（避免最左側出現 0,1,2... 的ID欄）
+                    st.dataframe(display_df, width='stretch', hide_index=True)
 
                     # 顯示長條圖
                     fig_rank = px.bar(
@@ -571,8 +594,21 @@ def dashboard_page():
                         },
                         title=f"商品{metric_choice}排行（Top {top_n}）",
                     )
-                    fig_rank.update_layout(yaxis=dict(autorange="reversed"))
-                    st.plotly_chart(fig_rank, width='stretch')
+                    # 固定讓長條不要貼滿整個寬度（特別是只有 1 筆資料時）
+                    max_val = agg_df["total_amount" if metric_choice == "銷售金額" else "total_quantity"].max()
+                    x_max = float(max_val) * 1.2 if max_val and max_val > 0 else 1.0
+                    fig_rank.update_layout(
+                        yaxis=dict(autorange="reversed"),
+                        xaxis=dict(range=[0, x_max]),
+                    )
+                    # 局部關閉 Plotly 棄用警告，避免黃色提示干擾畫面
+                    with warnings.catch_warnings():
+                        warnings.filterwarnings(
+                            "ignore",
+                            message=r"The keyword arguments have been deprecated and will be removed in a future release.*",
+                            category=UserWarning,
+                        )
+                        st.plotly_chart(fig_rank, width='stretch')
 
     with col_rank2:
         st.markdown("#### 🏪 機台銷售排行")
@@ -580,6 +616,8 @@ def dashboard_page():
             st.info("📊 選定期間內沒有銷售資料，無法產生機台排行")
         else:
             # 建立機台 ID / code -> 名稱 的對照
+            # 注意：某些交易資料的 machine_id 可能是文字型別的 machine_code，
+            # 因此這裡同時用「字串版 id」與「code」兩種 key 來建立映射，避免對不到。
             machine_by_id = {}
             machine_by_code = {}
             for m in machines or []:
@@ -592,10 +630,15 @@ def dashboard_page():
                 label_name = mname or mcode or "未命名機台"
                 if loc_name:
                     label_name = f"{label_name} - {loc_name}"
+
+                # 以「字串 id」作為 key，以容納 int / str 不同型別
                 if mid is not None:
-                    machine_by_id[mid] = {"label": label_name, "code": mcode}
+                    id_key = str(mid)
+                    machine_by_id[id_key] = {"label": label_name, "code": mcode}
+
                 if mcode:
-                    machine_by_code[mcode] = {"label": label_name, "code": mcode}
+                    code_key = str(mcode)
+                    machine_by_code[code_key] = {"label": label_name, "code": mcode}
 
             machine_id_field = None
             for field in ["machine_id", "machineId"]:
@@ -613,19 +656,34 @@ def dashboard_page():
                 st.info("📊 無法找到機台欄位（machine_id / machine_code），無法產生機台排行")
             else:
                 def _compose_machine_label(row):
-                    mid = row.get(machine_id_field) if machine_id_field else None
-                    mcode = row.get(machine_code_field) if machine_code_field else None
+                    # 先取出原始欄位
+                    raw_mid = row.get(machine_id_field) if machine_id_field else None
+                    raw_mcode = row.get(machine_code_field) if machine_code_field else None
+
+                    # 正規化成字串 key
+                    mid_key = str(raw_mid) if raw_mid is not None else None
+                    code_key = str(raw_mcode) if raw_mcode is not None else None
+
                     info = None
-                    if mid is not None and mid in machine_by_id:
-                        info = machine_by_id[mid]
-                    elif mcode is not None and str(mcode) in machine_by_code:
-                        info = machine_by_code[str(mcode)]
+
+                    # 1) 先嘗試用 id 對映（機台列表中的 id 可能是 int，但這裡統一轉成字串）
+                    if mid_key is not None and mid_key in machine_by_id:
+                        info = machine_by_id[mid_key]
+                    # 2) 再用 machine_code 對映
+                    elif code_key is not None and code_key in machine_by_code:
+                        info = machine_by_code[code_key]
+                    # 3) 若 machine_id 看起來像是 code（例如 "SC-NCU-002"），也試著用 code 查一次
+                    elif mid_key is not None and mid_key in machine_by_code:
+                        info = machine_by_code[mid_key]
+
                     if info:
                         return info["label"]
-                    if mcode:
-                        return f"未知機台({mcode})"
-                    if mid is not None:
-                        return f"未知機台(ID:{mid})"
+
+                    # 找不到對應時，給出盡量有資訊的 fallback 標籤
+                    if code_key:
+                        return f"未知機台({code_key})"
+                    if mid_key:
+                        return f"未知機台(ID:{mid_key})"
                     return "未知機台"
 
                 prepared_df["__machine_label"] = prepared_df.apply(_compose_machine_label, axis=1)
@@ -686,7 +744,8 @@ def dashboard_page():
                             "transaction_count": "交易筆數",
                         }
                     )
-                    st.dataframe(display_m, width='stretch')
+                    # 不顯示索引欄位（避免最左側出現 0,1,2... 的ID欄）
+                    st.dataframe(display_m, width='stretch', hide_index=True)
 
                     fig_machine = px.bar(
                         agg_m,
@@ -701,8 +760,21 @@ def dashboard_page():
                         },
                         title=f"機台{metric_choice_m}排行（Top {top_n_m}）",
                     )
-                    fig_machine.update_layout(yaxis=dict(autorange="reversed"))
-                    st.plotly_chart(fig_machine, width='stretch')
+                    # 固定讓長條不要貼滿整個寬度（特別是只有 1 筆資料時）
+                    max_val_m = agg_m[x_field].max()
+                    x_max_m = float(max_val_m) * 1.2 if max_val_m and max_val_m > 0 else 1.0
+                    fig_machine.update_layout(
+                        yaxis=dict(autorange="reversed"),
+                        xaxis=dict(range=[0, x_max_m]),
+                    )
+                    # 局部關閉 Plotly 棄用警告，避免黃色提示干擾畫面
+                    with warnings.catch_warnings():
+                        warnings.filterwarnings(
+                            "ignore",
+                            message=r"The keyword arguments have been deprecated and will be removed in a future release.*",
+                            category=UserWarning,
+                        )
+                        st.plotly_chart(fig_machine, width='stretch')
 
 def generate_demo_sales_data(start_date, end_date):
     """生成14天的真實模擬銷售數據（與 sales_analytics 相同）"""
