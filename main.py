@@ -533,11 +533,15 @@ def main():
                 if is_current_page:
                     # 當前頁面使用主要按鈕樣式
                     if st.button(page_name, key=f"nav_{page_value}", type="primary", width='stretch'):
+                        # 切換頁面時刷新閒置計時，避免誤判為閒置
+                        update_activity_time()
                         st.session_state.current_page = page_name
                         st.rerun()
                 else:
                     # 其他頁面使用次要按鈕樣式
                     if st.button(page_name, key=f"nav_{page_value}", width='stretch'):
+                        # 切換頁面時刷新閒置計時，避免誤判為閒置
+                        update_activity_time()
                         st.session_state.current_page = page_name
                         st.rerun()
             
@@ -550,8 +554,8 @@ def main():
             
             system_logger.info(f"API connection status: {'Connected' if api_connected else 'Offline'}")
         
-        # 閒置狀態顯示
-        render_idle_status_widget()
+        # （暫時隱藏）閒置狀態顯示小工具
+        # render_idle_status_widget()
         
         # AI 通知自動刷新
         st.markdown("---")

@@ -456,7 +456,7 @@ def render_notification_auto_refresh(refresh_interval: int = 60):
         
         with col1:
             if time_remaining > 0:
-                st.caption(f"🔄 下次自動檢查: {time_remaining}秒")
+                st.caption(f"🔄 自動檢查剩餘時間: {time_remaining}秒")
             else:
                 st.caption(f"🔄 正在檢查新推薦...")
         
