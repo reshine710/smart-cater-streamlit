@@ -50,7 +50,6 @@ def inventory_management_page():
 
 def show_inventory_dashboard(machines: List[Dict]):
     """顯示全域戰情看板"""
-    st.markdown("### 全網運營概況")
     
     # 注入全局 CSS 樣式（與機台狀態頁面一致）
     st.markdown("""
@@ -395,12 +394,12 @@ def render_inventory_machine_card(machine_info: Dict, status_config: Dict, machi
                 <p class="machine-card-info" style="margin-top: 8px;">
                     📦 總項目: {total_items} | 缺貨: {stockout_items} | 低庫存: {low_stock_items}
                 </p>
-                <p class="machine-card-info" style="margin-top: 5px; font-weight: bold;">
-                    健康度: {health_percentage}%
-                </p>
             </div>
         </div>
         """
+        # <p class="machine-card-info" style="margin-top: 5px; font-weight: bold;">
+        #        庫存警示燈號: {status_config['icon']}
+        # </p>
         
         st.markdown(card_style, unsafe_allow_html=True)
         
