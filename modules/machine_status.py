@@ -590,7 +590,7 @@ def render_machine_card(machine: Dict, status_config: Dict):
                             )
                             
                             # 顯示圖表，使用 Streamlit 主題（自動跟隨 light/dark）
-                            st.plotly_chart(fig, use_container_width=True, theme="streamlit")
+                            st.plotly_chart(fig, width='stretch', theme="streamlit")
                         else:
                             # 顯示調試信息（僅在開發模式下）
                             total_records = len(records)
@@ -705,20 +705,20 @@ def render_machine_card(machine: Dict, status_config: Dict):
             # 編輯機台按鈕（管理員或以上）
             if is_admin:
                 st.markdown("**機台管理**")
-                if st.button("✏️ 編輯機台資訊", key=f"edit_machine_{machine_id}", use_container_width=True):
+                if st.button("✏️ 編輯機台資訊", key=f"edit_machine_{machine_id}", width='stretch'):
                     show_edit_machine_dialog(machine)
             
             # 菜單查看按鈕（所有用戶）
             st.markdown("**菜單資訊**")
             # 按鈕從上而下垂直排列
-            if st.button("📋 當前菜單", key=f"view_menu_{machine_id}", use_container_width=True, type="primary"):
+            if st.button("📋 當前菜單", key=f"view_menu_{machine_id}", width='stretch', type="primary"):
                 show_machine_menu_dialog(machine_id, machine_name)
             # 編輯菜單按鈕（管理員或以上可見）
             from utils.permissions import is_admin_or_above
             if is_admin_or_above():
-                if st.button("📋 設定菜單項目", key=f"edit_menu_items_{machine_id}", use_container_width=True):
+                if st.button("📋 設定菜單項目", key=f"edit_menu_items_{machine_id}", width='stretch'):
                     show_edit_machine_menu_items_dialog(machine_id, machine_name)
-                if st.button("💰 設定折扣率", key=f"edit_menu_discount_{machine_id}", use_container_width=True):
+                if st.button("💰 設定折扣率", key=f"edit_menu_discount_{machine_id}", width='stretch'):
                     show_edit_machine_menu_discount_dialog(machine_id, machine_name)
 
 def format_fridge_temp(fridge_temp: Optional[float]) -> Tuple[str, str]:
@@ -2148,7 +2148,7 @@ def _show_fridge_temperature_history_tab(machine_id: int, machine_name: str):
         with col_date3:
             st.write("")  # 空白行，用於對齊
             st.write("")  # 空白行，用於對齊
-            query_button = st.button("🔍 查詢", key=f"query_fridge_temp_{machine_id}", type="primary", use_container_width=True)
+            query_button = st.button("🔍 查詢", key=f"query_fridge_temp_{machine_id}", type="primary", width='stretch')
         
         # 驗證日期範圍
         if start_date > end_date:
@@ -2343,7 +2343,7 @@ def _show_fridge_temperature_history_tab(machine_id: int, machine_name: str):
         )
         
         # 顯示圖表
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig, width='stretch')
         
         # 顯示數據表格（可選）
         # with st.expander("📋 查看詳細數據", expanded=False):
@@ -2504,7 +2504,7 @@ def _show_fridge_temperature_settings_tab(machine_id: int, machine_name: str, ma
             alert_enabled = current_alert_enabled  # 隱藏 checkbox，使用當前設定值
             
             # 表單提交按鈕
-            submit_button = st.form_submit_button("💾 儲存設定", type="primary", use_container_width=True)
+            submit_button = st.form_submit_button("💾 儲存設定", type="primary", width='stretch')
             
             # 處理表單提交
             if submit_button:
@@ -2546,7 +2546,7 @@ def _show_fridge_temperature_settings_tab(machine_id: int, machine_name: str, ma
         if alert_status and (alert_status.get('is_over_limit') or alert_status.get('alert_sent')):
             st.markdown("---")
             st.markdown("### 🔄 告警管理")
-            if st.button("🔄 重置告警狀態", key=f"reset_alert_{machine_id}", use_container_width=True, help="手動重置告警狀態，清除倒數計時器"):
+            if st.button("🔄 重置告警狀態", key=f"reset_alert_{machine_id}", width='stretch', help="手動重置告警狀態，清除倒數計時器"):
                 if st.session_state.api.reset_fridge_temperature_alert(machine_id):
                     st.rerun()
         

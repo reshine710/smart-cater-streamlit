@@ -405,12 +405,12 @@ def render_inventory_machine_card(machine_info: Dict, status_config: Dict, machi
         
         # 點擊按鈕來顯示詳細透視畫面
         if machine_id:
-            if st.button("🔍 查看詳細", key=f"view_detail_{machine_id}", use_container_width=True):
+            if st.button("🔍 查看詳細", key=f"view_detail_{machine_id}", width='stretch'):
                 show_machine_inventory_dialog(machine_id, machine_name, machine_code, location)
             
             # 管理庫存按鈕（僅管理員）
             if can_create() or can_update():
-                if st.button("🛠 管理庫存", key=f"manage_inventory_{machine_id}", use_container_width=True):
+                if st.button("🛠 管理庫存", key=f"manage_inventory_{machine_id}", width='stretch'):
                     show_inventory_management_dialog(machine_id, machine_name, machine_code)
 
 
@@ -474,19 +474,19 @@ def show_machine_detail_view(machines: List[Dict]):
         col_add, col_edit, col_delete = st.columns(3)
         
         with col_add:
-            if st.button("➕ 新增庫存項目", use_container_width=True, key="add_inventory_btn"):
+            if st.button("➕ 新增庫存項目", width='stretch', key="add_inventory_btn"):
                 show_simple_inventory_form(selected_machine_id, mode="create")
         
         with col_edit:
-            if st.button("✏️ 編輯庫存項目", use_container_width=True, key="edit_inventory_btn"):
+            if st.button("✏️ 編輯庫存項目", width='stretch', key="edit_inventory_btn"):
                 show_simple_inventory_form(selected_machine_id, mode="edit")
         
         with col_delete:
             if can_delete():
-                if st.button("🗑️ 刪除庫存項目", use_container_width=True, key="delete_inventory_btn"):
+                if st.button("🗑️ 刪除庫存項目", width='stretch', key="delete_inventory_btn"):
                     show_simple_inventory_form(selected_machine_id, mode="delete")
             else:
-                st.button("🗑️ 刪除庫存項目", use_container_width=True, key="delete_inventory_btn_disabled", disabled=True)
+                st.button("🗑️ 刪除庫存項目", width='stretch', key="delete_inventory_btn_disabled", disabled=True)
     
     st.divider()
     
@@ -694,7 +694,7 @@ def show_simple_inventory_form_inline(machine_id: int, mode: str = "create"):
             
             col1, col2 = st.columns(2)
             with col1:
-                if st.form_submit_button("💾 確認新增", type="primary", use_container_width=True):
+                if st.form_submit_button("💾 確認新增", type="primary", width='stretch'):
                     data = {
                         "menu_item_id": selected_menu_id,
                         "min_threshold": min_threshold,
@@ -709,7 +709,7 @@ def show_simple_inventory_form_inline(machine_id: int, mode: str = "create"):
                         st.error("❌ 新增失敗")
             
             with col2:
-                if st.form_submit_button("❌ 取消", use_container_width=True):
+                if st.form_submit_button("❌ 取消", width='stretch'):
                     st.rerun()
     
     elif mode == "edit":
@@ -762,7 +762,7 @@ def show_simple_inventory_form_inline(machine_id: int, mode: str = "create"):
             
             col1, col2 = st.columns(2)
             with col1:
-                if st.form_submit_button("💾 確認更新", type="primary", use_container_width=True):
+                if st.form_submit_button("💾 確認更新", type="primary", width='stretch'):
                     data = {
                         "min_threshold": min_threshold,
                         "max_capacity": max_capacity
@@ -777,7 +777,7 @@ def show_simple_inventory_form_inline(machine_id: int, mode: str = "create"):
                         st.error("❌ 更新失敗")
             
             with col2:
-                if st.form_submit_button("❌ 取消", use_container_width=True):
+                if st.form_submit_button("❌ 取消", width='stretch'):
                     st.rerun()
     
     elif mode == "delete":
@@ -817,7 +817,7 @@ def show_simple_inventory_form_inline(machine_id: int, mode: str = "create"):
         
         col1, col2 = st.columns(2)
         with col1:
-            if st.button("🗑️ 確認刪除", type="primary", use_container_width=True, key="confirm_delete"):
+            if st.button("🗑️ 確認刪除", type="primary", width='stretch', key="confirm_delete"):
                 item_id = selected_item.get('id')
                 success = st.session_state.api.delete_inventory_item(machine_id, item_id)
                 if success:
@@ -828,7 +828,7 @@ def show_simple_inventory_form_inline(machine_id: int, mode: str = "create"):
                     st.error("❌ 刪除失敗")
         
         with col2:
-            if st.button("❌ 取消", use_container_width=True, key="cancel_delete"):
+            if st.button("❌ 取消", width='stretch', key="cancel_delete"):
                 st.rerun()
 
 
@@ -1376,7 +1376,7 @@ def show_inventory_statistics(machine_id: int):
                 names=list(status_counts.keys()),
                 title="庫存狀態分布"
             )
-            st.plotly_chart(fig, use_container_width=True)
+            st.plotly_chart(fig, width='stretch')
         else:
             st.info("沒有數據可顯示")
     
@@ -1406,7 +1406,7 @@ def show_inventory_statistics(machine_id: int):
                 title="各商品庫存容量使用率（前10名）"
             )
             fig.update_xaxes(tickangle=45)
-            st.plotly_chart(fig, use_container_width=True)
+            st.plotly_chart(fig, width='stretch')
         else:
             st.info("沒有數據可顯示")
     
@@ -1429,6 +1429,6 @@ def show_inventory_statistics(machine_id: int):
             }
             for item in low_stock_items
         ])
-        st.dataframe(low_stock_df, use_container_width=True, hide_index=True)
+        st.dataframe(low_stock_df, width='stretch', hide_index=True)
     else:
         st.success("✅ 目前沒有低庫存項目")

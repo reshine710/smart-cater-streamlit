@@ -368,6 +368,342 @@ def dashboard_page():
         else:
             st.info("📊 暫無銷售資料")
 
+    # 排行區域：商品排行與機台排行
+    st.markdown("---")
+    st.subheader("🏆 銷售排行分析")
+
+    col_rank1, col_rank2 = st.columns(2)
+
+    # 共同：將 transactional data 轉成 DataFrame 並計算單筆交易金額
+    def _prepare_sales_df_for_ranking(raw_sales):
+        """將 sales_data 轉成 DataFrame，補上 total_amount 與 quantity 欄位，供排行使用"""
+        if not raw_sales:
+            return None
+        df = pd.DataFrame(raw_sales)
+
+        # 嘗試找出時間欄位（部分統計可能需要）
+        timestamp_field = None
+        for field in ['timestamp', 'created_at', 'order_date', 'date', 'transaction_time', 'order_time', 'purchase_timestamp']:
+            if field in df.columns:
+                timestamp_field = field
+                break
+
+        # 數值欄位轉型
+        for col in ['price', 'unit_price', 'unitPrice', 'amount', 'total_amount',
+                    'quantity', 'qty', 'count', 'quantity_sold', 'subtotal', 'total']:
+            if col in df.columns:
+                df[col] = pd.to_numeric(df[col], errors='coerce')
+
+        # 計算每筆交易的 total_amount（與上方營收邏輯保持一致）
+        if 'total_amount' in df.columns:
+            orig_total_amount = df['total_amount'].copy()
+        else:
+            orig_total_amount = pd.Series([np.nan] * len(df), index=df.index)
+
+        computed_totals = []
+        for idx, row in df.iterrows():
+            candidates_primary = [
+                row.get('subtotal'),
+                row.get('total'),
+                orig_total_amount.iloc[idx],
+                row.get('amount'),
+            ]
+            subtotal = next((v for v in candidates_primary if pd.notna(v) and float(v) != 0.0), None)
+            if subtotal is None:
+                price = next((v for v in [
+                    row.get('price'),
+                    row.get('unit_price'),
+                    row.get('unitPrice'),
+                ] if pd.notna(v)), 0.0)
+                quantity = next((v for v in [
+                    row.get('quantity'),
+                    row.get('count'),
+                    row.get('quantity_sold'),
+                    row.get('qty'),
+                ] if pd.notna(v)), 1.0)
+                subtotal = float(price or 0.0) * float(quantity or 0.0)
+            computed_totals.append(float(subtotal or 0.0))
+
+        df['total_amount'] = pd.to_numeric(pd.Series(computed_totals, index=df.index), errors='coerce').fillna(0.0)
+
+        # 統一一個「數量」欄位供後續使用
+        quantity_field = None
+        for field in ['quantity', 'count', 'quantity_sold', 'qty']:
+            if field in df.columns:
+                quantity_field = field
+                break
+        if quantity_field:
+            df['__quantity_for_rank'] = pd.to_numeric(df[quantity_field], errors='coerce').fillna(0.0)
+        else:
+            # 若沒有明確數量欄位，就以每筆交易視為 1
+            df['__quantity_for_rank'] = 1.0
+
+        # 依選取日期區間過濾（若有時間欄位）
+        if timestamp_field:
+            df[timestamp_field] = (
+                df[timestamp_field]
+                .astype(str)
+                .str.replace(r'\.\d+', '', regex=True)
+                .str.replace('Z', '', regex=False)
+            )
+            df['__timestamp'] = pd.to_datetime(df[timestamp_field], format='mixed', errors='coerce')
+            df['__date'] = df['__timestamp'].dt.date
+            df = df[
+                (df['__date'] >= start_date) &
+                (df['__date'] <= end_date)
+            ]
+
+        if len(df) == 0:
+            return None
+        return df
+
+    prepared_df = _prepare_sales_df_for_ranking(sales_data) if sales_data else None
+
+    with col_rank1:
+        st.markdown("#### 📦 商品銷售排行")
+        if prepared_df is None:
+            st.info("📊 選定期間內沒有銷售資料，無法產生商品排行")
+        else:
+            # 商品標籤：中文名稱(product_code)
+            item_field = None
+            for field in ['item_name', 'product_name', 'name', 'menu_item_name', 'product', 'item', 'meal_id', 'product_code']:
+                if field in prepared_df.columns:
+                    item_field = field
+                    break
+
+            if item_field is None:
+                st.info("📊 無法找到商品名稱或代碼欄位，無法產生商品排行")
+            else:
+                code_field = None
+                for field in ['product_code', 'meal_id']:
+                    if field in prepared_df.columns:
+                        code_field = field
+                        break
+
+                # 取菜單，建立 product_code/id -> 中文名稱 對照
+                menu_name_mapping = {}
+                try:
+                    if hasattr(st.session_state, "api") and st.session_state.api:
+                        menu_items = st.session_state.api.get_menu_items()
+                        for m in (menu_items or []):
+                            if m.get("product_code"):
+                                menu_name_mapping[str(m["product_code"])] = m.get("name") or ""
+                            if m.get("id") is not None:
+                                menu_name_mapping[str(m["id"])] = m.get("name") or ""
+                except Exception:
+                    pass
+
+                def _compose_product_label(row):
+                    code = str(row.get(code_field) or "") if code_field else ""
+                    name = None
+                    if code:
+                        name = menu_name_mapping.get(code)
+                    if not name:
+                        name = row.get(item_field)
+                    if code and name:
+                        return f"{name}({code})"
+                    if name:
+                        return str(name)
+                    if code:
+                        return f"({code})"
+                    return "未命名商品"
+
+                prepared_df["__product_label"] = prepared_df.apply(_compose_product_label, axis=1)
+
+                # 控制元件：排序方向（radio 兩個選項）+ 顯示數量（number_input）+ 排序依據（selectbox）
+                ctrl_col1, ctrl_col2, ctrl_col3 = st.columns(3)
+                with ctrl_col1:
+                    sort_order = st.radio(
+                        "排序方向",
+                        ["由第一名開始", "由倒數名開始"],
+                        horizontal=True,
+                        key="product_rank_order",
+                    )
+                with ctrl_col2:
+                    top_n = st.number_input(
+                        "顯示項目數量",
+                        min_value=1,
+                        max_value=50,
+                        value=10,
+                        step=1,
+                        key="product_rank_top_n",
+                    )
+                with ctrl_col3:
+                    metric_choice = st.selectbox(
+                        "排序依據",
+                        ["銷售金額", "銷售數量"],
+                        index=0,
+                        key="product_rank_metric",
+                    )
+
+                agg_df = prepared_df.groupby("__product_label").agg(
+                    total_amount=("total_amount", "sum"),
+                    total_quantity=("__quantity_for_rank", "sum"),
+                ).reset_index()
+
+                if agg_df.empty:
+                    st.info("📊 無法計算商品彙總資料")
+                else:
+                    sort_col = "total_amount" if metric_choice == "銷售金額" else "total_quantity"
+                    ascending_flag = True if sort_order == "由倒數名開始" else False
+                    agg_df = agg_df.sort_values(sort_col, ascending=ascending_flag).head(int(top_n))
+
+                    # 顯示表格
+                    display_df = agg_df.rename(
+                        columns={
+                            "__product_label": "商品",
+                            "total_amount": "銷售金額",
+                            "total_quantity": "銷售數量",
+                        }
+                    )
+                    st.dataframe(display_df, width='stretch')
+
+                    # 顯示長條圖
+                    fig_rank = px.bar(
+                        agg_df,
+                        x="total_amount" if metric_choice == "銷售金額" else "total_quantity",
+                        y="__product_label",
+                        orientation="h",
+                        labels={
+                            "__product_label": "商品",
+                            "total_amount": "銷售金額 (NT$)",
+                            "total_quantity": "銷售數量",
+                        },
+                        title=f"商品{metric_choice}排行（Top {top_n}）",
+                    )
+                    fig_rank.update_layout(yaxis=dict(autorange="reversed"))
+                    st.plotly_chart(fig_rank, width='stretch')
+
+    with col_rank2:
+        st.markdown("#### 🏪 機台銷售排行")
+        if prepared_df is None:
+            st.info("📊 選定期間內沒有銷售資料，無法產生機台排行")
+        else:
+            # 建立機台 ID / code -> 名稱 的對照
+            machine_by_id = {}
+            machine_by_code = {}
+            for m in machines or []:
+                mid = m.get("id")
+                mcode = m.get("machine_code") or m.get("code")
+                mname = m.get("name") or ""
+                loc_name = m.get("location_name") or ""
+                if isinstance(loc_name, dict):
+                    loc_name = loc_name.get("name", "")
+                label_name = mname or mcode or "未命名機台"
+                if loc_name:
+                    label_name = f"{label_name} - {loc_name}"
+                if mid is not None:
+                    machine_by_id[mid] = {"label": label_name, "code": mcode}
+                if mcode:
+                    machine_by_code[mcode] = {"label": label_name, "code": mcode}
+
+            machine_id_field = None
+            for field in ["machine_id", "machineId"]:
+                if field in prepared_df.columns:
+                    machine_id_field = field
+                    break
+
+            machine_code_field = None
+            for field in ["machine_code", "machineCode"]:
+                if field in prepared_df.columns:
+                    machine_code_field = field
+                    break
+
+            if not machine_id_field and not machine_code_field:
+                st.info("📊 無法找到機台欄位（machine_id / machine_code），無法產生機台排行")
+            else:
+                def _compose_machine_label(row):
+                    mid = row.get(machine_id_field) if machine_id_field else None
+                    mcode = row.get(machine_code_field) if machine_code_field else None
+                    info = None
+                    if mid is not None and mid in machine_by_id:
+                        info = machine_by_id[mid]
+                    elif mcode is not None and str(mcode) in machine_by_code:
+                        info = machine_by_code[str(mcode)]
+                    if info:
+                        return info["label"]
+                    if mcode:
+                        return f"未知機台({mcode})"
+                    if mid is not None:
+                        return f"未知機台(ID:{mid})"
+                    return "未知機台"
+
+                prepared_df["__machine_label"] = prepared_df.apply(_compose_machine_label, axis=1)
+
+                # 控制元件：排序方向（radio 兩個選項）+ 顯示數量（number_input）+ 排序依據（selectbox）
+                m_ctrl_col1, m_ctrl_col2, m_ctrl_col3 = st.columns(3)
+                with m_ctrl_col1:
+                    sort_order_m = st.radio(
+                        "排序方向",
+                        ["由第一名開始", "由倒數名開始"],
+                        horizontal=True,
+                        key="machine_rank_order",
+                    )
+                with m_ctrl_col2:
+                    top_n_m = st.number_input(
+                        "顯示項目數量",
+                        min_value=1,
+                        max_value=50,
+                        value=10,
+                        step=1,
+                        key="machine_rank_top_n",
+                    )
+                with m_ctrl_col3:
+                    metric_choice_m = st.selectbox(
+                        "排序依據",
+                        ["銷售金額", "銷售數量", "交易筆數"],
+                        index=0,
+                        key="machine_rank_metric",
+                    )
+
+                agg_m = prepared_df.groupby("__machine_label").agg(
+                    total_amount=("total_amount", "sum"),
+                    total_quantity=("__quantity_for_rank", "sum"),
+                    transaction_count=("order_id", "nunique") if "order_id" in prepared_df.columns else ("__machine_label", "size"),
+                ).reset_index()
+
+                if agg_m.empty:
+                    st.info("📊 無法計算機台彙總資料")
+                else:
+                    if metric_choice_m == "銷售金額":
+                        sort_col_m = "total_amount"
+                        x_field = "total_amount"
+                    elif metric_choice_m == "銷售數量":
+                        sort_col_m = "total_quantity"
+                        x_field = "total_quantity"
+                    else:
+                        sort_col_m = "transaction_count"
+                        x_field = "transaction_count"
+
+                    ascending_flag_m = True if sort_order_m == "由倒數名開始" else False
+                    agg_m = agg_m.sort_values(sort_col_m, ascending=ascending_flag_m).head(int(top_n_m))
+
+                    display_m = agg_m.rename(
+                        columns={
+                            "__machine_label": "機台",
+                            "total_amount": "銷售金額",
+                            "total_quantity": "銷售數量",
+                            "transaction_count": "交易筆數",
+                        }
+                    )
+                    st.dataframe(display_m, width='stretch')
+
+                    fig_machine = px.bar(
+                        agg_m,
+                        x=x_field,
+                        y="__machine_label",
+                        orientation="h",
+                        labels={
+                            "__machine_label": "機台",
+                            "total_amount": "銷售金額 (NT$)",
+                            "total_quantity": "銷售數量",
+                            "transaction_count": "交易筆數",
+                        },
+                        title=f"機台{metric_choice_m}排行（Top {top_n_m}）",
+                    )
+                    fig_machine.update_layout(yaxis=dict(autorange="reversed"))
+                    st.plotly_chart(fig_machine, width='stretch')
+
 def generate_demo_sales_data(start_date, end_date):
     """生成14天的真實模擬銷售數據（與 sales_analytics 相同）"""
     demo_orders = []
