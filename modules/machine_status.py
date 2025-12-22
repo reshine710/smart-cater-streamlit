@@ -280,6 +280,7 @@ def render_machine_card(machine: Dict, status_config: Dict):
     overall_inventory_indicator = None
     zero_stock_items: List[Dict] = []
     low_stock_items: List[Dict] = []
+    normal_stock_items: List[Dict] = []  # 新增：正常庫存商品列表
     try:
         if isinstance(machine_id, int) and hasattr(st.session_state, "api") and st.session_state.api:
             inventory_data = st.session_state.api.get_machine_inventory(machine_id)
@@ -304,22 +305,23 @@ def render_machine_card(machine: Dict, status_config: Dict):
                     product_code = menu_item.get("product_code") or "N/A"
                     product_name = menu_item.get("name") or "Unknown"
                     
+                    # 商品資訊字典
+                    product_info = {
+                        "product_code": product_code,
+                        "product_name": product_name,
+                        "current_stock": current_stock,
+                        "min_threshold": min_threshold,
+                    }
+                    
                     if indicator == "🔴":
                         has_red = True
-                        zero_stock_items.append({
-                            "product_code": product_code,
-                            "product_name": product_name,
-                            "current_stock": current_stock,
-                            "min_threshold": min_threshold,
-                        })
+                        zero_stock_items.append(product_info)
                     elif indicator == "🟡":
                         has_yellow = True
-                        low_stock_items.append({
-                            "product_code": product_code,
-                            "product_name": product_name,
-                            "current_stock": current_stock,
-                            "min_threshold": min_threshold,
-                        })
+                        low_stock_items.append(product_info)
+                    else:
+                        # 正常庫存商品
+                        normal_stock_items.append(product_info)
                 
                 if has_red:
                     overall_inventory_indicator = "🔴"
@@ -398,31 +400,41 @@ def render_machine_card(machine: Dict, status_config: Dict):
             if not inventory_has_data:
                 st.write("📦 尚無庫存資料")
             else:
-                if zero_stock_items or low_stock_items:
-                    # 整體狀態訊息
-                    if overall_inventory_indicator == "🔴":
-                        st.error("有零庫存商品，請儘速補貨。")
-                    elif overall_inventory_indicator == "🟡":
-                        st.warning("部分商品庫存低於警戒水位，建議安排補貨。")
-                    else:
-                        st.success("目前所有商品庫存皆高於警戒水位。")
-                    
-                    if zero_stock_items:
-                        # st.write("**零庫存商品**")
-                        for p in zero_stock_items:
-                            st.write(
-                                f"🔴 {p['product_code']} {p['product_name']} "
-                                f"(庫存 {p['current_stock']})"
-                            )
-                    if low_stock_items:
-                        # st.write("**低於警戒水位商品**")
-                        for p in low_stock_items:
-                            st.write(
-                                f"🟡 {p['product_code']} {p['product_name']} "
-                                f"(庫存 {p['current_stock']} / 警戒水位 {p['min_threshold']})"
-                            )
+                # 整體狀態訊息
+                if overall_inventory_indicator == "🔴":
+                    st.error("有零庫存商品，請儘速補貨。")
+                elif overall_inventory_indicator == "🟡":
+                    st.warning("部分商品庫存低於警戒水位，建議安排補貨。")
                 else:
                     st.success("所有商品庫存皆正常。")
+                
+                # 顯示所有商品，按狀態分組
+                # 1. 零庫存商品
+                if zero_stock_items:
+                    st.write("零庫存商品")
+                    for p in zero_stock_items:
+                        st.write(
+                            f"🔴 {p['product_code']} {p['product_name']} "
+                            f"(庫存 {p['current_stock']})"
+                        )
+                
+                # 2. 低於警戒水位商品
+                if low_stock_items:
+                    st.write("低於警戒水位商品")
+                    for p in low_stock_items:
+                        st.write(
+                            f"🟡 {p['product_code']} {p['product_name']} "
+                            f"(庫存 {p['current_stock']})"
+                        )
+                
+                # 3. 正常庫存商品
+                if normal_stock_items:
+                    st.write("正常庫存商品")
+                    for p in normal_stock_items:
+                        st.write(
+                            f"🟢 {p['product_code']} {p['product_name']} "
+                            f"(庫存 {p['current_stock']})"
+                        )
             
             # 環境資訊（如果有）
             if 'temperature' in machine or 'humidity' in machine or 'fridge_temp' in machine:

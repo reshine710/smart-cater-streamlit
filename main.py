@@ -559,12 +559,12 @@ def main():
         # render_idle_status_widget()
         
         # AI 通知自動刷新
-        st.markdown("---")
-        render_notification_auto_refresh(refresh_interval=600)  # 改為600秒（10分鐘）以減少API調用頻率
+        # st.markdown("---")
+        # render_notification_auto_refresh(refresh_interval=600)  # 改為600秒（10分鐘）以減少API調用頻率
         
         # 版本號顯示
         st.markdown("---")
-        st.caption("🖥️ 前端版本：v0.6.2")
+        st.caption("🖥️ 前端版本：v0.6.3")
         # 格式化後端版本號顯示
         if api_connected:
             # 確保版本號有 v 前綴
