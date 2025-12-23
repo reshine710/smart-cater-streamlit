@@ -409,28 +409,31 @@ def render_machine_card(machine: Dict, status_config: Dict):
                     st.success("所有商品庫存皆正常。")
                 
                 # 顯示所有商品，按狀態分組
-                # 1. 零庫存商品
+                # 1. 零庫存商品（按 product_code 排序）
                 if zero_stock_items:
                     st.write("零庫存商品")
-                    for p in zero_stock_items:
+                    sorted_zero_items = sorted(zero_stock_items, key=lambda x: x['product_code'])
+                    for p in sorted_zero_items:
                         st.write(
                             f"🔴 {p['product_code']} {p['product_name']} "
                             f"(庫存 {p['current_stock']})"
                         )
                 
-                # 2. 低於警戒水位商品
+                # 2. 低於警戒水位商品（按 product_code 排序）
                 if low_stock_items:
                     st.write("低於警戒水位商品")
-                    for p in low_stock_items:
+                    sorted_low_items = sorted(low_stock_items, key=lambda x: x['product_code'])
+                    for p in sorted_low_items:
                         st.write(
                             f"🟡 {p['product_code']} {p['product_name']} "
                             f"(庫存 {p['current_stock']})"
                         )
                 
-                # 3. 正常庫存商品
+                # 3. 正常庫存商品（按 product_code 排序）
                 if normal_stock_items:
                     st.write("正常庫存商品")
-                    for p in normal_stock_items:
+                    sorted_normal_items = sorted(normal_stock_items, key=lambda x: x['product_code'])
+                    for p in sorted_normal_items:
                         st.write(
                             f"🟢 {p['product_code']} {p['product_name']} "
                             f"(庫存 {p['current_stock']})"
@@ -518,18 +521,21 @@ def render_machine_card(machine: Dict, status_config: Dict):
                                     if isinstance(recorded_at, str):
                                         # 處理多種時間格式
                                         if recorded_at.endswith('Z'):
+                                            # UTC 時間（Z 表示 UTC），需要轉換為台灣時區
                                             recorded_at = recorded_at.replace('Z', '+00:00')
-                                        elif '+' not in recorded_at and 'T' in recorded_at:
-                                            # 如果沒有時區信息，假設為 UTC
-                                            recorded_at = recorded_at + '+00:00'
+                                        
+                                        # 解析時間（fromisoformat 會自動處理時區信息）
                                         record_time = datetime.fromisoformat(recorded_at)
+                                        
+                                        # 轉換為台灣時區
+                                        # 如果沒有時區信息，convert_to_taiwan_time 會假設為台灣時區
+                                        # 如果已有時區信息，會正確轉換為台灣時區
+                                        record_time_tw = convert_to_taiwan_time(record_time)
                                     elif isinstance(recorded_at, datetime):
-                                        record_time = recorded_at
+                                        # 已經是 datetime 對象，直接轉換
+                                        record_time_tw = convert_to_taiwan_time(recorded_at)
                                     else:
                                         continue
-                                    
-                                    # 轉換為台灣時區
-                                    record_time_tw = convert_to_taiwan_time(record_time)
                                     
                                     # 只保留過去24小時內的數據
                                     if record_time_tw >= start_time:
@@ -2240,17 +2246,23 @@ def _show_fridge_temperature_history_tab(machine_id: int, machine_name: str):
                 try:
                     # 解析時間（處理 ISO 8601 格式）
                     if isinstance(recorded_at, str):
-                        # 處理時區標記
+                        # 處理多種時間格式
                         if recorded_at.endswith('Z'):
+                            # UTC 時間（Z 表示 UTC），需要轉換為台灣時區
                             recorded_at = recorded_at.replace('Z', '+00:00')
-                        record_time = datetime.fromisoformat(recorded_at.replace('Z', '+00:00'))
+                        
+                        # 解析時間（fromisoformat 會自動處理時區信息）
+                        record_time = datetime.fromisoformat(recorded_at)
+                        
+                        # 轉換為台灣時區
+                        # 如果沒有時區信息，convert_to_taiwan_time 會假設為台灣時區
+                        # 如果已有時區信息，會正確轉換為台灣時區
+                        record_time_tw = convert_to_taiwan_time(record_time)
                     elif isinstance(recorded_at, datetime):
-                        record_time = recorded_at
+                        # 已經是 datetime 對象，直接轉換
+                        record_time_tw = convert_to_taiwan_time(recorded_at)
                     else:
                         continue
-                    
-                    # 轉換為台灣時區
-                    record_time_tw = convert_to_taiwan_time(record_time)
                     
                     df_records.append({
                         '時間': record_time_tw,
