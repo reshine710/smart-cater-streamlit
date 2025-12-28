@@ -273,6 +273,19 @@ def dashboard_page():
                                 title=f'每小時營收趨勢 ({start_date_str})',
                                 labels={'total_amount': '營收 (NT$)', 'timestamp': '時間'}
                             )
+                            
+                            # 對於單日圖表，設定 x 軸範圍為整天的範圍（00:00 到 23:59）
+                            # 這樣即使只有少數小時有數據，圖表也能正常顯示
+                            if range_days == 1:
+                                day_start = pd.Timestamp(start_date).replace(hour=0, minute=0, second=0)
+                                day_end = pd.Timestamp(start_date).replace(hour=23, minute=59, second=59)
+                                xaxis_range = [day_start, day_end]
+                            else:
+                                # 多天但小於 DAY_THRESHOLD，使用數據的實際範圍
+                                xaxis_range = [
+                                    hourly_sales['timestamp'].min(),
+                                    hourly_sales['timestamp'].max()
+                                ]
                         else:
                             daily_sales = df_sales.groupby('date').agg({
                                 'total_amount': 'sum'
@@ -282,6 +295,10 @@ def dashboard_page():
                             fig = px.line(daily_sales, x='date', y='total_amount', 
                                           title=f'每日營收趨勢 ({start_date_str} 至 {end_date_str})',
                                           labels={'total_amount': '營收 (NT$)', 'date': '日期'})
+                            xaxis_range = [
+                                daily_sales['date'].min(),
+                                daily_sales['date'].max()
+                            ]
                         
                         # 格式化圖表
                         fig.update_layout(
@@ -290,10 +307,7 @@ def dashboard_page():
                             xaxis=dict(
                                 tickformat='%Y-%m-%d %H:%M' if range_days < DAY_THRESHOLD else '%Y-%m-%d',
                                 tickmode='auto',
-                                range=[
-                                    (hourly_sales['timestamp'].min() if range_days < DAY_THRESHOLD else daily_sales['date'].min()),
-                                    (hourly_sales['timestamp'].max() if range_days < DAY_THRESHOLD else daily_sales['date'].max())
-                                ]
+                                range=xaxis_range
                             )
                         )
                         
