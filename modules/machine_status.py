@@ -1660,6 +1660,9 @@ def show_edit_machine_menu_items_dialog(machine_id: int, machine_name: str):
         
         # 獲取該機型的菜單項目
         machine_type_items = categorized.get(selected_machine_type, [])
+        # 按照 product_code 從小到大排序
+        if machine_type_items:
+            machine_type_items.sort(key=lambda x: x.get('product_code', '') or '')
         
         if not machine_type_items:
             st.warning(f"⚠️ {selected_machine_type}機型目前沒有可用的菜單項目")
@@ -1681,7 +1684,14 @@ def show_edit_machine_menu_items_dialog(machine_id: int, machine_name: str):
         # 創建菜單項目選擇映射
         menu_item_map = {item['id']: item for item in machine_type_items}
         
-        max_items = 6
+        if 'menu_slot_count_' + str(machine_id) not in st.session_state:
+            # 初始化：預設為10個，或者當前已有的項目數量
+            initial_count = max(3, len(current_menu_items))
+            initial_count = max(10, initial_count) # 預設開啟到10個
+            initial_count = min(10, initial_count) # 限制最大不超過10個
+            st.session_state['menu_slot_count_' + str(machine_id)] = initial_count
+
+        max_items = st.session_state['menu_slot_count_' + str(machine_id)]
         selected_menu_items = []
         display_orders = []
         
