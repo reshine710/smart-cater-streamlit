@@ -1600,7 +1600,7 @@ def show_edit_machine_menu_items_dialog(machine_id: int, machine_name: str):
     @st.dialog(f"📋 設定菜單項目 - {machine_name}")
     def edit_items_dialog():
         st.markdown(f"### 🍽️ {machine_name} 菜單項目設定")
-        st.info("💡 提示：最多可設定 6 個菜單項目，請先選擇機台類型，然後選擇要放上的菜單品項")
+        st.info("💡 提示：最多可設定 10 個菜單項目，請先選擇機台類型，然後選擇要放上的菜單品項")
         
         # 獲取所有可用的菜單項目
         all_menu_items = st.session_state.api.get_menu_items()
@@ -1720,7 +1720,7 @@ def show_edit_machine_menu_items_dialog(machine_id: int, machine_name: str):
                     f"選擇菜單項目",
                     options=menu_options,
                     index=default_index,
-                    format_func=lambda x: "（不選擇）" if x is None else f"{x.get('name', 'Unknown')} - NT$ {x.get('price', 0):.0f} ({x.get('product_code', 'N/A')})",
+                    format_func=lambda x: "（不選擇）" if x is None else f"{x.get('product_code', 'N/A')}_{x.get('name', 'Unknown')}_NTD {x.get('price', 0):.0f}",
                     key=f"menu_item_select_{machine_id}_{i}"
                 )
                 
@@ -1826,7 +1826,7 @@ def show_edit_machine_menu_discount_dialog(machine_id: int, machine_name: str):
     @st.dialog(f"💰 設定折扣率 - {machine_name}")
     def edit_discount_dialog():
         st.markdown(f"### 🍽️ {machine_name} 折扣率設定")
-        st.info("💡 提示：最多可設定 6 個菜單項目的折扣率，每個項目可設定獨立的折扣率")
+        st.info("💡 提示：最多可設定 10 個菜單項目的折扣率，每個項目可設定獨立的折扣率")
         
         # 獲取當前機台的菜單項目
         menu_data = st.session_state.api.get_machine_current_menu_items(machine_id)
@@ -1844,8 +1844,8 @@ def show_edit_machine_menu_discount_dialog(machine_id: int, machine_name: str):
         all_menu_items = st.session_state.api.get_menu_items()
         menu_item_map = {item['id']: item for item in all_menu_items}
         
-        # 限制最多顯示 6 個項目
-        max_items = 6
+        # 限制最多顯示 10 個項目
+        max_items = 10
         if len(current_menu_items) > max_items:
             st.warning(f"⚠️ 當前菜單項目有 {len(current_menu_items)} 個，最多只能設定前 {max_items} 個的折扣率")
             current_menu_items = current_menu_items[:max_items]
@@ -2027,7 +2027,7 @@ def show_edit_machine_menu_dialog(machine_id: int, machine_name: str, current_me
                         f"選擇菜單項目",
                         options=menu_options,
                         index=default_index,
-                        format_func=lambda x: f"{x.get('name', 'Unknown')} - NT$ {x.get('price', 0):.0f}",
+                        format_func=lambda x: f"{x.get('product_code', 'N/A')}_{x.get('name', 'Unknown')}_NTD {x.get('price', 0):.0f}",
                         key=f"menu_item_{machine_id}_{i}"
                     )
                     
