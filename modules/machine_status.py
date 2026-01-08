@@ -1673,7 +1673,7 @@ def show_edit_machine_menu_items_dialog(machine_id: int, machine_name: str):
         st.markdown("---")
         
         # 步驟2：選擇菜單項目
-        st.markdown("### 步驟 2：選擇菜單項目（最多 6 個）")
+        st.markdown("### 步驟 2：選擇菜單項目（最多 10 個）")
         
         # 使用之前獲取的當前菜單項目（如果有的話，重新獲取以確保最新）
         if not current_menu_items:
