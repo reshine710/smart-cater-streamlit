@@ -1694,6 +1694,16 @@ def show_edit_machine_menu_items_dialog(machine_id: int, machine_name: str):
         max_items = st.session_state['menu_slot_count_' + str(machine_id)]
         selected_menu_items = []
         display_orders = []
+        discount_rates = []  # 用於收集對應的折扣率
+        
+        # 建立現有折扣率的映射表：item_id -> discount_rate
+        existing_discounts = {}
+        if current_menu_items:
+            for item in current_menu_items:
+                item_id = item.get('menu_item_id')
+                discount = item.get('discount_rate')
+                if item_id is not None:
+                    existing_discounts[item_id] = discount
         
         # 為每個位置創建選擇器
         for i in range(max_items):
@@ -1728,6 +1738,12 @@ def show_edit_machine_menu_items_dialog(machine_id: int, machine_name: str):
                 if selected_item is not None:
                     selected_menu_items.append(selected_item['id'])
                     display_orders.append(i + 1)
+                    
+                    # 保留原有的折扣率
+                    # 如果此項目之前已經在菜單上，則維持其折扣率
+                    # 如果是新加入的項目，則折扣率為 None (無折扣)
+                    saved_discount = existing_discounts.get(selected_item['id'])
+                    discount_rates.append(saved_discount)
                 
                 if i < max_items - 1:
                     st.markdown("---")
@@ -1800,7 +1816,7 @@ def show_edit_machine_menu_items_dialog(machine_id: int, machine_name: str):
                         machine_id=machine_id,
                         menu_item_ids=selected_menu_items,
                         display_orders=display_orders,
-                        discount_rates=None  # 不更新折扣率
+                        discount_rates=discount_rates  # 傳遞保留的折扣率
                     )
                     
                     if result:
