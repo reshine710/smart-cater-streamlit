@@ -53,8 +53,7 @@ packaging==25.0
     #   altair
     #   plotly
     #   streamlit
-paho-mqtt==2.1.0
-    # via smartcaterstreamlit (pyproject.toml)
+
 pandas==2.3.3
     # via
     #   smartcaterstreamlit (pyproject.toml)

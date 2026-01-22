@@ -1,3 +1,10 @@
 [default]
 API_URL = "http://127.0.0.1:8000/api/v1"
 API_URL_ONLINE = "https://sihai.baimeng.co/api/v1"
+
+[production]
+# 生產環境配置
+API_URL = "https://your-api-url.com/api/v1"
+
+# 日誌配置
+LOG_LEVEL = "INFO"

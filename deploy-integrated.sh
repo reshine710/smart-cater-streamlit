@@ -55,7 +55,7 @@ check_prerequisites() {
     # 檢查後端容器
     print_warning "檢查後端服務..."
     
-    required_containers=("smartcater_nginx" "smartcater_api" "smartcater_postgres" "smartcater_emqx")
+    required_containers=("smartcater_nginx" "smartcater_api" "smartcater_postgres")
     for container in "${required_containers[@]}"; do
         if docker ps --format '{{.Names}}' | grep -q "^${container}$"; then
             print_success "容器 ${container} 正在運行"
@@ -177,14 +177,7 @@ test_connections() {
         print_warning "請檢查後端 API 服務是否運行"
     fi
     
-    # 測試 MQTT 連接
-    print_warning "測試 MQTT 連接..."
-    if docker exec smartcater_streamlit ping -c 2 smartcater_emqx &> /dev/null; then
-        print_success "MQTT 連接正常"
-    else
-        print_warning "MQTT 連接失敗"
-        print_warning "請檢查 EMQX 服務是否運行"
-    fi
+
     
     # 測試網路連接
     echo ""
@@ -217,7 +210,7 @@ show_info() {
     echo ""
     echo "測試命令："
     echo "  API 連接:    docker exec smartcater_streamlit curl http://smartcater_api:8000/health"
-    echo "  MQTT 連接:   docker exec smartcater_streamlit ping smartcater_emqx"
+
     echo "  健康檢查:    docker exec smartcater_streamlit curl http://localhost:8080/_stcore/health"
     echo ""
     echo "文檔："

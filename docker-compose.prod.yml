@@ -21,7 +21,7 @@ services:
     environment:
       # 環境切換：production 使用生產環境配置
       - ENV_FOR_DYNACONF=production
-      
+
       # API 配置：透過 Nginx 訪問後端 API（推薦）
       # Streamlit 是服務器端應用，需要完整 URL
       - DYNACONF_API_URL=http://api:8000/api/v1
@@ -30,43 +30,37 @@ services:
       - DB_PORT=5432
       - POSTGRES_USER=smartcater_prod
       - POSTGRES_DB=smartcater_prod_db
-      
-      # MQTT 配置：連接到後端的 EMQX
-      - MQTT_BROKER_HOST=smartcater_emqx
-      - MQTT_BROKER_PORT=1883
-      - MQTT_USE_TLS=false
-      - MQTT_CLIENT_ID=smartcater_streamlit_frontend
-      
+
       # 日誌配置
       - LOG_LEVEL=${LOG_LEVEL:-INFO}
     env_file:
       - .env.production
     extra_hosts:
-      - "host.docker.internal:host-gateway"  
+      - "host.docker.internal:host-gateway"
     volumes:
       # 持久化日誌文件
       - ./logs:/app/logs
-      
+
       # 生產配置文件（只讀）
       - ./settings.production.toml:/app/settings.production.toml:ro
-      
+
     networks:
       # 加入後端的網路（外部網路）
       - smartcater_network
-      
+
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8080/_stcore/health"]
+      test: [ "CMD", "curl", "-f", "http://localhost:8080/_stcore/health" ]
       interval: 30s
       timeout: 10s
       retries: 3
       start_period: 40s
-      
+
     logging:
       driver: "json-file"
       options:
         max-size: "50m"
         max-file: "5"
-        
+
     # 資源限制
     deploy:
       resources:

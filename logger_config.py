@@ -113,7 +113,7 @@ def get_logger(name: str) -> logging.Logger:
 # 預設 logger 實例
 api_logger = get_logger("api")
 auth_logger = get_logger("auth") 
-mqtt_logger = get_logger("mqtt")
+
 ui_logger = get_logger("ui")
 system_logger = get_logger("system")
 

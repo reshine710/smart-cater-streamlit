@@ -41,11 +41,7 @@ gcloud run deploy ${SERVICE_NAME} \
     --max-instances 10 \
     --set-env-vars "ENV_FOR_DYNACONF=production" \
     --set-env-vars "DYNACONF_API_URL=${DYNACONF_API_URL}" \
-    --set-env-vars "MQTT_BROKER_HOST=${MQTT_BROKER_HOST}" \
-    --set-env-vars "MQTT_BROKER_PORT=${MQTT_BROKER_PORT}" \
-    --set-env-vars "MQTT_USERNAME=${MQTT_USERNAME}" \
-    --set-env-vars "MQTT_PASSWORD=${MQTT_PASSWORD}" \
-    --set-env-vars "MQTT_CLIENT_ID=${MQTT_CLIENT_ID}"
+
 
 echo "✅ 部署完成！"
 echo "服務 URL: https://${SERVICE_NAME}-${PROJECT_ID}.${REGION}.run.app"

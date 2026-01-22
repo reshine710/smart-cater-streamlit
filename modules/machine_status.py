@@ -7,7 +7,7 @@ import random
 import json
 import plotly.graph_objects as go
 import plotly.express as px
-from logger_config import mqtt_logger, ui_logger, system_logger
+from logger_config import ui_logger, system_logger
 from typing import Optional, List, Dict, Tuple
 from utils import format_datetime_display
 from modules.menu_management import (
@@ -34,23 +34,7 @@ def convert_to_taiwan_time(dt: datetime) -> datetime:
     # 如果已經有時區信息，轉換為台灣時區
     return dt.astimezone(TAIWAN_TZ)
 
-# Import MQTT client (assuming it exists in the project)
-try:
-    from mqtt_client.client import MQTTClient, initialize_mqtt_client
-    MQTT_AVAILABLE = True
-    system_logger.info("MQTT client imported successfully")
-except ImportError as e:
-    system_logger.error(f"MQTT client import failed: {e}")
-    st.warning("MQTT client not available. Some features may be limited.")
-    MQTTClient = None
-    initialize_mqtt_client = None
-    MQTT_AVAILABLE = False
-except Exception as e:
-    system_logger.error(f"MQTT client initialization error: {e}")
-    st.error(f"MQTT client error: {e}")
-    MQTTClient = None
-    initialize_mqtt_client = None
-    MQTT_AVAILABLE = False
+
 
 def show_machine_overview(machines: List[Dict]):
     """顯示機台總覽卡片"""
