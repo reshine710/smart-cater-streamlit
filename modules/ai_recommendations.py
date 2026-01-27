@@ -5,6 +5,27 @@ import json
 from typing import Dict, List, Optional
 from logger_config import api_logger, ui_logger
 from utils import format_datetime_display
+import time
+
+# 快取包裝函數，帶有 TTL（60 秒）
+@st.cache_data(ttl=60, show_spinner=False)
+def _cached_get_recommendations(api_id: int, status_filter: Optional[str], machine_filter: Optional[str], skip: int = 0, limit: int = 20):
+    """快取的推薦數據獲取函數"""
+    if hasattr(st.session_state, 'api') and st.session_state.api:
+        filter_status = None if status_filter == "全部" else status_filter
+        filter_machine = None if machine_filter == "全部" else machine_filter
+        
+        ui_logger.debug(f"Fetching recommendations with status={filter_status}, machine={filter_machine}, skip={skip}, limit={limit}")
+        recommendations = st.session_state.api.get_ai_recommendations(
+            status_filter=filter_status, 
+            machine_id=filter_machine,
+            skip=skip,
+            limit=limit
+        )
+        ui_logger.debug(f"Retrieved {len(recommendations)} recommendations")
+        return recommendations
+    return []
+
 
 def ai_recommendations_page():
     """AI推薦管理頁面"""
@@ -16,15 +37,8 @@ def ai_recommendations_page():
         pass  # 保留標題空間
     with col_refresh:
         if st.button("🔄 重新整理", key="recommendations_refresh_button", type="secondary", width='stretch'):
-            # 清除所有可能的緩存狀態
-            cache_keys_to_clear = [
-                'ai_recommendations_cache',
-                'ai_recommendations_data',
-                'recommendations_data'
-            ]
-            for key in cache_keys_to_clear:
-                if key in st.session_state:
-                    del st.session_state[key]
+            # 清除推薦數據快取
+            _cached_get_recommendations.clear()
             st.rerun()
 
     st.markdown("---")
@@ -48,19 +62,28 @@ def ai_recommendations_page():
                 st.error("❌ AI系統異常")
                 st.json(health_status)
     
+    # 初始化標籤狀態追蹤
+    if 'active_tab' not in st.session_state:
+        st.session_state.active_tab = 0
+    
     # 主要標籤頁
     tab1, tab2, tab3, tab4 = st.tabs(["📋 推薦列表", "🎯 動態菜單", "➕ 創建推薦", "📈 交易數據"])
     
     with tab1:
+        st.session_state.active_tab = 0
         show_recommendations_list()
     
     with tab2:
+        st.session_state.active_tab = 1
+        # 延遲載入：只在切換到此標籤時才載入數據
         show_dynamic_menu_display()
     
     with tab3:
+        st.session_state.active_tab = 2
         show_create_recommendation_form()
     
     with tab4:
+        st.session_state.active_tab = 3
         show_transactional_data_analysis()
 
 def check_ai_health() -> dict:
@@ -98,8 +121,7 @@ def show_recommendations_list():
     with col2:
         machine_filter = st.selectbox("機台篩選", ["全部", "1", "2", "3"], key="recommendations_machine_filter")
     
-    with col3:
-        pass
+    
     
     # 批量操作模式切換
     # st.markdown("---")
@@ -113,23 +135,24 @@ def show_recommendations_list():
     # 批量模式預設為關閉
     batch_mode = False
     
-    # 獲取推薦數據
+    # 初始化分頁狀態
+    if 'recommendations_page_size' not in st.session_state:
+        st.session_state.recommendations_page_size = 20
+    
+    # 獲取推薦數據（使用快取）
     try:
         if hasattr(st.session_state, 'api') and st.session_state.api:
-            filter_status = None if status_filter == "全部" else status_filter
-            filter_machine = None if machine_filter == "全部" else machine_filter
+            # 使用 API 對象的 ID 作為快取鍵的一部分
+            api_id = id(st.session_state.api)
             
-            # 強制重新獲取數據，不使用緩存
-            ui_logger.debug(f"Fetching recommendations with status={filter_status}, machine={filter_machine}")
-            recommendations = st.session_state.api.get_ai_recommendations(
-                status_filter=filter_status, 
-                machine_id=filter_machine
+            # 使用快取函數獲取數據
+            recommendations = _cached_get_recommendations(
+                api_id=api_id,
+                status_filter=status_filter,
+                machine_filter=machine_filter,
+                skip=0,
+                limit=st.session_state.recommendations_page_size
             )
-            ui_logger.debug(f"Retrieved {len(recommendations)} recommendations")
-            
-            # 增強調試日誌 - 記錄API返回的原始數據結構
-            api_logger.debug(f"Raw recommendations data structure: {[{k: v for k, v in rec.items() if k in ['id', 'backend_ref_id', 'recommendation_id']} for rec in recommendations]}")
-            
         else:
             st.error("❌ API 客戶端不可用")
             recommendations = []
@@ -137,8 +160,22 @@ def show_recommendations_list():
         st.error(f"❌ 獲取推薦數據失敗: {str(e)}")
         api_logger.error(f"Failed to get recommendations: {str(e)}")
         recommendations = []
-    
-    st.write(f"顯示 {len(recommendations)} 個推薦")
+
+    with col3:
+        # 顯示數據統計和載入更多按鈕
+        col_stat1, col_stat2, col_stat3 = st.columns([1, 1, 1])
+        with col_stat1:
+            st.write(f"顯示推薦：\n{len(recommendations)} 個")
+        with col_stat2:
+            if len(recommendations) >= st.session_state.recommendations_page_size:
+                if st.button("📄 載入更多", key="load_more_recommendations"):
+                    st.session_state.recommendations_page_size += 20
+                    st.rerun()
+        with col_stat3:
+            if st.session_state.recommendations_page_size > 20:
+                if st.button("🔄 重置", key="reset_page_size"):
+                    st.session_state.recommendations_page_size = 20
+                    st.rerun()
     
     # 初始化批量選擇狀態
     if 'selected_recommendations' not in st.session_state:
@@ -336,19 +373,9 @@ def show_recommendation_details(rec: Dict, index: int):
                             st.success("✅ 推薦已通過並實施成功！")
                             ui_logger.info(f"Successfully updated recommendation {rec_id} status to IMPLEMENTED")
                             
-                            # 清除所有可能的緩存狀態
-                            cache_keys_to_clear = [
-                                'ai_recommendations_cache',
-                                'ai_recommendations_data',
-                                'recommendations_data'
-                            ]
-                            for key in cache_keys_to_clear:
-                                if key in st.session_state:
-                                    del st.session_state[key]
+                            # 清除快取以獲取最新數據
+                            _cached_get_recommendations.clear()
                             
-                            # 添加短暫延遲確保後端數據更新
-                            import time
-                            time.sleep(0.5)
                             # 強制刷新頁面
                             st.rerun()
                         else:
@@ -358,15 +385,8 @@ def show_recommendation_details(rec: Dict, index: int):
                 if st.button("❌ 拒絕", key=f"reject_{rec_id}_{index}", width="stretch"):
                     if update_recommendation_status(rec_id, "REJECTED"):
                         st.success("❌ 推薦已拒絕")
-                        # 清除所有可能的緩存狀態
-                        cache_keys_to_clear = [
-                            'ai_recommendations_cache',
-                            'ai_recommendations_data',
-                            'recommendations_data'
-                        ]
-                        for key in cache_keys_to_clear:
-                            if key in st.session_state:
-                                del st.session_state[key]
+                        # 清除推薦數據快取
+                        _cached_get_recommendations.clear()
                         # 強制刷新頁面
                         st.rerun()
         
@@ -377,30 +397,16 @@ def show_recommendation_details(rec: Dict, index: int):
                 if st.button("🚀 實施", key=f"implement_{rec_id}_{index}", width="stretch", type="primary"):
                     if update_recommendation_status(rec_id, "IMPLEMENTED"):
                         st.success("🚀 推薦已實施")
-                        # 清除所有可能的緩存狀態
-                        cache_keys_to_clear = [
-                            'ai_recommendations_cache',
-                            'ai_recommendations_data',
-                            'recommendations_data'
-                        ]
-                        for key in cache_keys_to_clear:
-                            if key in st.session_state:
-                                del st.session_state[key]
+                        # 清除推薦數據快取
+                        _cached_get_recommendations.clear()
                         # 強制刷新頁面
                         st.rerun()
             with col_btn2:
                 if st.button("↩️ 撤回", key=f"revoke_{rec_id}_{index}", width="stretch"):
                     if update_recommendation_status(rec_id, "PENDING"):
                         st.success("↩️ 推薦已撤回至待審核")
-                        # 清除所有可能的緩存狀態
-                        cache_keys_to_clear = [
-                            'ai_recommendations_cache',
-                            'ai_recommendations_data',
-                            'recommendations_data'
-                        ]
-                        for key in cache_keys_to_clear:
-                            if key in st.session_state:
-                                del st.session_state[key]
+                        # 清除推薦數據快取
+                        _cached_get_recommendations.clear()
                         # 強制刷新頁面
                         st.rerun()
         
@@ -1325,7 +1331,7 @@ def show_transactional_data_analysis():
     st.subheader("📈 交易數據分析")
     st.markdown("此功能用於AI模型訓練和分析，提供歷史交易數據查詢。")
     
-    # 查詢參數
+    # 查詢參數 - 第一行：日期範圍和機台篩選
     col1, col2, col3 = st.columns(3)
     
     with col1:
@@ -1350,34 +1356,135 @@ def show_transactional_data_analysis():
             key="transactional_machine_filter"
         )
     
+    # 新增：金額範圍篩選
+    st.markdown("### 💰 金額篩選")
+    col_amount1, col_amount2 = st.columns(2)
+    
+    with col_amount1:
+        min_amount = st.number_input(
+            "最小金額 (NTD)", 
+            min_value=0.0, 
+            value=0.0, 
+            step=10.0,
+            help="設定最小交易金額（含）",
+            key="min_amount_filter"
+        )
+    
+    with col_amount2:
+        max_amount = st.number_input(
+            "最大金額 (NTD)", 
+            min_value=0.0, 
+            value=10000.0, 
+            step=10.0,
+            help="設定最大交易金額（含）",
+            key="max_amount_filter"
+        )
+    
+    # 新增：支付方式篩選
+    st.markdown("### 💳 支付方式篩選")
+    payment_method_labels = {
+        'credit_card': '💳 信用卡',
+        'cash': '💵 現金',
+        'mobile_pay': '📱 行動支付'
+    }
+    
+    payment_methods_list = ['credit_card', 'cash', 'mobile_pay']
+    
+    selected_payment_methods = st.multiselect(
+        "選擇支付方式（可多選）",
+        options=payment_methods_list,
+        format_func=lambda x: payment_method_labels.get(x, x),
+        default=payment_methods_list,  # 預設全選
+        help="選擇要查詢的支付方式，留空則查詢所有方式",
+        key="payment_method_filter"
+    )
+    
+    # 新增：排序選項
+    st.markdown("### 📊 排序方式")
+    col_sort1, col_sort2 = st.columns(2)
+    
+    sort_options = {
+        "created_at": "交易時間",
+        "amount": "交易金額",
+        "payment_method": "支付方式"
+    }
+    
+    sort_order_options = {
+        "desc": "降序 (高到低/新到舊)",
+        "asc": "升序 (低到高/舊到新)"
+    }
+    
+    with col_sort1:
+        sort_by = st.selectbox(
+            "排序欄位",
+            options=list(sort_options.keys()),
+            format_func=lambda x: sort_options[x],
+            index=0,  # 預設：交易時間
+            key="sort_by_filter"
+        )
+    
+    with col_sort2:
+        sort_order = st.selectbox(
+            "排序方向",
+            options=list(sort_order_options.keys()),
+            format_func=lambda x: sort_order_options[x],
+            index=0,  # 預設：降序
+            key="sort_order_filter"
+        )
+    
     # 查詢限制
+    st.markdown("### ⚙️ 查詢設定")
     col4, col5 = st.columns(2)
     with col4:
-        limit = st.number_input("查詢筆數限制", min_value=1, max_value=1000, value=100, key="transactional_limit")
+        limit = st.number_input("查詢筆數限制", min_value=1, max_value=10000, value=1000, key="transactional_limit",
+                                help="建議設定較大值以確保匯出完整資料")
     
     with col5:
-        skip = st.number_input("跳過筆數", min_value=0, value=0, key="transactional_skip")
+        skip = st.number_input("跳過筆數", min_value=0, value=0, key="transactional_skip",
+                               help="從第N筆開始查詢，用於分批查詢")
     
     # 查詢按鈕
     if st.button("🔍 查詢交易數據", type="primary", key="transactional_query_button"):
         try:
+            # 驗證金額範圍
+            if min_amount > max_amount:
+                st.error("❌ 最小金額不能大於最大金額")
+                return
+            
             # 格式化日期
             start_date_str = start_date.strftime("%Y-%m-%d")
             end_date_str = end_date.strftime("%Y-%m-%d")
             machine_id = None if machine_filter == "全部" else machine_filter
+            
+            # 顯示查詢條件摘要
+            st.info(f"""
+            📋 **查詢條件**：
+            - 📅 日期範圍：{start_date_str} 至 {end_date_str}
+            - 🏪 機台：{machine_filter}
+            - 💰 金額範圍：NT\${min_amount:.0f} \~ NT\${max_amount:.0f}
+            - 💳 支付方式：{', '.join([payment_method_labels[pm] for pm in selected_payment_methods]) if selected_payment_methods else '全部'}
+            - 📊 排序：{sort_options[sort_by]} ({sort_order_options[sort_order]})
+            """)
             
             # 獲取交易數據（將 skip 轉換為 page 參數）
             if hasattr(st.session_state, 'api') and st.session_state.api:
                 page = (skip // limit) + 1 if limit else 1
                 offset_within_page = skip % limit if limit else 0
 
-                transactional_data = st.session_state.api.get_transactional_data(
-                    start_date=start_date_str,
-                    end_date=end_date_str,
-                    machine_id=machine_id,
-                    limit=limit,
-                    page=page
-                )
+                with st.spinner("正在查詢交易數據..."):
+                    # 呼叫後端 API，使用新增的參數
+                    transactional_data = st.session_state.api.get_transactional_data(
+                        start_date=start_date_str,
+                        end_date=end_date_str,
+                        machine_id=machine_id,
+                        min_amount=min_amount if min_amount > 0 else None,
+                        max_amount=max_amount if max_amount < 10000 else None,
+                        payment_methods=selected_payment_methods if selected_payment_methods else None,
+                        sort_by=sort_by,
+                        sort_order=sort_order,
+                        limit=limit,
+                        page=page
+                    )
 
                 if offset_within_page and transactional_data:
                     transactional_data = transactional_data[offset_within_page:]
@@ -1388,26 +1495,30 @@ def show_transactional_data_analysis():
             if transactional_data:
                 st.success(f"✅ 成功獲取 {len(transactional_data)} 筆交易數據")
                 
+                # 轉換為 DataFrame
+                df = pd.DataFrame(transactional_data)
+                
+                # 確保必要欄位存在
+                if 'amount' not in df.columns:
+                    df['amount'] = 0.0
+                if 'payment_method' not in df.columns:
+                    df['payment_method'] = 'unknown'
+                
                 # 顯示數據統計
                 st.markdown("### 📊 數據統計")
                 col1, col2, col3, col4 = st.columns(4)
                 
                 # 計算統計數據
-                total_transactions = len(transactional_data)
-                if transactional_data:
-                    total_revenue = sum(float(t.get('amount', 0)) for t in transactional_data)
-                    unique_machines = len(set(str(t.get('machine_id', '')) for t in transactional_data))
-                    unique_products = len(set(str(t.get('product_id', '')) for t in transactional_data))
-                else:
-                    total_revenue = 0
-                    unique_machines = 0
-                    unique_products = 0
+                total_transactions = len(df)
+                total_revenue = df['amount'].astype(float).sum()
+                unique_machines = df['machine_id'].nunique() if 'machine_id' in df.columns else 0
+                unique_products = df['product_id'].nunique() if 'product_id' in df.columns else 0
                 
                 with col1:
-                    st.metric("總交易筆數", total_transactions)
+                    st.metric("總交易筆數", f"{total_transactions:,}")
                 
                 with col2:
-                    st.metric("總收入", f"${total_revenue:.2f}")
+                    st.metric("總收入", f"NT$ {total_revenue:,.2f}")
                 
                 with col3:
                     st.metric("涉及機台數", unique_machines)
@@ -1415,29 +1526,109 @@ def show_transactional_data_analysis():
                 with col4:
                     st.metric("商品種類數", unique_products)
                 
+                # 支付方式分布統計
+                if 'payment_method' in df.columns:
+                    st.markdown("### 💳 支付方式分布")
+                    payment_stats = df.groupby('payment_method').agg({
+                        'amount': ['count', 'sum']
+                    }).reset_index()
+                    payment_stats.columns = ['支付方式', '交易筆數', '總金額']
+                    payment_stats['支付方式'] = payment_stats['支付方式'].map(
+                        lambda x: payment_method_labels.get(x, x)
+                    )
+                    st.dataframe(payment_stats, use_container_width=True)
+                
                 # 顯示詳細數據表格
                 st.markdown("### 📋 詳細交易記錄")
-                if transactional_data:
-                    df = pd.DataFrame(transactional_data)
-                    st.dataframe(df, width="stretch")
-                    
-                    # 提供下載功能
-                    csv = df.to_csv(index=False)
-                    st.download_button(
-                        label="📥 下載 CSV",
-                        data=csv,
-                        file_name=f"transactional_data_{start_date_str}_to_{end_date_str}.csv",
-                        mime="text/csv",
-                        key="transactional_download_csv"
+                
+                # 優化欄位顯示
+                display_columns = []
+                column_rename = {
+                    'created_at': '交易時間',
+                    'order_number': '訂單編號',
+                    'amount': '金額',
+                    'payment_method': '支付方式',
+                    'machine_id': '機台',
+                    'product_id': '商品ID'
+                }
+                
+                # 選擇要顯示的欄位
+                for col in ['created_at', 'order_number', 'amount', 'payment_method', 'machine_id', 'product_id']:
+                    if col in df.columns:
+                        display_columns.append(col)
+                
+                display_df = df[display_columns].copy()
+                display_df = display_df.rename(columns=column_rename)
+                
+                # 格式化支付方式
+                if '支付方式' in display_df.columns:
+                    display_df['支付方式'] = display_df['支付方式'].map(
+                        lambda x: payment_method_labels.get(x, x)
                     )
-                else:
-                    st.info("📝 查詢期間內沒有交易數據")
+                
+                st.dataframe(display_df, use_container_width=True)
+                
+                # 匯出功能
+                st.markdown("### 📥 匯出資料")
+                st.info(f"💡 將匯出 **{len(df)}** 筆記錄，與上方顯示筆數一致")
+                
+                col_export1, col_export2 = st.columns(2)
+                
+                with col_export1:
+                    # CSV 匯出（使用 UTF-8 with BOM 以支援 Excel 正確顯示中文）
+                    csv = df.to_csv(index=False, encoding='utf-8-sig')
+                    st.download_button(
+                        label="📥 匯出 CSV",
+                        data=csv,
+                        file_name=f"金流報表_{start_date_str}_to_{end_date_str}.csv",
+                        mime="text/csv",
+                        help="CSV 格式，適合 Excel 開啟",
+                        key="export_csv"
+                    )
+                
+                with col_export2:
+                    # Excel 匯出
+                    from io import BytesIO
+                    
+                    output = BytesIO()
+                    with pd.ExcelWriter(output, engine='openpyxl') as writer:
+                        # 寫入主要資料
+                        df.to_excel(writer, index=False, sheet_name='交易記錄')
+                        
+                        # 寫入統計摘要
+                        summary_data = {
+                            '統計項目': ['總交易筆數', '總收入 (NTD)', '涉及機台數', '商品種類數'],
+                            '數值': [total_transactions, f"{total_revenue:.2f}", unique_machines, unique_products]
+                        }
+                        summary_df = pd.DataFrame(summary_data)
+                        summary_df.to_excel(writer, index=False, sheet_name='統計摘要')
+                        
+                        # 如果有支付方式統計，也加入
+                        if 'payment_method' in df.columns:
+                            payment_stats_export = df.groupby('payment_method').agg({
+                                'amount': ['count', 'sum']
+                            }).reset_index()
+                            payment_stats_export.columns = ['支付方式', '交易筆數', '總金額']
+                            payment_stats_export.to_excel(writer, index=False, sheet_name='支付方式統計')
+                    
+                    excel_data = output.getvalue()
+                    
+                    st.download_button(
+                        label="📥 匯出 Excel",
+                        data=excel_data,
+                        file_name=f"金流報表_{start_date_str}_to_{end_date_str}.xlsx",
+                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                        help="Excel 格式，包含多個工作表（交易記錄、統計摘要、支付方式統計）",
+                        key="export_excel"
+                    )
             else:
                 st.warning("⚠️ 未找到符合條件的交易數據")
                 
         except Exception as e:
             st.error(f"❌ 查詢交易數據失敗: {str(e)}")
             api_logger.error(f"Failed to query transactional data: {str(e)}")
+            import traceback
+            api_logger.error(traceback.format_exc())
 
 def batch_update_machine_menu(machine_code_or_id: str, menu_items: List[Dict]) -> bool:
     """批量更新機台菜單"""

@@ -3,6 +3,9 @@ import pandas as pd
 from utils import init_session_state, VendingMachineAPI, API_BASE_URL
 from datetime import datetime
 from logger_config import auth_logger, ui_logger, system_logger
+
+from config import settings
+
 import warnings
 from idle_logout import init_idle_tracking, check_idle_timeout, update_activity_time, render_idle_status_widget
 from idle_tracker_component import render_idle_tracker
@@ -564,16 +567,16 @@ def main():
         
         # 版本號顯示
         st.markdown("---")
-        st.caption("🖥️ 前端版本：v0.6.5")
+        st.caption(f"🖥️ 前端版本：v{settings.VERSION}")
         # 格式化後端版本號顯示
         if api_connected:
             # 確保版本號有 v 前綴
             if backend_version and backend_version != 'Unknown':
                 formatted_version = backend_version if backend_version.startswith('v') else f"v{backend_version}"
             else:
-                formatted_version = "v0.6.1"  # 預設版本
+                formatted_version = "v0.7.0"  # 預設版本
         else:
-            formatted_version = "v0.6.1"  # 未連接時顯示預設版本
+            formatted_version = "v0.7.0"  # 未連接時顯示預設版本
         st.caption(f"⚙️ 後端版本：{formatted_version}")
         
     # 顯示頁面內容

@@ -1901,7 +1901,7 @@ class VendingMachineAPI:
             return {"status": "error", "message": f"Unexpected error: {str(e)}"}
 
     def get_ai_recommendations(self, status_filter: str = None, machine_id: str = None, 
-                             skip: int = 0, limit: int = 100) -> list:
+                             skip: int = 0, limit: int = 20) -> list:
         """獲取AI推薦列表"""
         api_logger.debug(f"Fetching AI recommendations with filters: status={status_filter}, machine_id={machine_id}")
         try:
@@ -2299,34 +2299,62 @@ class VendingMachineAPI:
             st.error(f"🌐 網路錯誤，無法更新地點: {str(e)}")
             return False
 
-    def get_transactional_data(self, start_date: str, end_date: str, machine_id: str = None, 
-                             limit: int = 100, page: int = 1) -> List[Dict]:
+    def get_transactional_data(
+        self, 
+        start_date: str, 
+        end_date: str, 
+        machine_id: str = None,
+        min_amount: float = None,
+        max_amount: float = None,
+        payment_methods: List[str] = None,
+        sort_by: str = "created_at",
+        sort_order: str = "desc",
+        limit: int = 100, 
+        page: int = 1
+    ) -> List[Dict]:
         """獲取交易數據（AI分析用）"""
         api_logger.debug(
             f"Fetching transactional data from {start_date} to {end_date}, "
-            f"machine_id={machine_id}, page={page}, limit={limit}"
+            f"machine_id={machine_id}, min_amount={min_amount}, max_amount={max_amount}, "
+            f"payment_methods={payment_methods}, sort_by={sort_by}, sort_order={sort_order}, "
+            f"page={page}, limit={limit}"
         )
         try:
-            # API 要求 limit 最大 1000
-            if limit > 1000:
-                api_logger.warning(f"Transactional data limit {limit} exceeds 1000, using 1000 instead")
-                limit = 1000
+            # API 要求 limit 最大 10000
+            if limit > 10000:
+                api_logger.warning(f"Transactional data limit {limit} exceeds 10000, using 10000 instead")
+                limit = 10000
 
             # 構建查詢參數
             params = {
                 "start_date": start_date,
                 "end_date": end_date,
                 "limit": limit,
-                "page": page
+                "page": page,
+                "sort_by": sort_by,
+                "sort_order": sort_order
             }
+            
+            # 可選參數
             if machine_id:
                 params["machine_id"] = machine_id
+            
+            if min_amount is not None:
+                params["min_amount"] = min_amount
+            
+            if max_amount is not None:
+                params["max_amount"] = max_amount
+            
+            if payment_methods:
+                # 支援多個支付方式，使用重複參數格式
+                # 例如: payment_methods=credit_card&payment_methods=cash
+                params["payment_methods"] = payment_methods
             
             response = requests.get(
                 f"{self.base_url}/ai/transactional-data",
                 headers=self._get_ai_auth_headers(),
                 params=params,
-                timeout=10
+                timeout=30  # 增加超時時間以支援大量數據查詢
             )
             
             if response.status_code == 200:
