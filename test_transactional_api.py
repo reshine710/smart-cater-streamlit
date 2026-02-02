@@ -9,8 +9,8 @@ import json
 from datetime import datetime, timedelta
 
 # 配置
-BASE_URL = "http://localhost:8000/api/v1"  # 本地測試
-# BASE_URL = "https://sihai.baimeng.co/api/v1"  # 生產環境（如需測試）
+# BASE_URL = "http://localhost:8000/api/v1"  # 本地測試
+BASE_URL = "https://sihai.baimeng.co/api/v1"  # 生產環境（如需測試）
 
 API_KEY = "ai-team-key-001"
 

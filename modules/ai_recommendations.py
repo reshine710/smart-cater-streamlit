@@ -1536,7 +1536,7 @@ def show_transactional_data_analysis():
                     payment_stats['支付方式'] = payment_stats['支付方式'].map(
                         lambda x: payment_method_labels.get(x, x)
                     )
-                    st.dataframe(payment_stats, use_container_width=True)
+                    st.dataframe(payment_stats, width='stretch')
                 
                 # 顯示詳細數據表格
                 st.markdown("### 📋 詳細交易記錄")
@@ -1544,16 +1544,16 @@ def show_transactional_data_analysis():
                 # 優化欄位顯示
                 display_columns = []
                 column_rename = {
-                    'created_at': '交易時間',
-                    'order_number': '訂單編號',
+                    'purchase_timestamp': '交易時間',
+                    'transaction_id': '訂單編號',
                     'amount': '金額',
                     'payment_method': '支付方式',
                     'machine_id': '機台',
-                    'product_id': '商品ID'
+                    'meal_id': '商品ID'
                 }
                 
                 # 選擇要顯示的欄位
-                for col in ['created_at', 'order_number', 'amount', 'payment_method', 'machine_id', 'product_id']:
+                for col in ['purchase_timestamp', 'transaction_id', 'amount', 'payment_method', 'machine_id', 'meal_id']:
                     if col in df.columns:
                         display_columns.append(col)
                 
@@ -1566,7 +1566,7 @@ def show_transactional_data_analysis():
                         lambda x: payment_method_labels.get(x, x)
                     )
                 
-                st.dataframe(display_df, use_container_width=True)
+                st.dataframe(display_df, width='stretch')
                 
                 # 匯出功能
                 st.markdown("### 📥 匯出資料")
