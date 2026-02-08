@@ -4,7 +4,7 @@ steps:
     args:
       - 'build'
       - '-t'
-      - 'asia-east1-docker.pkg.dev/$PROJECT_ID/smart-cater-backend/smartcater-streamlit:v0.7.0'
+      - 'asia-east1-docker.pkg.dev/$PROJECT_ID/smart-cater-backend/backend-streamlit:v0.7.0'
       - '-f'
       - 'Dockerfile'
       - '.'
@@ -13,7 +13,7 @@ steps:
   - name: 'gcr.io/cloud-builders/docker'
     args:
       - 'push'
-      - 'asia-east1-docker.pkg.dev/$PROJECT_ID/smart-cater-backend/smartcater-streamlit:v0.7.0'
+      - 'asia-east1-docker.pkg.dev/$PROJECT_ID/smart-cater-backend/backend-streamlit:v0.7.0'
 
 images:
-  - 'asia-east1-docker.pkg.dev/$PROJECT_ID/smart-cater-backend/smartcater-streamlit:v0.7.0'
+  - 'asia-east1-docker.pkg.dev/$PROJECT_ID/smart-cater-backend/backend-streamlit:v0.7.0'
