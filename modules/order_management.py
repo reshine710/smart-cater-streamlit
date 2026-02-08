@@ -8,15 +8,11 @@ import pandas as pd
 import json
 from datetime import datetime, timedelta
 from typing import Dict, List, Tuple
-import os
-from dotenv import load_dotenv
 from sqlalchemy import create_engine, text
 from sqlalchemy.orm import sessionmaker
 from logger_config import system_logger, api_logger
 from utils import VendingMachineAPI
-
-# 載入環境變數
-load_dotenv()
+from config import settings
 
 
 def parse_timestamp(timestamp_str):
@@ -44,15 +40,22 @@ def get_database_connection():
     """建立資料庫連接"""
     try:
         # 從環境變數獲取資料庫配置
-        db_user = os.getenv("POSTGRES_USER", "postgres")
-        db_password = os.getenv("POSTGRES_PASSWORD", "postgres")
-        db_host = os.getenv("DB_HOST", "localhost")
-        db_port = os.getenv("DB_PORT", "5432")
-        db_name = os.getenv("POSTGRES_DB", "smartcater")
+        db_user = settings.POSTGRES_USER
+        db_password = settings.POSTGRES_PASSWORD
+        db_name = settings.POSTGRES_DB
+        instance_connection_name = settings.INSTANCE_CONNECTION_NAME
 
-        database_url = f"postgresql://{db_user}:{db_password}@{db_host}:{db_port}/{db_name}"
-
-        system_logger.info(f"🔗 連接到資料庫: {db_host}:{db_port}/{db_name}")
+        # Check if running in Google Cloud SQL environment
+        if instance_connection_name != "":
+            # Use Google Cloud SQL connection string format
+            database_url = f"postgresql+psycopg2://{db_user}:{db_password}@/{db_name}?host=/cloudsql/{instance_connection_name}"
+            system_logger.info(f"🔗 連接到 Cloud SQL 資料庫: {instance_connection_name}/{db_name}")
+        else:
+            # Use standard connection string for local/other environments
+            db_host = settings.DB_HOST
+            db_port = settings.DB_PORT
+            database_url = f"postgresql://{db_user}:{db_password}@{db_host}:{db_port}/{db_name}"
+            system_logger.info(f"🔗 連接到資料庫: {db_host}:{db_port}/{db_name}")
 
         engine = create_engine(database_url)
         SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
