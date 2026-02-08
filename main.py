@@ -132,11 +132,13 @@ def register_form():
             confirm_password = st.text_input("確認密碼", type="password", placeholder="請再次輸入密碼")
             
             # 使用者類型選擇
-            user_type = st.selectbox(
-                "使用者類型",
-                ["一般使用者", "管理員"],
-                help="管理員擁有更多系統權限"
-            )
+            user_type = "一般使用者"
+            st.info(f"使用者類型：{user_type}")
+            # user_type = st.selectbox(
+            #     "使用者類型",
+            #     ["一般使用者", "管理員"],
+            #     help="管理員擁有更多系統權限"
+            # )
             
             submit_button = st.form_submit_button("註冊", width="stretch")
             

@@ -1642,9 +1642,10 @@ class VendingMachineAPI:
             }
             
             # 發送註冊請求
-            auth_logger.debug(f"Sending registration request to {self.base_url}/users/")
+            target_url = f"{self.base_url}/users/register"
+            auth_logger.debug(f"Sending registration request to {target_url}")
             response = requests.post(
-                f"{self.base_url}/users/",
+                target_url,
                 json=user_data,
                 headers={"Content-Type": "application/json"},
                 timeout=10
