@@ -1,240 +1,96 @@
 # 🏪 SmartCaterStreamlit - 智慧販賣機管理系統
 
-基於 Streamlit 的智慧販賣機管理系統前端介面，提供完整的機台監控、菜單管理、銷售分析和 AI 推薦功能。
+這是一個為「智慧販賣機系統」打造的後台管理介面，完全基於 Python 的 [Streamlit](https://streamlit.io/) 框架開發。它提供給系統管理員、營運人員和一般使用者一個直覺的 UI，用來控管機台狀態、商品庫存、菜單、銷售數據及 AI 推薦功能。
 
-## ✨ 主要功能
+本專案與後端 API 服務 (`SmartCaterBackend`) 高度整合，主要負責資料的視覺化呈現和使用者操作面板。
+
+## 專案結構
+
+```
+SmartCaterStreamlit/
+├── main.py                   # 主程式和路由
+├── utils.py                  # API 客戶端和系統工具函數
+├── logger_config.py          # 日誌配置
+├── config.py                 # 系統設定 (Dynaconf)
+├── ai_notification.py        # AI 智能通知與推播功能
+├── idle_logout.py            # 閒置登出機制
+├── idle_tracker_component.py # 閒置追蹤元件
+├── modules/                  # 介面渲染與頁面模組
+│   ├── dashboard.py          # 儀表板 (總覽)
+│   ├── machine_status.py     # 機台狀態監控
+│   ├── menu_management.py    # 菜單與標籤管理
+│   ├── location_management.py # 地點管理
+│   ├── sales_analytics.py    # 銷售客觀分析
+│   ├── recipe_settings.py    # 配方與加熱設定
+│   ├── ai_recommendations.py # AI 推薦與預測
+│   ├── inventory_management.py # 庫存與補貨管理
+│   └── order_management.py   # 訂單查詢與數據
+├── utils/                    # 輔助模組
+│   └── permissions.py        # 權限控管邏輯
+├── static/                   # 靜態資源檔案 (前端追蹤)
+├── tests/                    # 測試文件
+├── logs/                     # 系統日誌輸出
+└── docs/                     # 專案相關文件
+```
+
+## 核心功能模組
 
 ### 🔐 使用者管理
-- **雙重認證系統**：支援管理員和一般使用者角色
+- **權限分級系統**：支援管理層與一般使用者等多種角色權限控管設定
+- **安全防護機制**：內建自動閒置偵測與逾時登出功能，確保機敏資料安全
 - **離線模式支援**：API 不可用時自動回退到離線模式
-- **分頁查詢**：支援大量使用者的分頁顯示
-- **使用者統計**：即時顯示使用者總數和分類統計
+- **完善的查詢介面**：支援大量使用者的分頁顯示與即時分類統計
 
-### 📍 地點管理 (新功能)
-- **地點 CRUD 操作**：完整的地點創建、讀取、更新、刪除功能
-- **室內外分類**：支援室內和室外環境分類
-- **地點統計**：地點數量統計和分析
-- **機台關聯**：機台創建時可選擇預設地點
+### 📍 地點管理
+- **地點 CRUD 操作**：完整的地點創建、讀取、更新、刪除設定功能
+- **環境分類標籤**：支援室內和室外環境分類，便於後續 AI 分析
+- **位置與機台關聯**：建立機台時可快速指定並綁定預設設置點
 
-### 🖥️ 機台監控
-- **即時狀態監控**：機台線上/離線/維護狀態
-- **MQTT 即時通訊**：支援即時命令發送和狀態更新
-- **環境參數監控**：溫度、濕度等環境數據
-- **遠端控制**：重啟、維護模式切換等操作
+### 🖥️ 機台狀態監控
+- **即時狀態戰情室**：全局掌握機台線上/離線/維護狀態
+- **MQTT 即時通訊**：支援即時命令通訊與設備心跳更新
+- **環境參數回傳**：即時獲取並記錄機台內部溫度、濕度等環境數據
+- **遠端操作控制**：重啟、維護模式切換等快捷指令下達
 
-### 🍽️ 菜單管理 (增強功能)
-- **營養資訊管理**：完整的營養成分記錄（熱量、蛋白質、碳水化合物、脂肪）
-- **標籤系統**：支援靈活的標籤分類和管理
-- **加熱參數配置**：微波、蒸氣等不同加熱方式設定
-- **價格和狀態管理**：動態價格調整和商品上下架
+### 📦 庫存與補貨管理
+- **全域庫存戰情看板**：視覺化視角統整所有機台當前的庫存警告狀況
+- **單機台透視檢視**：模擬真實機台貨道排列的剩餘庫存進度圖
+- **庫存門檻與水位設定**：動態單獨調整每個品項的最大容量與最低警戒水位
+- **視覺化缺貨警示**：直觀的紅綠燈號（正常/低庫存/缺貨）提示緊急補貨需求
 
-### 📊 數據分析
-- **銷售趨勢分析**：時間維度的銷售數據分析
-- **商品銷量統計**：熱門商品排行和銷量分布
-- **機台比較分析**：不同機台的營收和訂單比較
-- **互動式圖表**：使用 Plotly 提供豐富的視覺化
+### 🧾 訂單查詢與數據匯入
+- **多維度訂單查詢**：支援依列表、訂單編號、機台、日期區間等多重搜尋條件
+- **歷史訂單上傳**：提供 Excel 檔案批次解析與上傳功能（包含檢查預覽模式）
+- **訂單明細展示**：完整顯示訂單日期、購買品項、單價、金流與即時天氣對照
 
-### 🤖 AI 智能推薦
-- **動態菜單推薦**：基於銷售數據的智能菜單配置
-- **補貨建議**：庫存預測和補貨提醒
-- **推薦審核流程**：管理員審核和批准機制
-- **推播記錄追蹤**：推薦執行狀態和結果追蹤
+### 🍽️ 菜單與配方管理
+- **商品標籤系統**：支援自訂的標籤分類（熱銷/最新等）和搜尋管理
+- **客製化加熱參數**：支援微波、蒸氣等不同種類的加熱配方時間長短設定
+- **動態售價與上下架**：隨時依據需求調整前端售價與商品供應狀態
 
-## 🚀 快速開始
+### 📊 銷售綜合數據分析
+- **營收趨勢追蹤**：多種時間維度（日/週/月）的銷售額與訂單走勢變化
+- **熱銷榜單統計**：熱門商品購買次數排行和營收佔比圓餅圖
+- **機台比較視圖**：跨不同機台間的營收和訂單數量績效評比
+- **互動式商業圖表**：使用 Plotly 動態生成易讀的營收趨勢數據圖
+
+
+## 開發環境設置
 
 ### 環境需求
 - Python 3.12+
 - Streamlit
 - 相關依賴套件（見 requirements.txt）
 
-### 安裝步驟
-
-1. **克隆專案**
-   ```bash
-   git clone <repository-url>
-   cd SmartCaterStreamlit
-   ```
-
-2. **安裝依賴**
-   ```bash
-   pip install -r requirements.txt
-   ```
-
-3. **配置設定**
-   ```bash
-   # 複製並編輯配置文件
-   cp settings.toml.example settings.toml
-   # 編輯 API 端點和其他設定
-   ```
-
-4. **啟動應用**
-   ```bash
-   streamlit run main.py
-   ```
-
-### 預設帳號
-- **管理員**：`testadmin` / `testpassword`
-- **一般使用者**：`testuser` / `testpassword`
-
-## 🏗️ 系統架構
-
-### 核心模組
-```
-SmartCaterStreamlit/
-├── main.py                 # 主程式和路由
-├── utils.py                # API 客戶端和工具函數
-├── logger_config.py        # 日誌配置
-├── config.py               # 系統配置
-├── modules/                # 頁面模組
-│   ├── dashboard.py        # 儀表板
-│   ├── machine_status.py   # 機台狀態
-│   ├── menu_management.py  # 菜單管理
-│   ├── location_management.py  # 地點管理 (新)
-│   ├── sales_analytics.py  # 銷售分析
-│   ├── recipe_settings.py  # 配方設定
-│   └── ai_recommendations.py # AI 推薦
-├── mqtt_client/            # MQTT 客戶端
-└── tests/                  # 測試文件
-```
-
-### API 端點支援
-
-#### 使用者管理
-- `GET /api/v1/users/` - 獲取使用者列表（支援分頁）
-- `GET /api/v1/users/count` - 獲取使用者總數
-- `POST /api/v1/users/` - 創建使用者
-- `POST /api/v1/users/token` - 使用者登入
-
-#### 地點管理 (新)
-- `GET /api/v1/locations/` - 獲取地點列表
-- `POST /api/v1/locations/` - 創建地點
-- `PUT /api/v1/locations/{id}` - 更新地點
-- `DELETE /api/v1/locations/{id}` - 刪除地點
-
-#### 機台管理
-- `GET /api/v1/machines` - 獲取機台列表
-- `POST /api/v1/machines` - 創建機台
-- `PUT /api/v1/machines/{id}` - 更新機台
-- `DELETE /api/v1/machines/{id}` - 刪除機台
-- `POST /api/v1/machines/{id}/status` - 更新機台狀態
-- `POST /api/v1/machines/{id}/heartbeat` - 記錄心跳
-
-#### 菜單管理
-- `GET /api/v1/menu-items/` - 獲取菜單項目
-- `POST /api/v1/menu-items/` - 創建菜單項目（支援營養資訊）
-- `PUT /api/v1/menu-items/{id}` - 更新菜單項目
-- `DELETE /api/v1/menu-items/{id}` - 刪除菜單項目
-- `POST /api/v1/menu-items/{id}/activate` - 啟用項目
-- `POST /api/v1/menu-items/{id}/deactivate` - 停用項目
-
-#### AI 推薦
-- `GET /api/v1/ai/health` - AI 系統健康檢查
-- `GET /api/v1/ai/recommendations` - 獲取推薦列表
-- `POST /api/v1/ai/recommendations` - 創建推薦
-- `PATCH /api/v1/ai/recommendations/{id}` - 更新推薦狀態
-
-## 🔧 配置說明
-
-### API 配置
-```python
-# utils.py
-API_BASE_URL = "http://127.0.0.1:8000/api/v1"
-```
-
-### MQTT 配置
-```python
-# mqtt_client/client.py
-MQTT_BROKER_HOST = "localhost"
-MQTT_BROKER_PORT = 1883
-```
-
-### 日誌配置
-- 應用日誌：`logs/app_YYYY-MM-DD.log`
-- 錯誤日誌：`logs/error_YYYY-MM-DD.log`
-- 支援多種日誌級別：API、認證、MQTT、UI、系統
-
-## 🧪 測試
-
-### 運行測試
+### 安裝開發環境模組
 ```bash
-# 單元測試
-python -m pytest tests/
-
-# MQTT 整合測試
-python tests/test_mqtt_integration.py
-
-# 新功能測試
-python test_updated_features.py
-
-# AI 推薦調試測試
-python tests/test_ai_recommendations_debug.py
+# 同步開發環境模組
+$ uv sync
 ```
 
-### API 測試
+### 如何執行
 ```bash
-# 使用提供的測試腳本
-chmod +x tmp/test_api.sh
-./tmp/test_api.sh
+# 請直接執行後端服務
+$ uv run streamlit run main.py
 ```
 
-## 📋 更新日誌
-
-### v0.5.4 (最新)
-- 📦 版本更新至 v0.5.4
-- 持續優化系統穩定性和效能
-
-### v0.5.2
-- 📦 版本更新至 v0.5.2
-- 持續優化系統穩定性和效能
-
-### v0.5.1
-- 📦 版本更新至 v0.5.1
-- 持續優化系統穩定性和效能
-
-### v0.5.0
-- 📦 版本更新至 v0.5.0
-- 持續優化系統穩定性和效能
-
-### v0.3.2
-- 📦 版本更新至 v0.3.2
-- 持續優化系統穩定性和效能
-
-### v0.2.0
-- ✨ **新增地點管理功能**：完整的地點 CRUD 操作
-- 🔧 **增強使用者管理**：支援分頁查詢和使用者統計
-- 🍽️ **菜單營養資訊**：完整的營養成分管理
-- 🏷️ **標籤系統優化**：支援靈活的標籤格式
-- 📊 **離線模式增強**：更完整的離線數據支援
-- 🐛 **錯誤處理改進**：更好的 API 錯誤處理和用戶提示
-
-### v0.1.0
-- 🎉 初始版本發布
-- 基礎功能實現：使用者認證、機台監控、菜單管理
-- MQTT 即時通訊支援
-- AI 推薦系統整合
-
-## 🤝 貢獻指南
-
-1. Fork 專案
-2. 創建功能分支 (`git checkout -b feature/AmazingFeature`)
-3. 提交更改 (`git commit -m 'Add some AmazingFeature'`)
-4. 推送到分支 (`git push origin feature/AmazingFeature`)
-5. 開啟 Pull Request
-
-## 📄 授權
-
-本專案採用 MIT 授權 - 詳見 [LICENSE](LICENSE) 文件
-
-## 📞 聯絡資訊
-
-- 專案維護者：[Your Name]
-- Email: [your.email@example.com]
-- 專案連結：[https://github.com/yourusername/SmartCaterStreamlit](https://github.com/yourusername/SmartCaterStreamlit)
-
-## 🙏 致謝
-
-感謝所有貢獻者和開源社群的支持！
-
----
-
-**注意**：本系統需要配合後端 API 服務使用。請確保後端服務正常運行並且 API 端點配置正確。
